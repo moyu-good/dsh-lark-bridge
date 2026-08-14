@@ -507,6 +507,9 @@ export async function mountChannel(
     appSecret: 'test-secret',
     provider: 'test-provider',
     model: 'test-model',
+    // The first-contact guide is covered by its own spec; message-count
+    // assertions elsewhere stay stable with it off.
+    onboarding: false,
     ...config,
   } as plugin.Config
   const fiber = await ctx.plugin(plugin, merged)

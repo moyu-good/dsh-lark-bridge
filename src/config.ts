@@ -87,6 +87,8 @@ export interface Config {
    * from memory, and a hand-curated panel is left untouched.
    */
   syncSlashCommands?: boolean
+  /** Send a one-time first-contact guide when a brand-new session starts. */
+  onboarding?: boolean
   /**
    * Tools chat agents may not call, denied per agent at execution with a
    * reason that redirects the model to the chat.
@@ -147,6 +149,7 @@ export interface ResolvedConfig {
   attachImages: boolean
   hideProcessWhenDone: boolean
   syncSlashCommands: boolean
+  onboarding: boolean
   denyTools: string[]
   requireMention: boolean
   reactionFeedback: boolean
@@ -170,6 +173,7 @@ export const Config: z<Config> = z.object({
   attachImages: z.boolean().default(false),
   hideProcessWhenDone: z.boolean().default(false),
   syncSlashCommands: z.boolean().default(true),
+  onboarding: z.boolean().default(true),
   denyTools: z.array(String).default([...DEFAULT_DENY_TOOLS]),
   requireMention: z.boolean().default(true),
   reactionFeedback: z.boolean().default(true),
@@ -192,6 +196,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     attachImages: config.attachImages ?? false,
     hideProcessWhenDone: config.hideProcessWhenDone ?? false,
     syncSlashCommands: config.syncSlashCommands ?? true,
+    onboarding: config.onboarding ?? true,
     denyTools: config.denyTools ?? [...DEFAULT_DENY_TOOLS],
     requireMention: config.requireMention ?? true,
     reactionFeedback: config.reactionFeedback ?? true,

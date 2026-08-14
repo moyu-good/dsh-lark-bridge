@@ -83,6 +83,21 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('sends the first-contact guide once for a brand-new session', async () => {
+    const harness = await mountChannel({ onboarding: true })
+    await harness.fake.emitMessage(fakeMessage({ content: 'first' }))
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    await vi.waitFor(() => {
+      expect(harness.fake.sent.some((m) => 'markdown' in m.input && m.input.markdown.includes('/help'))).toBe(true)
+    })
+    // A second message to the same session does not repeat the guide.
+    await harness.fake.emitMessage(fakeMessage({ content: 'second' }))
+    await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(2) })
+    const guides = harness.fake.sent.filter((m) => 'markdown' in m.input && m.input.markdown.includes('/help'))
+    expect(guides).toHaveLength(1)
+    await harness.dispose()
+  })
+
   it('prefixes group messages with the sender', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage({ chatType: 'group', senderName: 'Alice', content: 'hi all' }))
