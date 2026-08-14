@@ -57,6 +57,7 @@ import { createQuestionProvider } from './questions.ts'
 import type { HostUserQuestions } from './questions.ts'
 import { createTodoRenderer } from './todo.ts'
 import { createGoalRenderer } from './goal.ts'
+import { onboardingMessage } from './first-contact.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -579,6 +580,9 @@ export function installBridge(
 
   const agents = ctx.agents as DurableAgentRegistry
 
+  /** Session ids created (not resumed) this boot — they get the first-contact guide. */
+  const freshlyCreated = new Set<string>()
+
   const ladder: SessionLadder = {
     lookup: (sessionId) => {
       const agent = agents.get(sessionId)
@@ -607,6 +611,9 @@ export function installBridge(
         agentOptions: modelSelection(),
         setup: composition.setup,
       })
+      // Only a true first contact (create, not resume) gets the guide; a
+      // resumed session across restarts must not see it a second time.
+      freshlyCreated.add(sessionId)
       if (workspace !== undefined) {
         await workspace.attachSession(sessionId).catch((error: unknown) => {
           notify(`dsh-lark-bridge: session ${sessionId} stays ungrouped: ${String(error)}`)
@@ -647,6 +654,11 @@ export function installBridge(
       currentMessageId: undefined,
     }
     bySession.set(sessionId, binding)
+    // First contact this boot: send the one-time guide. Best-effort — a send
+    // failure must not block the chat that already has the agent working.
+    if (config.onboarding && freshlyCreated.delete(sessionId)) {
+      void port.send(binding.chatId, onboardingMessage()).catch(reportSendFailure)
+    }
     return binding
   }
 
