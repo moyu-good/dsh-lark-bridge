@@ -306,6 +306,17 @@ export interface TodoWriteData {
   readonly todos: readonly { readonly content: string; readonly status: string }[]
 }
 
+/** The `goal/change` payload: a whole-value goal snapshot mutation. */
+export interface GoalChangeData {
+  readonly operation: string
+  readonly goal?: {
+    readonly objective: string
+    readonly phase: string
+    readonly blockedReason?: { readonly code?: string; readonly message?: string }
+    readonly maxGoalRounds?: number
+  }
+}
+
 /** The `assistant/chunk` payload fields this plugin streams. */
 export interface AssistantChunkData {
   readonly turn: number
@@ -394,6 +405,17 @@ export function isTodoWriteEvent(
   event: HostSessionEvent,
 ): event is HostSessionEvent & { readonly data: TodoWriteData } {
   return event.type === 'todo/write'
+}
+
+/**
+ * Narrow a session event to one goal snapshot mutation.
+ * @param event - any session event.
+ * @returns whether `event.data` carries {@link GoalChangeData}.
+ */
+export function isGoalChangeEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: GoalChangeData } {
+  return event.type === 'goal/change'
 }
 
 /**

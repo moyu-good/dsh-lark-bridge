@@ -37,7 +37,7 @@ import type {
   HostWorkspace,
   HostWorkspaceRegistry,
 } from './host.ts'
-import { isStepStartEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent } from './host.ts'
+import { isGoalChangeEvent, isStepStartEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -56,6 +56,7 @@ import type { ReactionTracker } from './reaction.ts'
 import { createQuestionProvider } from './questions.ts'
 import type { HostUserQuestions } from './questions.ts'
 import { createTodoRenderer } from './todo.ts'
+import { createGoalRenderer } from './goal.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -475,6 +476,9 @@ export function installBridge(
    * sidebar todo projection.
    */
   const todos = createTodoRenderer(port, reportSendFailure)
+
+  /** Live goal cards: `goal/change` snapshots render as one card per session. */
+  const goals = createGoalRenderer(port, reportSendFailure)
 
   /**
    * The model-to-human question flow. dsh's `ask_user_question` tool pauses a
@@ -919,6 +923,16 @@ export function installBridge(
       )
       void todos.handle(session.id, binding.chatId, items)
     }
+    // Live goal state: every snapshot mutation updates the chat card.
+    if (isGoalChangeEvent(event)) {
+      const goal = event.data.goal
+      if (goal !== undefined && (goal.phase === 'active' || goal.phase === 'paused' || goal.phase === 'blocked' || goal.phase === 'complete')) {
+        void goals.handle(session.id, binding.chatId, {
+          operation: event.data.operation,
+          goal: { objective: goal.objective, phase: goal.phase, ...goal.blockedReason !== undefined ? { blockedReason: goal.blockedReason } : {}, ...goal.maxGoalRounds !== undefined ? { maxGoalRounds: goal.maxGoalRounds } : {} },
+        })
+      }
+    }
     binding.renderer.handle(event)
   })
 
@@ -952,6 +966,8 @@ export function installBridge(
     bySession.clear()
     compositions.clear()
     pendingCallArguments.clear()
+    goals.dispose()
+    todos.dispose()
     for (const binding of bindings) {
       if (binding.currentMessageId !== undefined) reactions?.forget(binding.currentMessageId)
     }
