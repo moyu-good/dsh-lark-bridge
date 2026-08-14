@@ -113,6 +113,20 @@ describe('thinking process (CoT)', () => {
     await harness.dispose()
   })
 
+  it('labels a subagent delegation distinctly from a local tool call', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+    emit('tool/call', { turn: 1, callId: 'c1', name: 'subagent', arguments: '{"description":"调研","prompt":"...","run_in_background":true}' })
+
+    await vi.waitFor(() => { expect(contentOf(harness, 'TOOL_CALL_START')).toBeDefined() })
+    // The delegation reads as a subagent activity, not a bare tool name.
+    expect(contentOf(harness, 'TOOL_CALL_START')).toMatchObject({
+      toolCallId: 'c1', toolCallName: 'subagent',
+    })
+    expect(contentOf(harness, 'TOOL_CALL_START').title).toContain('🧑💻')
+    await harness.dispose()
+  })
+
   it("renders a tool's output as a code block", async () => {
     const harness = await mountChannel()
     const emit = await chat(harness)

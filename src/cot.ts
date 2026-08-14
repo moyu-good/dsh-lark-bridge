@@ -68,6 +68,14 @@ const TOOL_ICONS: Record<string, string> = {
   execute: 'bash',
 }
 
+/** Tool names that spawn or drive subagents; their calls deserve a distinct label. */
+const SUBAGENT_TOOLS = new Set(['subagent', 'subagent_report', 'subagent_control', 'send_message', 'interrupt_agent', 'list_agents'])
+
+/** Prefix a subagent call's title so the chat reads it as a delegation, not a local tool. */
+function subagentTitle(name: string, title: string): string {
+  return SUBAGENT_TOOLS.has(name) ? `🧑💻 ${title}` : title
+}
+
 /**
  * The last timestamp handed out, so the next one is strictly greater.
  *
@@ -310,7 +318,7 @@ export function createCotRenderer(
           cotEvent('TOOL_CALL_START', {
             toolCallId,
             icon: TOOL_ICONS[shown.kind ?? ''] ?? 'default',
-            title: shown.title,
+            title: subagentTitle(event.data.name, shown.title),
             toolCallName: event.data.name,
           }),
           cotEvent('TOOL_CALL_ARGS', { toolCallId, delta: event.data.arguments }),
