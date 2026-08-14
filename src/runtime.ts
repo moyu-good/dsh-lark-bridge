@@ -70,6 +70,12 @@ export function createLarkChannelPort(config: ChannelConfig, authorization: Auth
   }
   if (config.domain !== undefined) options.domain = config.domain
   const channel = createLarkChannel(options)
+  // The transport's own reaction methods must be captured BEFORE the
+  // Object.assign below shadows them with the port wrappers: a wrapper whose
+  // body references `channel.addReaction` would otherwise resolve to ITSELF
+  // after the assign, recursing until the stack blows.
+  const nativeAddReaction = channel.addReaction.bind(channel)
+  const nativeRemoveReaction = channel.removeReaction.bind(channel)
   // The slash-command panel has no SDK method; it is a plain app-config API,
   // reached through the transport's own authenticated client.
   const raw = channel.rawClient as {
@@ -124,6 +130,16 @@ export function createLarkChannelPort(config: ChannelConfig, authorization: Auth
         url: SLASH_COMMAND_API,
         data: { command, description: { default_value: description } },
       })
+    },
+    async addReaction(messageId: string, emojiType: string): Promise<string> {
+      // The channel's own addReaction must be captured BEFORE Object.assign
+      // overwrites it with this wrapper — referencing `channel.addReaction`
+      // here after the assign resolves to this method itself and recurses
+      // until the stack blows.
+      return await nativeAddReaction(messageId, emojiType)
+    },
+    async removeReaction(messageId: string, reactionId: string): Promise<void> {
+      await nativeRemoveReaction(messageId, reactionId)
     },
   })
 }

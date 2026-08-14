@@ -360,7 +360,10 @@ describe('dsh-lark-bridge', () => {
       const harness = await mountChannel({ denyTools: [] })
       const created = await firstAgent(harness)
       expect(created.denyReason('ask_user_question')).toBeUndefined()
-      expect(created.promptSections).toEqual([])
+      // The channel identity is always injected; only the tool restriction is
+      // conditional on a non-empty deny list.
+      expect(created.promptSections.map(s => s.name)).toContain('dsh-lark-bridge:identity')
+      expect(created.promptSections.some(s => s.text.includes('unavailable here'))).toBe(false)
       await harness.dispose()
     })
 
