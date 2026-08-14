@@ -305,11 +305,20 @@ export interface StepStartData {
 export interface AssistantChunkData {
   readonly turn: number
   /**
-   * One raw stream chunk. Only `text-delta` reaches the chat: `reasoning-delta`
-   * is the model's private thinking and stays off the wire, and tool-call
-   * deltas are raw JSON fragments reported through `tool/call` instead.
+   * One raw stream chunk. `text-delta` / `reasoning-delta` stream token-wise;
+   * `block-end` carries a complete block (a text or reasoning paragraph) when
+   * the adapter delivers whole blocks instead of deltas — pi-ai's deepseek
+   * route emits `block-end` with `block: { type: 'reasoning', text }` and no
+   * reasoning-delta events in between.
    */
-  readonly chunk: { readonly type: string; readonly text?: string }
+  readonly chunk: {
+    readonly type: string
+    readonly text?: string
+    readonly block?: {
+      readonly type: string
+      readonly text?: string
+    }
+  }
 }
 
 /** The `tool/result` payload fields a thinking process reports. */

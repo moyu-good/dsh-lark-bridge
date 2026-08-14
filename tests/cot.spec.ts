@@ -53,6 +53,31 @@ describe('thinking process (CoT)', () => {
     await harness.dispose()
   })
 
+  it('renders a whole reasoning block when the adapter delivers block-end, not deltas', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+    // pi-ai's deepseek route emits ONE block-end carrying the complete
+    // reasoning text and no reasoning-delta events in between.
+    const thinking = '这个问题的完整思考链：先看上下文，再决定如何回答。'.repeat(10)
+    emit('assistant/chunk', { turn: 1, chunk: { type: 'block-start', blockType: 'reasoning' } })
+    emit('assistant/chunk', {
+      turn: 1,
+      chunk: { type: 'block-end', block: { type: 'reasoning', text: thinking } },
+    })
+
+    await vi.waitFor(() => {
+      expect(events(harness).map((e) => e.type)).toContain('REASONING_MESSAGE_START')
+    })
+    const contents = events(harness).filter((e) => e.type === 'REASONING_MESSAGE_CONTENT')
+    // The full block lands as one content event (the API's per-event bound
+    // applies, but a 637-char reasoning block is far under it).
+    expect(contents).toHaveLength(1)
+    expect(contents[0]!.content).toMatchObject({ delta: thinking })
+    // The block is closed so the client stops showing "still thinking".
+    expect(events(harness).map((e) => e.type)).toContain('REASONING_MESSAGE_END')
+    await harness.dispose()
+  })
+
   it('stamps every event after the one before it', async () => {
     const harness = await mountChannel()
     const emit = await chat(harness)
