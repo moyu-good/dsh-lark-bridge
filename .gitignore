@@ -4,3 +4,6 @@ lib/
 *.log
 .env
 .DS_Store
+
+# 本地运维脚本(含本机路径)
+run-*.sh

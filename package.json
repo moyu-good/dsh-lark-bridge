@@ -63,6 +63,7 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
     "@larksuite/channel": "^0.4.1",
+    "@larksuiteoapi/node-sdk": "^1.73.0",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
