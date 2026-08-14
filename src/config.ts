@@ -11,6 +11,10 @@ import type { SessionScope } from './session.ts'
  * `ctx.userQuestions`, whose single provider belongs to whichever UI registered
  * it first. Denied per chat agent so the model asks in the chat instead.
  */
+// ask_user_question is denied until the bridge can own the single
+// user-questions provider slot (the web host's api-proxy registers it first;
+// the seam allows exactly one). Denied per chat agent so the model asks in
+// prose instead of blocking on a tool whose answer cannot reach the chat.
 const DEFAULT_DENY_TOOLS = ['ask_user_question', 'exit_plan_mode'] as const
 
 /** Plugin configuration supplied by the profile composition. */

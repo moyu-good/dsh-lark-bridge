@@ -334,7 +334,9 @@ describe('dsh-lark-bridge', () => {
       const created = await firstAgent(harness)
 
       // Both ask through the single-provider userQuestions seam, which belongs
-      // to whichever UI registered it first — a chat agent would wait forever.
+      // to whichever UI registered it first (the web host's api-proxy owns it);
+      // a chat agent would wait forever. The card provider in questions.ts is
+      // wired once the bridge can own that slot.
       for (const name of ['ask_user_question', 'exit_plan_mode']) {
         const reason = created.denyReason(name)
         expect(reason).toBeDefined()

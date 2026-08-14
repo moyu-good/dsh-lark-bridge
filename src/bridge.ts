@@ -53,6 +53,7 @@ import { ConversationSessions } from './session.ts'
 import type { SessionLadder } from './session.ts'
 import { createReactionTracker } from './reaction.ts'
 import type { ReactionTracker } from './reaction.ts'
+import type { HostUserQuestions } from './questions.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -465,6 +466,22 @@ export function installBridge(
   const reactions: ReactionTracker | undefined = config.reactionFeedback
     ? createReactionTracker(port, undefined, reportSendFailure)
     : undefined
+
+  /**
+   * The model-to-human question flow. dsh's `ask_user_question` tool pauses a
+   * tool call until a human answers through the single user-questions provider.
+   *
+   * NOTE: the web host's api-proxy registers that one provider (its questions
+   * surface in the browser); the seam allows exactly one, and registering a
+   * second fails the plugin's fiber asynchronously — which would also stop the
+   * WebSocket from connecting. So the bridge does NOT register a provider
+   * today. Chat agents keep ask_user_question denied and the model asks in
+   * prose; the user's reply arrives as the next message, which is the same
+   * round trip in a different shape. The card implementation lives in
+   * questions.ts and can be wired once the provider slot is free.
+   */
+  const hostQuestions = ctx.get('userQuestions') as HostUserQuestions | undefined
+  void hostQuestions
 
   /** Resolve the provider/model for a new chat agent; config overrides the host default. */
   const modelSelection = (): HostAgentOptions => {
