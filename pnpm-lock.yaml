@@ -14,6 +14,9 @@ importers:
       '@larksuite/channel':
         specifier: ^0.4.1
         version: 0.4.1
+      '@larksuiteoapi/node-sdk':
+        specifier: ^1.73.0
+        version: 1.73.0
       qrcode-terminal:
         specifier: ^0.12.0
         version: 0.12.0
