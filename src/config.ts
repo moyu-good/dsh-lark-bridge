@@ -11,11 +11,13 @@ import type { SessionScope } from './session.ts'
  * `ctx.userQuestions`, whose single provider belongs to whichever UI registered
  * it first. Denied per chat agent so the model asks in the chat instead.
  */
-// ask_user_question is denied until the bridge can own the single
-// user-questions provider slot (the web host's api-proxy registers it first;
-// the seam allows exactly one). Denied per chat agent so the model asks in
-// prose instead of blocking on a tool whose answer cannot reach the chat.
-const DEFAULT_DENY_TOOLS = ['ask_user_question', 'exit_plan_mode'] as const
+// ask_user_question and exit_plan_mode are enabled by default: on a chat
+// profile (bundles without the web-app api-proxy) the bridge registers the
+// single user-questions provider and renders the model's question — and the
+// plan-mode exit review — as a Feishu card. Deployments that still run the
+// web profile (api-proxy owns the provider slot) should deny both via
+// denyTools so the model asks in prose instead of blocking.
+const DEFAULT_DENY_TOOLS: readonly string[] = []
 
 /** Plugin configuration supplied by the profile composition. */
 export interface Config {

@@ -168,7 +168,7 @@ describe('durable sessions', () => {
       const opened = harness.agents.created[0]!
       expect(opened.meta).toBeUndefined()
       expect(opened.setupRan).toBe(true)
-      expect(opened.denyReason('ask_user_question')).toBeDefined()
+      expect(opened.denyReason('ask_user_question')).toBeUndefined()
       expect(opened.agent.followup).toHaveBeenCalledTimes(1)
     } finally {
       await harness.dispose()

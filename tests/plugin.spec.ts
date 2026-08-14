@@ -329,24 +329,16 @@ describe('dsh-lark-bridge', () => {
       await harness.dispose()
     })
 
-    it('denies the human-interaction tools whose answers cannot reach the chat', async () => {
+    it('does not deny the human-interaction tools the bridge answers as cards', async () => {
       const harness = await mountChannel()
       const created = await firstAgent(harness)
 
-      // Both ask through the single-provider userQuestions seam, which belongs
-      // to whichever UI registered it first (the web host's api-proxy owns it);
-      // a chat agent would wait forever. The card provider in questions.ts is
-      // wired once the bridge can own that slot.
-      for (const name of ['ask_user_question', 'exit_plan_mode']) {
-        const reason = created.denyReason(name)
-        expect(reason).toBeDefined()
-        expect(reason).toContain('Ask the user directly in your reply')
-      }
+      // On a chat profile the bridge registers the single user-questions
+      // provider, so ask_user_question and exit_plan_mode resolve through
+      // Feishu cards — no denial, no prose fallback needed.
+      expect(created.denyReason('ask_user_question')).toBeUndefined()
+      expect(created.denyReason('exit_plan_mode')).toBeUndefined()
       expect(created.denyReason('bash')).toBeUndefined()
-
-      // The model is told up front, so it asks in prose instead of spending a call.
-      const section = created.promptSections.find((s) => s.name === 'dsh-lark-bridge:interaction')
-      expect(section?.text).toContain('their next message is the answer')
       await harness.dispose()
     })
 
@@ -374,9 +366,9 @@ describe('dsh-lark-bridge', () => {
       const created = await firstAgent(harness)
       expect(created.meta?.agentPreset).toBeUndefined()
       // Setup still runs: this channel composes its own per-agent world
-      // (denied interaction tools, prompt guidance) with or without a roster.
+      // (prompt guidance) with or without a roster.
       expect(created.setupRan).toBe(true)
-      expect(created.denyReason('ask_user_question')).toBeDefined()
+      expect(created.denyReason('ask_user_question')).toBeUndefined()
       await harness.dispose()
     })
   })
