@@ -53,6 +53,7 @@ import { ConversationSessions } from './session.ts'
 import type { SessionLadder } from './session.ts'
 import { createReactionTracker } from './reaction.ts'
 import type { ReactionTracker } from './reaction.ts'
+import { createQuestionProvider } from './questions.ts'
 import type { HostUserQuestions } from './questions.ts'
 import { createTodoRenderer } from './todo.ts'
 
@@ -479,17 +480,34 @@ export function installBridge(
    * The model-to-human question flow. dsh's `ask_user_question` tool pauses a
    * tool call until a human answers through the single user-questions provider.
    *
-   * NOTE: the web host's api-proxy registers that one provider (its questions
-   * surface in the browser); the seam allows exactly one, and registering a
-   * second fails the plugin's fiber asynchronously — which would also stop the
-   * WebSocket from connecting. So the bridge does NOT register a provider
-   * today. Chat agents keep ask_user_question denied and the model asks in
-   * prose; the user's reply arrives as the next message, which is the same
-   * round trip in a different shape. The card implementation lives in
-   * questions.ts and can be wired once the provider slot is free.
+   * The seam allows exactly ONE provider. The web profile's api-proxy
+   * registers it first (its questions surface in the browser), so a bridge
+   * registered on the web profile would fail the plugin's fiber asynchronously
+   * and stop the WebSocket from connecting. Deploy the bridge on a profile
+   * WITHOUT the web-app bundle (e.g. bundles = [dsh-base, dsh-lark-bridge]):
+   * then this bridge owns the slot and the model's question becomes a Feishu
+   * card. On the web profile the register is skipped and chat agents ask in
+   * prose instead.
    */
+  const questions = createQuestionProvider(port, (sessionId) => {
+    const binding = bySession.get(sessionId)
+    return binding === undefined ? undefined : { chatId: binding.chatId }
+  })
   const hostQuestions = ctx.get('userQuestions') as HostUserQuestions | undefined
-  void hostQuestions
+  let disposeQuestions: (() => void) | undefined
+  if (hostQuestions !== undefined) {
+    try {
+      disposeQuestions = hostQuestions.registerProvider(questions.provider)
+    } catch (error) {
+      // Synchronous throw (wrong profile composition) or a later async
+      // fiber failure both land here only for synchronous throws; an async
+      // effect failure would surface as a plugin error instead. The card
+      // handler stays installed either way so a slot that opens later can
+      // resolve pending questions.
+      notify(`dsh-lark-bridge: user-questions provider unavailable (${error instanceof Error ? error.message : String(error)})`)
+      ctx.logger.warn('user-questions provider unavailable: %s', error)
+    }
+  }
 
   /** Resolve the provider/model for a new chat agent; config overrides the host default. */
   const modelSelection = (): HostAgentOptions => {
@@ -800,6 +818,8 @@ export function installBridge(
   }
 
   const handleCardAction = (evt: CardActionEvent): CardActionResponse | undefined => {
+    const questionResponse = questions.handleCardAction(evt)
+    if (questionResponse !== undefined) return questionResponse
     const value = approvalActionValue(evt.action.value)
     if (value === undefined) return undefined
     const pending = pendingApprovals.get(value.id)
@@ -927,6 +947,7 @@ export function installBridge(
       pendingApprovals.delete(id)
       pending.settle('cancelled')
     }
+    disposeQuestions?.()
     const bindings = [...bySession.values()]
     bySession.clear()
     compositions.clear()
