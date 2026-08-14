@@ -1,0 +1,11 @@
+packages:
+  - .
+
+allowBuilds:
+  # Pulled in by @deepseek-ai/cordis optional deps; scripts are no-ops we need.
+  protobufjs: true
+
+minimumReleaseAgeExclude:
+  # Fresh schemastery/cordis/loader releases carry the API surface this plugin
+  # compiles against; waiting out the release age would defeat the point.
+  - '@deepseek-ai/*'

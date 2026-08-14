@@ -158,11 +158,11 @@ describe('durable sessions', () => {
     const harness = await mountChannel()
     try {
       // The chat was served before this process started.
-      harness.agents.resumable.add('lark-oc_chat_1')
+      harness.agents.resumable.add('feishu-oc_chat_1')
       await harness.fake.emitMessage(fakeMessage())
       await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
 
-      expect(harness.agents.resumed).toEqual(['lark-oc_chat_1'])
+      expect(harness.agents.resumed).toEqual(['feishu-oc_chat_1'])
       // A resumed agent carries no meta, and gets the composition a fresh one
       // gets: without it, it would reach the model with no tools.
       const opened = harness.agents.created[0]!
@@ -183,7 +183,7 @@ describe('durable sessions', () => {
 
       // The rejection is the registry's only existence probe, so a corrupt
       // session log must not pass silently as a chat nobody ever messaged.
-      const reported = logged(harness.logs, 'info', 'no stored session for lark-oc_chat_1')
+      const reported = logged(harness.logs, 'info', 'no stored session for feishu-oc_chat_1')
       expect(reported).toHaveLength(1)
       expect(reported[0]).toContain('oc_chat_1')
     } finally {
@@ -193,7 +193,7 @@ describe('durable sessions', () => {
 
   it('adopts an agent another owner published without disposing it', async () => {
     const harness = await mountChannel()
-    const adopted = harness.agents.declareLive('lark-oc_chat_1')
+    const adopted = harness.agents.declareLive('feishu-oc_chat_1')
     try {
       await harness.fake.emitMessage(fakeMessage())
       await vi.waitFor(() => { expect(adopted.followup).toHaveBeenCalledTimes(1) })
@@ -205,7 +205,7 @@ describe('durable sessions', () => {
     }
     // Its own owner takes it down; disposing it here would be a double free.
     expect(harness.agents.created).toHaveLength(0)
-    expect(harness.agents.live.get('lark-oc_chat_1')).toBe(adopted)
+    expect(harness.agents.live.get('feishu-oc_chat_1')).toBe(adopted)
   })
 
   it('gives each topic thread its own session under the thread scope', async () => {
@@ -216,8 +216,8 @@ describe('durable sessions', () => {
       await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(2) })
       // Parallel topics would otherwise overwrite each other's context.
       expect(harness.agents.created.map(record => record.sessionId)).toEqual([
-        'lark-oc_chat_1:omt_a',
-        'lark-oc_chat_1:omt_b',
+        'feishu-oc_chat_1:omt_a',
+        'feishu-oc_chat_1:omt_b',
       ])
       await harness.fake.emitMessage(fakeMessage({ messageId: 'om_c', threadId: 'omt_a' }))
       await vi.waitFor(() => {
@@ -237,7 +237,7 @@ describe('durable sessions', () => {
       await vi.waitFor(() => {
         expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(2)
       })
-      expect(harness.agents.created.map(record => record.sessionId)).toEqual(['lark-oc_chat_1'])
+      expect(harness.agents.created.map(record => record.sessionId)).toEqual(['feishu-oc_chat_1'])
     } finally {
       await harness.dispose()
     }

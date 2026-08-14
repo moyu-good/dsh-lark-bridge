@@ -65,7 +65,7 @@ describe('dsh-lark-bridge', () => {
 
     const created = harness.agents.created[0]!
     // Derived from the conversation alone, so a restart reaches this session again.
-    expect(created.sessionId).toBe('lark-oc_chat_1')
+    expect(created.sessionId).toBe('feishu-oc_chat_1')
     expect(created.meta?.cwd !== undefined && isAbsolute(created.meta.cwd)).toBe(true)
     expect(created.agentOptions).toEqual({ provider: 'test-provider', model: 'test-model' })
     await vi.waitFor(() => { expect(created.agent.followup).toHaveBeenCalledTimes(1) })

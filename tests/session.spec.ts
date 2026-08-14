@@ -119,8 +119,8 @@ describe('conversation sessions', () => {
 
   describe('session ids', () => {
     it('brands a key with the channel prefix', () => {
-      expect(sessionIdFor('oc_chat_1')).toBe('lark-oc_chat_1')
-      expect(sessionIdFor('oc_chat_1:omt_a')).toBe('lark-oc_chat_1:omt_a')
+      expect(sessionIdFor('oc_chat_1')).toBe('feishu-oc_chat_1')
+      expect(sessionIdFor('oc_chat_1:omt_a')).toBe('feishu-oc_chat_1:omt_a')
     })
 
     it('is deterministic and never collides across facets', () => {
