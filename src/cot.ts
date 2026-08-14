@@ -263,15 +263,37 @@ export function createCotRenderer(
         const { chunk } = event.data
         // Only reasoning belongs here: the platform reserves this message for
         // the process, and the answer is sent as its own message.
-        if (!showProcess || chunk.type !== 'reasoning-delta') return
-        if (chunk.text === undefined || chunk.text === '') return
-        const run = ensure(event.data.turn)
-        const messageId = `reasoning-${run.turn}`
-        if (!run.reasoningOpen) {
-          run.reasoningOpen = true
-          enqueue(run, cotEvent('REASONING_MESSAGE_START', { messageId, role: 'reasoning' }))
+        if (!showProcess) return
+        // Two wire shapes arrive from the host: streaming models emit
+        // `reasoning-delta` deltas; non-streaming adapters (pi-ai's deepseek
+        // route in particular) emit a whole `block-end` with the reasoning
+        // block's complete text and NO deltas in between. Both must render,
+        // otherwise the thinking area stays empty for block-delivered runs.
+        if (chunk.type === 'reasoning-delta') {
+          if (chunk.text === undefined || chunk.text === '') return
+          const run = ensure(event.data.turn)
+          const messageId = `reasoning-${run.turn}`
+          if (!run.reasoningOpen) {
+            run.reasoningOpen = true
+            enqueue(run, cotEvent('REASONING_MESSAGE_START', { messageId, role: 'reasoning' }))
+          }
+          enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId, delta: chunk.text }))
+          return
         }
-        enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId, delta: chunk.text }))
+        if (chunk.type === 'block-end' && chunk.block?.type === 'reasoning') {
+          const text = chunk.block.text ?? ''
+          if (text === '') return
+          const run = ensure(event.data.turn)
+          const messageId = `reasoning-${run.turn}`
+          if (run.reasoningOpen) {
+            run.reasoningOpen = false
+            enqueue(run, cotEvent('REASONING_MESSAGE_END', { messageId }))
+          }
+          enqueue(run, cotEvent('REASONING_MESSAGE_START', { messageId, role: 'reasoning' }))
+          enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId, delta: text }))
+          enqueue(run, cotEvent('REASONING_MESSAGE_END', { messageId }))
+          return
+        }
         return
       }
       if (isToolCallEvent(event)) {
