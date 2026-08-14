@@ -37,7 +37,7 @@ import type {
   HostWorkspace,
   HostWorkspaceRegistry,
 } from './host.ts'
-import { isStepStartEvent, isToolCallEvent, isTurnEndEvent } from './host.ts'
+import { isStepStartEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -54,6 +54,7 @@ import type { SessionLadder } from './session.ts'
 import { createReactionTracker } from './reaction.ts'
 import type { ReactionTracker } from './reaction.ts'
 import type { HostUserQuestions } from './questions.ts'
+import { createTodoRenderer } from './todo.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -466,6 +467,13 @@ export function installBridge(
   const reactions: ReactionTracker | undefined = config.reactionFeedback
     ? createReactionTracker(port, undefined, reportSendFailure)
     : undefined
+
+  /**
+   * Live todo progress cards: `todo_write` snapshots render as one card per
+   * session, updated in place. This is the chat equivalent of the Web UI's
+   * sidebar todo projection.
+   */
+  const todos = createTodoRenderer(port, reportSendFailure)
 
   /**
    * The model-to-human question flow. dsh's `ask_user_question` tool pauses a
@@ -882,6 +890,14 @@ export function installBridge(
         else reactions.done(binding.currentMessageId)
         binding.currentMessageId = undefined
       }
+    }
+    // Live todo progress: every whole-list snapshot updates the chat card.
+    if (isTodoWriteEvent(event)) {
+      const items = event.data.todos.filter(
+        (item): item is { readonly content: string; readonly status: 'pending' | 'in_progress' | 'completed' } =>
+          item.status === 'pending' || item.status === 'in_progress' || item.status === 'completed',
+      )
+      void todos.handle(session.id, binding.chatId, items)
     }
     binding.renderer.handle(event)
   })
