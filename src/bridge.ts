@@ -37,7 +37,7 @@ import type {
   HostWorkspace,
   HostWorkspaceRegistry,
 } from './host.ts'
-import { isToolCallEvent, isTurnEndEvent } from './host.ts'
+import { isStepStartEvent, isToolCallEvent, isTurnEndEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -51,6 +51,8 @@ import { syncSlashPanel } from './slash-panel.ts'
 import type { SlashPanelPort } from './slash-panel.ts'
 import { ConversationSessions } from './session.ts'
 import type { SessionLadder } from './session.ts'
+import { createReactionTracker } from './reaction.ts'
+import type { ReactionTracker } from './reaction.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -84,6 +86,10 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
   on(name: 'reconnected', handler: () => void): () => void
   /** Replace a sent card's content in place. */
   updateCard(messageId: string, card: object): Promise<void>
+  /** Add an emoji reaction to a message; resolves the platform reaction id. */
+  addReaction(messageId: string, emojiType: string): Promise<string>
+  /** Remove a reaction by the id {@link addReaction} returned. */
+  removeReaction(messageId: string, reactionId: string): Promise<void>
 }
 
 /** One conversation's chat and its outbound renderer, keyed by session id. */
@@ -92,6 +98,8 @@ interface ChatBinding {
   /** `p2p` or a group kind; approvals in a group are judged as the room. */
   readonly chatType: string
   readonly renderer: OutboundRenderer
+  /** The triggering message this session is currently answering, for reaction feedback. */
+  currentMessageId: string | undefined
 }
 
 /**
@@ -329,25 +337,46 @@ function boundCardText(text: string): string {
  * @param config - resolved plugin configuration.
  */
 function composeChatAgent(agentCtx: Context, config: ResolvedConfig): void {
-  if (config.denyTools.length === 0) return
-  const denied = new Set(config.denyTools)
-  // A guard rather than `tools.restrict()`: restrict validates its names
-  // against the inherited registry and THROWS for one this composition does
-  // not have, which would fail every chat agent's creation over a tool the
-  // deployment simply never composed.
-  ;(agentCtx.get('tools') as HostTools | undefined)?.guard(execution =>
-    denied.has(execution.name)
-      ? `${execution.name} is unavailable in this chat channel: its answer would surface on a `
-        + 'different interface. Ask the user directly in your reply instead, and continue when they answer.'
-      : undefined,
-  )
+  if (config.denyTools.length > 0) {
+    const denied = new Set(config.denyTools)
+    // A guard rather than `tools.restrict()`: restrict validates its names
+    // against the inherited registry and THROWS for one this composition does
+    // not have, which would fail every chat agent's creation over a tool the
+    // deployment simply never composed.
+    ;(agentCtx.get('tools') as HostTools | undefined)?.guard(execution =>
+      denied.has(execution.name)
+        ? `${execution.name} is unavailable in this chat channel: its answer would surface on a `
+          + 'different interface. Ask the user directly in your reply instead, and continue when they answer.'
+        : undefined,
+    )
+  }
+  // The channel's identity is a fact the model must know before anything else:
+  // the same harness serves Web and CLI surfaces, and without an explicit
+  // persona a chat agent answers as "a coding agent" instead of the Feishu bot
+  // the human is actually talking to. Kept independent of denyTools so it is
+  // always injected, not only when there is a tool restriction to announce.
   const prompt = agentCtx.get('systemPrompt') as HostSystemPrompt | undefined
+  prompt?.section({
+    name: 'dsh-lark-bridge:identity',
+    order: 120,
+    text: 'You are 云鹊桥 (dsh-lark-bridge), a coding agent running inside a Feishu/Lark chat '
+      + 'via the DeepSeek Harness host. The person you are talking to is the user of this '
+      + 'chat, not a machine. Reply in the same language they write in. '
+      + 'You have the full coding-agent toolset of the host: you can read and edit files, run '
+      + 'commands, and work on projects in the workspace. When you need a decision or want to '
+      + 'ask a clarifying question, write it directly in your reply — their next message is the '
+      + 'answer, and the chat keeps the conversation going. Do not describe your own '
+      + 'architecture or ask what kind of interface you are running on; you are simply the bot '
+      + 'in this chat.',
+  })
   prompt?.section({
     name: 'dsh-lark-bridge:interaction',
     order: 150,
-    text: 'You are talking to the user in a chat. To ask a question or seek approval for a plan, '
+    text: 'To ask a question or seek approval for a plan, '
       + 'write it in your reply — their next message is the answer. '
-      + `These tools are unavailable here: ${[...denied].join(', ')}.`,
+      + (config.denyTools.length > 0
+        ? `These tools are unavailable here: ${[...new Set(config.denyTools)].join(', ')}.`
+        : ''),
   })
 }
 
@@ -431,6 +460,11 @@ export function installBridge(
     notify(`dsh-lark-bridge: outbound send failed: ${detail}`)
     ctx.logger.warn('outbound send failed: %s', detail)
   }
+
+  /** Lifecycle emoji feedback on triggering messages; disabled by configuration. */
+  const reactions: ReactionTracker | undefined = config.reactionFeedback
+    ? createReactionTracker(port, undefined, reportSendFailure)
+    : undefined
 
   /** Resolve the provider/model for a new chat agent; config overrides the host default. */
   const modelSelection = (): HostAgentOptions => {
@@ -563,6 +597,7 @@ export function installBridge(
       chatId: msg.chatId,
       chatType: msg.chatType,
       renderer: renderFor(msg.chatId, presentCall),
+      currentMessageId: undefined,
     }
     bySession.set(sessionId, binding)
     return binding
@@ -645,9 +680,14 @@ export function installBridge(
     // a turn for nothing. Skipped before the acknowledgement, which would
     // otherwise promise work no turn is doing.
     if (msg.content.trim() === '') return
+    // The bot received a real request: acknowledge immediately so the sender
+    // sees it landed, before any agent work starts.
+    reactions?.ack(msg.messageId)
     try {
       const opened = await sessions.acquire(msg)
       const binding = await bindingFor(opened.handle.agent.session.id, msg)
+      // The reaction lifecycle follows this session's current trigger.
+      binding.currentMessageId = msg.messageId
       // A slash line is a control, not a prompt: the host runs it without a
       // model turn, so it must not be handed to the model as text — and it
       // needs no reply target, since its answer is not an assistant turn.
@@ -815,6 +855,17 @@ export function installBridge(
     } else if (isTurnEndEvent(event)) {
       pendingCallArguments.clear()
     }
+    // Reaction lifecycle: the agent started working once a step opens, and
+    // settles when the turn ends. `currentMessageId` is undefined between
+    // turns and for slash commands, which drive no agent turn at all.
+    if (reactions !== undefined && binding.currentMessageId !== undefined) {
+      if (isStepStartEvent(event)) reactions.working(binding.currentMessageId)
+      else if (isTurnEndEvent(event)) {
+        if (event.data.reason.kind === 'error') reactions.fail(binding.currentMessageId)
+        else reactions.done(binding.currentMessageId)
+        binding.currentMessageId = undefined
+      }
+    }
     binding.renderer.handle(event)
   })
 
@@ -847,6 +898,9 @@ export function installBridge(
     bySession.clear()
     compositions.clear()
     pendingCallArguments.clear()
+    for (const binding of bindings) {
+      if (binding.currentMessageId !== undefined) reactions?.forget(binding.currentMessageId)
+    }
     return Promise.allSettled([
       sessions.close(),
       ...bindings.map((binding) => binding.renderer.close()),

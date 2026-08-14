@@ -96,6 +96,12 @@ export interface Config {
   /** In group chats, only respond when the bot is @-mentioned. */
   requireMention?: boolean
   /**
+   * Show lifecycle feedback as emoji reactions on the triggering message:
+   * 👀 收到 → 🧠 思考 → ✅ 完成 / ⚠️ 失败. Off sends no reactions at all.
+   * The app needs the `im:message.reactions:read` (and create) scope.
+   */
+  reactionFeedback?: boolean
+  /**
    * Open ids (`ou_…`) allowed to send direct messages, when a deployment wants
    * to narrow them further. Empty serves anyone who can reach the bot at all,
    * which the platform already decides: an app's visibility scope is what says
@@ -137,6 +143,7 @@ export interface ResolvedConfig {
   syncSlashCommands: boolean
   denyTools: string[]
   requireMention: boolean
+  reactionFeedback: boolean
   senderAllowlist: string[]
   groupAllowlist: string[]
   approvers: string[]
@@ -159,6 +166,7 @@ export const Config: z<Config> = z.object({
   syncSlashCommands: z.boolean().default(true),
   denyTools: z.array(String).default([...DEFAULT_DENY_TOOLS]),
   requireMention: z.boolean().default(true),
+  reactionFeedback: z.boolean().default(true),
   senderAllowlist: z.array(String),
   groupAllowlist: z.array(String),
   approvers: z.array(String),
@@ -180,6 +188,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     syncSlashCommands: config.syncSlashCommands ?? true,
     denyTools: config.denyTools ?? [...DEFAULT_DENY_TOOLS],
     requireMention: config.requireMention ?? true,
+    reactionFeedback: config.reactionFeedback ?? true,
     senderAllowlist: config.senderAllowlist ?? [],
     groupAllowlist: config.groupAllowlist ?? [],
     approvers: config.approvers ?? [],

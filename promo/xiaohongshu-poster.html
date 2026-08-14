@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>云鹊桥 dsh-lark-bridge — 小红书宣传图</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-2: #11161f;
+    --ink: #f2f5f9;
+    --muted: #8b94a7;
+    --accent: #4d9fff;
+    --accent-2: #7c5cff;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --border: rgba(255,255,255,0.08);
+    --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1080px; height: 1440px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    overflow: hidden;
+    position: relative;
+  }
+  /* 背景网格 */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(77,159,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(77,159,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .glow {
+    position: absolute; width: 600px; height: 600px; border-radius: 50%;
+    filter: blur(120px); opacity: 0.22; pointer-events: none;
+  }
+  .glow-1 { top: -200px; right: -150px; background: var(--accent); }
+  .glow-2 { bottom: -250px; left: -150px; background: var(--accent-2); }
+
+  .content {
+    position: relative; z-index: 2;
+    padding: 72px 64px 56px;
+    height: 100%;
+    display: flex; flex-direction: column;
+  }
+
+  /* 顶部徽章 */
+  .badge-row {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.04);
+    font-size: 26px; font-weight: 500; color: var(--muted);
+  }
+  .badge .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .badge .dot.pulse { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* 标题 */
+  .title-block { margin-top: 44px; }
+  .title {
+    font-size: 84px; font-weight: 800; line-height: 1.12; letter-spacing: -1px;
+  }
+  .title .grad {
+    background: linear-gradient(100deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .subtitle {
+    margin-top: 22px; font-size: 34px; color: var(--muted); font-weight: 400; line-height: 1.5;
+  }
+
+  /* 一句话卖点 */
+  .hero-line {
+    margin-top: 30px;
+    padding: 20px 26px;
+    border-left: 4px solid var(--accent);
+    background: rgba(77,159,255,0.06);
+    border-radius: 0 12px 12px 0;
+    font-size: 30px; line-height: 1.5; color: #c7d5e8;
+  }
+
+  /* 功能卡片 */
+  .features {
+    margin-top: 44px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+  }
+  .feat {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 26px 28px;
+  }
+  .feat .tag {
+    font-family: var(--mono); font-size: 20px; color: var(--accent);
+    margin-bottom: 12px; letter-spacing: 0.5px;
+  }
+  .feat .name { font-size: 30px; font-weight: 700; margin-bottom: 8px; }
+  .feat .desc { font-size: 23px; color: var(--muted); line-height: 1.5; }
+
+  /* 链路示意 */
+  .pipeline {
+    margin-top: 40px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 26px 34px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    font-family: var(--mono);
+  }
+  .pipe-node { font-size: 26px; font-weight: 600; color: var(--ink); }
+  .pipe-node.hl { color: var(--accent); }
+  .pipe-arrow { color: var(--amber); font-size: 30px; }
+
+  /* 底部 */
+  .footer {
+    margin-top: auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 30px;
+    border-top: 1px solid var(--border);
+  }
+  .repo {
+    font-family: var(--mono); font-size: 26px; color: var(--green);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .repo svg { width: 30px; height: 30px; fill: currentColor; }
+  .foot-tag { font-size: 24px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+
+  <div class="content">
+    <div class="badge-row">
+      <div class="badge"><span class="dot pulse"></span> 已上线 · Open Source</div>
+      <div class="badge">BSD-3-Clause</div>
+    </div>
+
+    <div class="title-block">
+      <div class="title">云鹊桥<br><span class="grad">dsh-lark-bridge</span></div>
+      <div class="subtitle">在飞书里直接对话 DeepSeek Harness 编码代理</div>
+    </div>
+
+    <div class="hero-line">
+      极致适配 dsh 宿主服务 —— 飞书只是载体，编码能力全量保留
+    </div>
+
+    <div class="features">
+      <div class="feat">
+        <div class="tag">/approval</div>
+        <div class="name">审批卡片</div>
+        <div class="desc">敏感操作弹出「允许一次 / 拒绝」卡片，人机协同安全可控</div>
+      </div>
+      <div class="feat">
+        <div class="tag">cot</div>
+        <div class="name">思考过程实时可见</div>
+        <div class="desc">原生 CoT 流式渲染，推理过程全程透明</div>
+      </div>
+      <div class="feat">
+        <div class="tag">/slash</div>
+        <div class="name">Slash 面板</div>
+        <div class="desc">/stop /plan /help /compact 等命令直达，效率拉满</div>
+      </div>
+      <div class="feat">
+        <div class="tag">persist</div>
+        <div class="name">会话持久化</div>
+        <div class="desc">Workspace 分组 + 会话恢复，断线重连不丢上下文</div>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <span class="pipe-node">飞书</span>
+      <span class="pipe-arrow">⟷</span>
+      <span class="pipe-node hl">dsh-lark-bridge</span>
+      <span class="pipe-arrow">⟷</span>
+      <span class="pipe-node">DeepSeek Harness</span>
+    </div>
+
+    <div class="footer">
+      <div class="repo">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        github.com/moyu-good/dsh-lark-bridge
+      </div>
+      <div class="foot-tag">DeepSeek Harness · 飞书 · 开源</div>
+    </div>
+  </div>
+</body>
+</html>
