@@ -301,6 +301,11 @@ export interface StepStartData {
   readonly step: number
 }
 
+/** The `todo/write` payload: the agent's whole current list, replaced per call. */
+export interface TodoWriteData {
+  readonly todos: readonly { readonly content: string; readonly status: string }[]
+}
+
 /** The `assistant/chunk` payload fields this plugin streams. */
 export interface AssistantChunkData {
   readonly turn: number
@@ -378,6 +383,17 @@ export function isStepStartEvent(
   event: HostSessionEvent,
 ): event is HostSessionEvent & { readonly data: StepStartData } {
   return event.type === 'step/start'
+}
+
+/**
+ * Narrow a session event to one todo-list replacement.
+ * @param event - any session event.
+ * @returns whether `event.data` carries {@link TodoWriteData}.
+ */
+export function isTodoWriteEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: TodoWriteData } {
+  return event.type === 'todo/write'
 }
 
 /**
