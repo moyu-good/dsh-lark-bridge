@@ -8,7 +8,8 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsdown",
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.json && tsdown",
+    "prepare": "node scripts/prepare.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "contract-test": "node plugin-contract-test.mjs"
