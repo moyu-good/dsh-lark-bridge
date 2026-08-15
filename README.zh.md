@@ -95,16 +95,39 @@ npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge gith
 ```sh
 pnpm install
 pnpm run build    # tsc + tsdown
-pnpm test         # vitest (153 tests)
+pnpm test         # vitest (237 tests)
 node plugin-contract-test.mjs   # 独立契约测试（32/32）
 ```
 
 仓库自包含：仅依赖已发布的 `@deepseek-ai/cordis`、`@deepseek-ai/schemastery` 与 `@larksuite/channel` 编译，从不需要宿主源码检出。
 
+## 🚀 部署与多实例
+
+单个实例：
+
+```sh
+bash run-dsh-web.sh chat          # 启动 chat profile（嘟嘟嘟）
+bash safe-restart.sh              # 安全重启（活跃会话会拒绝，--force 覆盖）
+bash safe-restart.sh --profile chat   # 只重启 chat 实例
+```
+
+多个 profile 可同时运行（彼此完全隔离：各自的 cordis.patch.yml、会话目录、模型路由）——一个跑飞书 app，另一个跑 web 控制台，互不干扰：
+
+```sh
+bash scripts/multi-profile.sh status             # 查看所有实例
+bash scripts/multi-profile.sh start chat web     # 启动多个实例
+bash scripts/multi-profile.sh stop chat          # 安全停止一个（活跃会话会拒绝）
+bash scripts/multi-profile.sh stop chat --force  # 强制停止
+bash scripts/multi-profile.sh restart chat       # 重启一个
+bash scripts/multi-profile.sh logs chat          # 跟踪某个实例的日志
+```
+
+实例日志在 `/home/user/.dsh/logs/<profile>.log`。
+
 ## 📋 已知限制
 
-- 配置在启动时读取一次，改动需要重启
-- 长连接中断期间到达的事件不重放（传输层无游标）
+- 通道级配置（appId/appSecret/requireMention/白名单）由 transport 持有，改动需重启；其余配置编辑 profile 的 `cordis.patch.yml` 后由 dsh 的 Config-only HMR 自动生效（`/config` 可查看当前生效值）
+- 长连接中断期间到达的事件不重放（传输层无游标；出站发送由 replay 队列兜底）
 - 飞书 app 需要把事件订阅方式设为**长连接**（自建应用），webhook 模式收不到事件
 
 ## 📄 许可
