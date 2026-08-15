@@ -141,6 +141,24 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('surfaces subagent, schedule, search, and retry notices', async () => {
+    const harness = await mountChannel()
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const session = harness.agents.created[0]!.agent.session
+    const emit = (type: string, data: unknown) => harness.ctx.emit('session/event', session, { type, data })
+
+    emit('subagent/descriptor', { version: 2, mode: 'one-shot', provider: 'test', label: '爬虫' })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('爬虫'))).toBe(true) })
+    emit('schedule/change', { version: 1, operation: 'create', schedule: { id: 's1', kind: 'every', prompt: '每日简报' } })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('周期任务'))).toBe(true) })
+    emit('web/deepseek-search-llm-request', {})
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('搜索网络'))).toBe(true) })
+    emit('llm/retry', { retryId: 'r1', turn: 1, step: 1, provider: 'p', retry: 1, maxRetries: 3 })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('正在重试'))).toBe(true) })
+    await harness.dispose()
+  })
+
   it('falls back to the host default model selection', async () => {
     const harness = await mountChannel(
       { provider: undefined, model: undefined },
