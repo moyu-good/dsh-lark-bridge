@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/dsh--lark--bridge-0.2.0-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/coverage-153%20tests-green" alt="tests">
+  <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
+  <img src="https://img.shields.io/badge/tests-251-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -8,55 +8,92 @@
 <h1 align="center">🕊️ dsh-lark-bridge</h1>
 
 <p align="center">
-  <b>把 DeepSeek Harness 的编码智能搬进飞书</b><br/>
-  <i>Run a full coding agent inside Feishu/Lark — with native thinking process,
-  approval cards, slash commands, and live reactions.</i>
+  <b>Run a full DeepSeek Harness coding agent inside Feishu / Lark</b><br/>
+  <i>Native thinking process, approval cards, live goal/todo cards, subagent fan-out,
+  bilingual slash panel — no public webhook URL needed.</i>
 </p>
 
 <p align="center">
-  <a href="README.zh.md">中文</a> · <a href="#quick-start">Quick Start</a> · <a href="#features">Features</a> · <a href="#configuration">Configuration</a> · <a href="#development">Development</a>
+  <a href="README.zh.md">中文</a> · <a href="#quick-start">Quick Start</a> · <a href="#features">Features</a> · <a href="#slash-commands">Slash Commands</a> · <a href="#configuration">Configuration</a> · <a href="#architecture">Architecture</a> · <a href="#development">Development</a>
 </p>
 
 ---
 
-## 这是什么？
+## What is this?
 
-`dsh-lark-bridge` 是一个 **飞书/Lark 即时通讯机器人通道**，让 DeepSeek Harness 的编码代理直接在聊天里工作：
+`dsh-lark-bridge` is a **Feishu/Lark IM channel for DeepSeek Harness** — a plugin that makes
+your coding agent work right inside a chat. Each conversation (DM or group) drives its own
+dsh agent with:
 
-- 每条会话（私聊 / 群聊）驱动一个独立的 dsh agent
-- **思考过程实时可见** —— 用飞书原生的"思考中"消息渲染 reasoning，不再黑盒
-- **审批卡片** —— 需要确认的操作变成可点击的卡片（允许一次 / 拒绝）
-- **reaction 反馈** —— 收到 `OK` → 思考 `THINKING` → 完成 `DONE` / 失败 `ERROR`，一眼看清状态
-- 走 WebSocket 长连接，**不需要公网回调地址**
+- **Native thinking process** — model reasoning renders as Feishu's own "thinking" message,
+  tool calls with icons, results as code blocks. No black box.
+- **Interactive approval cards** — operations needing confirmation become clickable
+  cards (Allow once / Deny), with the decider written back.
+- **Live lifecycle reactions** — `OK` → `THINKING` → `DONE` / `ERROR` on every message.
+- **Live goal & todo cards** — goal phase changes and todo snapshots update a card in the
+  chat, so a long-running task is never a silent gap.
+- **WebSocket long connection** — no public callback URL, no reverse proxy.
 
-本质是"嫁接"：飞书只是载体，真正干活的还是 DeepSeek Harness 本体。模型组以 dsh 为基准 —— DeepSeek API 有思考链，飞书就必须显示思考链，功能不减。
+Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 
 ## ✨ Features
 
 | | |
 |---|---|
-| 🧠 **原生思考过程** | `cot` 模式下，模型的 reasoning 渲染为飞书原生"思考中"消息，工具调用带图标、结果以代码块展示；旧客户端可用 `stream` 打字机卡片 |
-| ✅ **Live Reaction** | 每条消息实时反馈：收到 `OK` → 思考 `THINKING` → 完成 `DONE`（失败 `ERROR`），状态互替不堆叠，可配置 |
-| 🗂️ **一会话一 Agent** | `sessionScope` 控制粒度：整个 chat / 话题 thread / 单 sender；会话持久化，重启后恢复 |
-| 📋 **审批卡片** | host 的审批问题渲染为「允许一次 / 拒绝」按钮卡片，点击即决策，卡片回写决策人与结果 |
-| 🔑 **扫码注册** | 首次启动打印二维码，扫码自动创建飞书应用（含事件订阅），凭据持久化 |
-| ⚡ **Slash 面板** | `/stop` 取消当前任务、`/help` 帮助；`syncSlashCommands` 把命令同步到 bot 的 `/` 面板 |
-| 🌐 **Bilingual commands** | Slash panel and `/help` descriptions follow the platform: English on Lark (international), Chinese on Feishu (domestic); `locale` overrides |
-| 🖼️ **图片输入（可选）** | `attachImages` 下载聊天图片进 host 附件库，随模型请求发送 |
-| 🏷️ **Workspace 分组** | 聊天会话自动挂到 host workspace，不流落到 Ungrouped |
-| 🔒 **授权窄化** | `senderAllowlist` / `groupAllowlist` / `approvers` 可在 app 可见范围内进一步收窄 |
-| 🧩 **深度 dsh 适配** | 所有能力走 host 服务契约：`agents` / `agentPresets` / `agentDefaultModel` / `settings` / `workspaceRegistry` / `loader` / `invariants` / `approval`，包自包含，无需 host 源码 |
+| 🧠 **Native thinking process** | `cot` renders reasoning as Feishu's native thinking message; older clients fall back to `stream` typewriter card |
+| ✅ **Live reactions** | `OK` → `THINKING` → `DONE`/`ERROR`, states replace each other, configurable |
+| 🗂️ **One agent per conversation** | `sessionScope`: whole chat / topic thread / single sender; sessions persist across restarts |
+| 📋 **Approval cards** | Host approval questions render as Allow-once / Deny cards; decision + decider written back |
+| 🎯 **Goal cards** | Live goal phase (active/paused/blocked/complete) updates a card; `/goal` works, `autoResumeGoals` re-arms after restarts |
+| ✅ **Todo cards** | `todo_write` snapshots update a live card in the chat |
+| 🧑💻 **Subagent fan-out** | Workflow runs stream as text lines: run start, child open, child end, run end |
+| 📦 **Compaction transparency** | "Compacting…" → summary text + released tokens; prunes report trimmed count |
+| ⏰ **Scheduled reminders** | `schedule_create/list/delete` tools + `/schedules` view (compose `@deepseek-ai/dsh-schedule` yourself; the plugin ships the full listener) |
+| ⚡ **Full slash panel** | `/stop /help /preset /sessions /tools /schedules /audit /config` plus host commands (`goal`, `plan`, `compact`, `feedback`, `permission`) |
+| 🌐 **Bilingual commands** | Panel and `/help` follow the platform: English on international Lark, Chinese on domestic Feishu; `locale` overrides |
+| 🖼️ **Image input (opt-in)** | `attachImages` downloads chat images into the host attachment store |
+| 📎 **File delivery** | Agent `send_file` delivers files with caption into the chat |
+| 🔑 **QR onboarding** | First boot prints a QR code; scanning creates the Feishu app (event subscription included), credentials persist |
+| 🔒 **Authorization narrowing** | `senderAllowlist` / `groupAllowlist` / `approvers` narrow further than the app's visibility scope |
+| 🧩 **Deep dsh adaptation** | Everything goes through host service contracts: `agents`, `agentPresets`, `agentDefaultModel`, `settings`, `workspaceRegistry`, `loader`, `invariants`, `approval`, `goals` — self-contained, no host source needed |
 
 ## 🚀 Quick Start
 
 ```sh
-npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge github:moyu-good/dsh-lark-bridge \
+npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
   && npx @deepseek-ai/dsh web
 ```
 
-控制台打印二维码 → 用飞书扫码创建应用 → 在 Settings → Models 填入 DeepSeek API Key → 私聊 bot 或群里 @ 它。
+The console prints a QR code → scan with Feishu to create the app → fill in your
+DeepSeek API Key in Settings → Models → DM the bot or @ it in a group.
 
-> 已经在用 `dsh`？去掉 `npx @deepseek-ai/` 前缀即可。
+> Already using `dsh`? Drop the `npx @deepseek-ai/` prefix.
+
+The package ships **prebuilt** (`lib/` is committed) — no build step on install.
+A `prepare` hook rebuilds automatically only when the compiled output is missing
+(e.g. a source clone without the committed output).
+
+## 💬 Slash Commands
+
+| Command | Description |
+|---|---|
+| `/stop` | Cancel the running turn |
+| `/help` | Show this listing |
+| `/preset` | View / switch agent preset (standard / code / minimal / cordis) |
+| `/sessions` | List this chat's session history |
+| `/tools` | View / deny / allow tools at runtime |
+| `/schedules` | View this chat's scheduled reminders |
+| `/audit` | Operation audit summary for the session |
+| `/config` | View the bridge's live configuration |
+| `/goal` | View / set the goal (host) |
+| `/plan` | Enter / leave plan mode (host) |
+| `/compact` | Compact older history (host) |
+| `/feedback` | Record session feedback (host) |
+| `/permission` | Switch permission preset (host) |
+
+Panel descriptions are bilingual: **English** when the platform domain is
+`open.larksuite.com` (international Lark), **Chinese** for `open.feishu.cn`
+(domestic Feishu). Set `locale: zh|en` to force one.
 
 ## ⚙️ Configuration
 
@@ -64,51 +101,78 @@ npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge gith
 |---|---|---|
 | `appId`, `appSecret` | first-boot QR registration | Feishu/Lark app credentials |
 | `domain` | Feishu | Open-platform domain; Lark: `https://open.larksuite.com` |
+| `locale` | `auto` | Command language: `auto` (Lark→en, Feishu→zh) / `zh` / `en` |
 | `cwd` | host process cwd | Absolute workspace directory for chat agents |
 | `provider`, `model` | host `agentDefaultModel` | Model routing for chat agents |
 | `preset` | roster default | Agent preset chat agents join |
 | `sessionScope` | `chat` | `chat` / `chat-thread` / `chat-sender` |
 | `output` | `cot` | `cot` (native thinking process) or `stream` (typewriter card) |
 | `showProcess` | `true` | Show reasoning and tool calls |
-| `reactionFeedback` | `true` | Live reaction feedback (OK → THINKING → DONE/ERROR) |
+| `reactionFeedback` | `true` | Live reaction feedback |
 | `hideProcessWhenDone` | `false` | Hide finished process (`cot` only) |
 | `attachImages` | `false` | Pass chat images to the model |
-| `syncSlashCommands` | `true` | Publish commands to bot's `/` panel |
-| `locale` | `auto` | Command description language: `auto` (Lark→en, Feishu→zh) / `zh` / `en` |
-| `denyTools` | `['ask_user_question', 'exit_plan_mode']` | Tools chat agents may not call |
+| `syncSlashCommands` | `true` | Publish commands to bot's `/` panel (reconciles: creates missing, removes stale, refreshes drifted descriptions) |
+| `autoResumeGoals` | `false` | Re-arm an active goal when a session returns after a restart |
+| `approvalReminderMs` | `0` | Nudge the chat when an approval card is unanswered this many ms (0 = off) |
+| `denyTools` | `[]` | Tools chat agents may not call |
 | `requireMention` | `true` | In groups, only respond when @-mentioned |
 | `senderAllowlist` | `[]` | Open ids allowed to DM |
 | `groupAllowlist` | `[]` | Only these `oc_…` group chats when non-empty |
 | `approvers` | `[]` | Open ids allowed to answer approvals |
 
-凭据三层解析，后者优先：bundle patch 配置 → settings 文档插件区 → 首次扫码注册。
+Credentials resolve in three layers, later wins: bundle patch config → settings
+document plugin section → first-boot QR registration.
 
-## 🧭 架构
+## 🧭 Architecture
 
 ```
-Feishu / Lark  ── WebSocket 长连接 ──►  dsh-lark-bridge  ── host 服务契约 ──►  DeepSeek Harness
-   (聊天/审批/图片)                         │                                        │
-                                          ▼                                        ▼
-                                   reaction 状态机                        agents / sessions / tools
-                                   cot / stream 渲染器                     approval / workspace / settings
+Feishu / Lark ── WebSocket 长连接 ──►  dsh-lark-bridge (dsh 进程内的 feishu-channel 插件)
+   (聊天/审批/图片)                        │
+                                          ▼
+                     host 服务契约: agents / sessions / tools / approval /
+                     goal / workspace / settings / commands
+                                          │
+                                          ▼
+                                     DeepSeek Harness 本体
 ```
+
+The bridge runs **inside the dsh process** as the `feishu-channel` plugin — it is
+not a separate server. `npx @deepseek-ai/dsh web` (or `--profile chat`) boots dsh
+with this plugin composed; the plugin opens the WebSocket long connection and
+drives everything from there. Any launcher (shell script, systemd, supervisor)
+can host it; it has no dependency on any other agent framework.
 
 ## 🛠️ Development
 
 ```sh
 pnpm install
-pnpm run build    # tsc + tsdown
-pnpm test         # vitest (153 tests)
-node plugin-contract-test.mjs   # standalone contract tests (32/32)
+pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
+pnpm test         # vitest (251 tests)
+node plugin-contract-test.mjs   # standalone contract tests
 ```
 
-仓库自包含：只依赖发布的 `@deepseek-ai/cordis`、`@deepseek-ai/schemastery`、`@larksuite/channel`，不需要 host 源码。
+The repo is self-contained: only published packages
+(`@deepseek-ai/cordis`, `@deepseek-ai/schemastery`, `@larksuite/channel`) are
+dependencies, no host source needed.
+
+**Packaging notes** (why `lib/` is committed):
+- Git-dependency installs (`github:user/repo`) never ran a build, and without a
+  committed `lib/` the plugin failed at boot with `ERR_MODULE_NOT_FOUND` — fixed
+  by committing the compiled output.
+- The `prepare` hook is a safety net for source clones: it exits immediately
+  when `lib/` exists and only rebuilds when it is genuinely missing.
+- `build` cleans `lib/` first (tsdown itself runs `clean: false` because its
+  entry points live inside the output dir).
 
 ## 📋 Known limitations
 
-- 配置启动时读取一次，修改需重启
-- 长连接断开期间的事件不重放（transport 无 cursor）
-- 飞书应用必须使用**长连接**事件订阅（自建应用）；webhook 模式收不到事件
+- Configuration is read once at startup; changes need a restart
+- Events during a long-connection outage are not replayed (transport has no cursor)
+- The Feishu app must use **long-connection** event subscription (self-built app);
+  webhook mode receives no events
+- `schedule_create/list/delete` tools require composing `@deepseek-ai/dsh-schedule`
+  in your dsh profile (the bridge already listens for `schedule/change` and
+  renders `/schedules`; the tools are the model-side half)
 
 ## 📄 License
 
