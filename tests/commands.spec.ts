@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  AUDIT_COMMAND,
   PRESET_COMMAND,
   PRESET_NAMES,
   runCommandLine,
@@ -8,7 +9,7 @@ import {
   SHIPPED_PRESET_IDS,
   TOOLS_COMMAND,
 } from '../src/commands.ts'
-import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from '../src/host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from '../src/host.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 /** A fake agent whose scoped context carries the preset join. */
@@ -300,5 +301,65 @@ describe('/schedules command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('定时提醒')
+  })
+})
+
+describe('/audit command', () => {
+  const stats = (overrides: Partial<AuditStats> = {}): AuditStats => ({
+    startedAt: 1_700_000_000_000,
+    turns: 5, steps: 12, toolCalls: 30, turnErrors: 1,
+    compactions: 2, retries: 3, subagents: 4, workflows: 1, schedules: 2,
+    ...overrides,
+  })
+
+  it('renders the operation counters', async () => {
+    const agent = fakeAgent()
+    const audits = new Map<string, AuditStats>([[agent.session.id, stats()]])
+    const outcome = await runCommandLine(
+      `/${AUDIT_COMMAND}`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      audits,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('轮次：5')
+    expect(outcome.reply).toContain('工具调用：30')
+    expect(outcome.reply).toContain('出错 1，20%')
+    expect(outcome.reply).toContain('上下文压缩：2')
+    expect(outcome.reply).toContain('子代理：4')
+  })
+
+  it('reports a session with no recorded operations', async () => {
+    const agent = fakeAgent()
+    const outcome = await runCommandLine(
+      `/${AUDIT_COMMAND}`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      new Map([[agent.session.id, stats({ turns: 0, toolCalls: 0 } as Partial<AuditStats>)]]),
+    )
+    expect(outcome.reply).toContain('0%')
+  })
+
+  it('reports when audit is not enabled', async () => {
+    const outcome = await runCommandLine(
+      `/${AUDIT_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('审计')
   })
 })

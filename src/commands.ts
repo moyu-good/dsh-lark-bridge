@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from './host.ts'
 
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
@@ -29,6 +29,9 @@ export const TOOLS_COMMAND = 'tools'
 
 /** List the chat's active schedules (reminders). */
 export const SCHEDULES_COMMAND = 'schedules'
+
+/** Show the session's operation audit summary. */
+export const AUDIT_COMMAND = 'audit'
 
 /** The session id prefix this channel owns. */
 const SESSION_PREFIX = 'feishu-'
@@ -95,6 +98,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
     `\`/${SESSIONS_COMMAND}\` — 查看本聊天的会话历史`,
     `\`/${TOOLS_COMMAND}\` — 查看/禁用/恢复工具`,
     `\`/${SCHEDULES_COMMAND}\` — 查看本聊天的定时提醒`,
+    `\`/${AUDIT_COMMAND}\` — 查看本会话的操作审计`,
     `\`/${HELP_COMMAND}\` — 显示这条帮助`,
   ]
   const hosted = (commands?.list(agent) ?? [])
@@ -118,6 +122,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
  * @param chatId - the conversation facet key this chat's sessions belong to.
  * @param deniedTools - the live denied-tool set (for `/tools`).
  * @param schedules - live schedule registry by session id (for `/schedules`).
+ * @param audits - live audit counters by session id (for `/audit`).
  * @returns what to report to the chat.
  */
 export async function runCommandLine(
@@ -130,6 +135,7 @@ export async function runCommandLine(
   chatId: string | undefined = undefined,
   deniedTools: ReadonlySet<string> | undefined = undefined,
   schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined = undefined,
+  audits: ReadonlyMap<string, AuditStats> | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -148,6 +154,9 @@ export async function runCommandLine(
   }
   if (name === SCHEDULES_COMMAND) {
     return runSchedulesCommand(agent, schedules)
+  }
+  if (name === AUDIT_COMMAND) {
+    return runAuditCommand(agent, audits)
   }
   if (name === HELP_COMMAND) {
     return { reply: helpText(commands, agent), resolved: true }
@@ -205,6 +214,38 @@ async function runSessionsCommand(
     return `· ${when}${mark}${note}`
   })
   return { reply: `**会话历史**（${owned.length} 个）\n${rows.join('\n')}\n\n发消息即继续最近的会话；\`/new\` 开新会话。`, resolved: true }
+}
+
+/**
+ * Handle `/audit`: show the session's operation counters.
+ * @param agent - the chat's agent (its session id keys the counters).
+ * @param audits - live audit counters by session id.
+ * @returns the reply for the chat.
+ */
+function runAuditCommand(
+  agent: HostAgent,
+  audits: ReadonlyMap<string, AuditStats> | undefined,
+): CommandOutcome {
+  if (audits === undefined) {
+    return { reply: `⚠️ 本部署没有启用审计统计，\`/${AUDIT_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const stats = audits.get(agent.session.id)
+  if (stats === undefined) {
+    return { reply: '**操作审计**\n本会话尚无操作记录（进程内统计从桥启动后开始）。', resolved: true }
+  }
+  const since = new Date(stats.startedAt).toLocaleString('zh-CN', { hour12: false })
+  const errorRate = stats.turns > 0 ? `${Math.round((stats.turnErrors / stats.turns) * 100)}%` : '0%'
+  const rows = [
+    `· 轮次：${stats.turns}（出错 ${stats.turnErrors}，${errorRate}）`,
+    `· 步骤：${stats.steps}`,
+    `· 工具调用：${stats.toolCalls}`,
+    `· 上下文压缩：${stats.compactions}`,
+    `· 模型重试：${stats.retries}`,
+    `· 子代理：${stats.subagents}`,
+    `· 工作流：${stats.workflows}`,
+    `· 定时提醒：${stats.schedules}`,
+  ]
+  return { reply: `**操作审计**（自 ${since} 起）\n${rows.join('\n')}`, resolved: true }
 }
 
 /**
