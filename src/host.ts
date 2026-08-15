@@ -358,6 +358,46 @@ export interface CompactionEndData {
   readonly error?: string
 }
 
+/** The `subagent/descriptor` payload: one session-backed subagent child's durable identity. */
+export interface SubagentDescriptorData {
+  readonly version: number
+  readonly mode: 'one-shot' | 'continuable'
+  readonly provider: string
+  readonly label?: string
+  readonly agentProvider?: string
+  readonly agentModel?: string
+}
+
+/** The `schedule/change` payload: one durable schedule mutation. */
+export interface ScheduleChangeData {
+  readonly version: number
+  readonly operation: 'create' | 'delete' | 'dispatch'
+  readonly schedule?: {
+    readonly id: string
+    readonly kind: 'after' | 'at' | 'every'
+    readonly prompt: string
+    readonly everySeconds?: number
+  }
+  readonly id?: string
+}
+
+/** The `web/deepseek-search-llm-request` payload: one DeepSeek search request was made. */
+export interface WebSearchRequestData {
+  readonly request?: unknown
+}
+
+/** The `llm/retry` payload: one retry of a failed model call is scheduled. */
+export interface LlmRetryData {
+  readonly retryId: string
+  readonly turn: number
+  readonly step: number
+  readonly provider: string
+  readonly retry: number
+  readonly maxRetries?: number
+  readonly delayMs?: number
+  readonly failure?: { readonly name?: string; readonly message?: string }
+}
+
 /** The `assistant/chunk` payload fields this plugin streams. */
 export interface AssistantChunkData {
   readonly turn: number
@@ -499,6 +539,34 @@ export function isCompactionEndEvent(
   event: HostSessionEvent,
 ): event is HostSessionEvent & { readonly data: CompactionEndData } {
   return event.type === 'compaction/end'
+}
+
+/** Narrow a session event to one subagent descriptor. */
+export function isSubagentDescriptorEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: SubagentDescriptorData } {
+  return event.type === 'subagent/descriptor'
+}
+
+/** Narrow a session event to one schedule mutation. */
+export function isScheduleChangeEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: ScheduleChangeData } {
+  return event.type === 'schedule/change'
+}
+
+/** Narrow a session event to one DeepSeek search request. */
+export function isWebSearchRequestEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: WebSearchRequestData } {
+  return event.type === 'web/deepseek-search-llm-request'
+}
+
+/** Narrow a session event to one scheduled model-call retry. */
+export function isLlmRetryEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: LlmRetryData } {
+  return event.type === 'llm/retry'
 }
 
 /**

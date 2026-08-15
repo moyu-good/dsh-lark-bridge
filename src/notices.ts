@@ -1,0 +1,68 @@
+/**
+ * Low-frequency session events rendered as one-off chat lines.
+ *
+ * The remaining events dsh logs that a chat user benefits from hearing are
+ * small and one-shot: a subagent child opening, a scheduled task being
+ * created or deleted, a DeepSeek search firing, and a model-call retry. Each
+ * maps to a single short line — no card, no state — so the chat stays a
+ * readable stream. `session/title` is deliberately NOT rendered: the Web UI
+ * uses it for its session list, and a messaging chat has no list surface.
+ * @module dsh-lark-bridge/notices
+ */
+
+/** The `subagent/descriptor` payload fields this module renders. */
+export interface SubagentNotice {
+  readonly mode: 'one-shot' | 'continuable'
+  readonly label?: string
+}
+
+/** A subagent child opening line. */
+export function subagentLine(descriptor: SubagentNotice): string {
+  const kind = descriptor.mode === 'continuable' ? '可续子任务' : '子任务'
+  const label = descriptor.label === undefined ? '' : `「${descriptor.label}」`
+  return `🧑💻 ${kind}${label} 已启动`
+}
+
+/** The `schedule/change` payload fields this module renders. */
+export interface ScheduleNotice {
+  readonly operation: 'create' | 'delete' | 'dispatch'
+  readonly kind?: 'after' | 'at' | 'every'
+  readonly prompt?: string
+}
+
+/** A human interval label for one schedule kind. */
+function scheduleKindLabel(kind: 'after' | 'at' | 'every' | undefined): string {
+  switch (kind) {
+    case 'after': return '延时'
+    case 'at': return '定点'
+    case 'every': return '周期'
+    default: return ''
+  }
+}
+
+/** A schedule mutation line. `dispatch` stays silent — it fires on schedule and is noise. */
+export function scheduleLine(notice: ScheduleNotice): string | undefined {
+  switch (notice.operation) {
+    case 'create': {
+      const kind = scheduleKindLabel(notice.kind)
+      const prompt = notice.prompt === undefined ? '' : `：${notice.prompt.slice(0, 40)}`
+      return `⏰ 已创建${kind}任务${prompt}`
+    }
+    case 'delete':
+      return '⏰ 定时任务已删除'
+    case 'dispatch':
+      return undefined
+  }
+}
+
+/** A DeepSeek search firing line. */
+export function webSearchLine(): string {
+  return '🔍 正在搜索网络…'
+}
+
+/** A model-call retry line; only the first retry of a failure is announced. */
+export function retryLine(retry: { readonly retry: number; readonly maxRetries?: number }): string | undefined {
+  if (retry.retry !== 1) return undefined
+  const cap = retry.maxRetries === undefined ? '' : `（最多 ${retry.maxRetries} 次）`
+  return `⚠️ 模型调用失败，正在重试${cap}…`
+}

@@ -37,7 +37,7 @@ import type {
   HostWorkspace,
   HostWorkspaceRegistry,
 } from './host.ts'
-import { isCompactionEndEvent, isCompactionStartEvent, isGoalChangeEvent, isStepStartEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
+import { isCompactionEndEvent, isCompactionStartEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -63,6 +63,12 @@ import {
   runEndLine,
   runStartLine,
 } from './workflow.ts'
+import {
+  retryLine,
+  scheduleLine,
+  subagentLine,
+  webSearchLine,
+} from './notices.ts'
 import { onboardingMessage } from './first-contact.ts'
 
 /**
@@ -970,6 +976,25 @@ export function installBridge(
       if (event.data.error !== undefined) {
         void port.send(binding.chatId, { markdown: `⚠️ 上下文压缩失败：${event.data.error}` }).catch(reportSendFailure)
       }
+    }
+    // One-shot notices for the remaining low-frequency events. `dispatch`
+    // stays silent (a schedule firing is noise), retry announces once.
+    if (isSubagentDescriptorEvent(event)) {
+      void port.send(binding.chatId, { markdown: subagentLine(event.data) }).catch(reportSendFailure)
+    }
+    if (isScheduleChangeEvent(event)) {
+      const line = scheduleLine({
+        operation: event.data.operation,
+        ...event.data.schedule === undefined ? {} : { kind: event.data.schedule.kind, prompt: event.data.schedule.prompt },
+      })
+      if (line !== undefined) void port.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
+    }
+    if (isWebSearchRequestEvent(event)) {
+      void port.send(binding.chatId, { markdown: webSearchLine() }).catch(reportSendFailure)
+    }
+    if (isLlmRetryEvent(event)) {
+      const line = retryLine(event.data)
+      if (line !== undefined) void port.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
     }
     binding.renderer.handle(event)
   })
