@@ -159,6 +159,42 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('re-arms an interrupted goal when autoResumeGoals is on', async () => {
+    const resumed: { id: string; revision: number }[] = []
+    const goals = {
+      get: () => ({
+        goal: { id: 'goal-1', revision: 2, phase: 'active' },
+        activation: 'disarmed',
+      }),
+      resume: async (_agent: unknown, ref: { id: string; revision: number }) => { resumed.push(ref) },
+    }
+    const harness = await mountChannel({ autoResumeGoals: true }, {})
+    harness.ctx.provide('goals', goals)
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    await vi.waitFor(() => { expect(resumed).toHaveLength(1) })
+    expect(resumed[0]).toEqual({ id: 'goal-1', revision: 2 })
+    await harness.dispose()
+  })
+
+  it('leaves a goal disarmed when autoResumeGoals is off', async () => {
+    const resumed: { id: string; revision: number }[] = []
+    const goals = {
+      get: () => ({
+        goal: { id: 'goal-1', revision: 2, phase: 'active' },
+        activation: 'disarmed',
+      }),
+      resume: async (_agent: unknown, ref: { id: string; revision: number }) => { resumed.push(ref) },
+    }
+    const harness = await mountChannel({ autoResumeGoals: false }, {})
+    harness.ctx.provide('goals', goals)
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1) })
+    expect(resumed).toHaveLength(0)
+    await harness.dispose()
+  })
+
   it('falls back to the host default model selection', async () => {
     const harness = await mountChannel(
       { provider: undefined, model: undefined },

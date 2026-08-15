@@ -786,6 +786,27 @@ export function installBridge(
         ctx.get('attachments') as HostAttachments | undefined,
         config.attachImages,
       )
+      // Auto-resume: after a bridge restart an interrupted goal stays durable
+      // but its continuation authority resets to disarmed (dsh design). With
+      // autoResumeGoals the bridge re-arms an active goal when the chat speaks
+      // again, so a deploy no longer silently stops a running task. Best-effort
+      // and fire-once per live agent: a later explicit /goal pause still wins.
+      if (config.autoResumeGoals) {
+        const agent = opened.handle.agent
+        try {
+          const goalsHost = (ctx as unknown as { goals?: { get(agent: unknown): { readonly goal?: { readonly id: string; readonly revision: number; readonly phase: string }; readonly activation?: string } | undefined } }).goals
+          const view = goalsHost?.get(agent)
+          if (view !== undefined && view.goal?.phase === 'active' && view.activation === 'disarmed') {
+            const ref = { id: view.goal.id, revision: view.goal.revision }
+            const goalsRemote = (ctx as unknown as { goals?: { resume(agent: unknown, ref: { id: string; revision: number }): unknown } }).goals
+            await goalsRemote?.resume(agent, ref)
+            notify(`dsh-lark-bridge: auto-resumed goal "${ref.id}" for session ${agent.session.id}`)
+          }
+        } catch (error) {
+          notify(`dsh-lark-bridge: auto-resume skipped for session ${opened.handle.agent.session.id}: ${String(error)}`)
+          ctx.logger.warn('goal auto-resume skipped: %s', error)
+        }
+      }
       opened.handle.agent.followup(chatUserMessage(msg, images))
     } catch (error) {
       notify(`dsh-lark-bridge: agent creation failed for chat ${msg.chatId}: ${String(error)}`)

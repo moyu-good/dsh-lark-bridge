@@ -132,6 +132,16 @@ export interface Config {
    * should need a named human — it grants more power than the sandbox allows.
    */
   approvers?: string[]
+  /**
+   * Automatically resume an active goal when its session comes back after a
+   * bridge restart. dsh's goal phase is durable (survives restarts) but the
+   * continuation authority (activation) is process-local and resets to
+   * disarmed — a human re-arms it with /goal resume. With this on, the bridge
+   * re-arms an active goal itself when the chat speaks to the session again,
+   * so a task interrupted by a deploy keeps running instead of silently
+   * stopping. Off keeps dsh's default (goal pauses until asked to resume).
+   */
+  autoResumeGoals?: boolean
 }
 
 /** Configuration after defaults have been resolved; credentials may still be pending onboarding. */
@@ -156,6 +166,7 @@ export interface ResolvedConfig {
   senderAllowlist: string[]
   groupAllowlist: string[]
   approvers: string[]
+  autoResumeGoals: boolean
 }
 
 /** Loader-visible configuration schema and defaults. */
@@ -180,6 +191,7 @@ export const Config: z<Config> = z.object({
   senderAllowlist: z.array(String),
   groupAllowlist: z.array(String),
   approvers: z.array(String),
+  autoResumeGoals: z.boolean().default(false),
 })
 
 /**
@@ -203,5 +215,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     senderAllowlist: config.senderAllowlist ?? [],
     groupAllowlist: config.groupAllowlist ?? [],
     approvers: config.approvers ?? [],
+    autoResumeGoals: config.autoResumeGoals ?? false,
   }
 }
