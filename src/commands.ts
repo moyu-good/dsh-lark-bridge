@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { HostAgent, HostAgentPresets, HostCommands } from './host.ts'
+import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence } from './host.ts'
 
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
@@ -20,6 +20,12 @@ export const HELP_COMMAND = 'help'
 
 /** Switch the agent's preset (standard / code / minimal / cordis). */
 export const PRESET_COMMAND = 'preset'
+
+/** List this chat's stored sessions. */
+export const SESSIONS_COMMAND = 'sessions'
+
+/** The session id prefix this channel owns. */
+const SESSION_PREFIX = 'feishu-'
 
 /** The four shipped preset ids, for the listing and for argument validation. */
 export const SHIPPED_PRESET_IDS = ['standard', 'code', 'minimal', 'cordis'] as const
@@ -80,6 +86,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
   const own = [
     `\`/${STOP_COMMAND}\` — 停止当前任务`,
     `\`/${PRESET_COMMAND}\` — 查看/切换模式（标准/PTC/极简/创造）`,
+    `\`/${SESSIONS_COMMAND}\` — 查看本聊天的会话历史`,
     `\`/${HELP_COMMAND}\` — 显示这条帮助`,
   ]
   const hosted = (commands?.list(agent) ?? [])
@@ -99,6 +106,8 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
  * @param commands - the host command runtime, when composed.
  * @param signal - cancellation for the host execution.
  * @param presets - the agent-preset roster, when composed (for `/preset`).
+ * @param persistence - the session store, when composed (for `/sessions`).
+ * @param chatId - the conversation facet key this chat's sessions belong to.
  * @returns what to report to the chat.
  */
 export async function runCommandLine(
@@ -107,6 +116,8 @@ export async function runCommandLine(
   commands: HostCommands | undefined,
   signal: AbortSignal,
   presets: HostAgentPresets | undefined = undefined,
+  persistence: HostSessionPersistence | undefined = undefined,
+  chatId: string | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -116,6 +127,9 @@ export async function runCommandLine(
   }
   if (name === PRESET_COMMAND) {
     return runPresetCommand(trimmed, agent, presets)
+  }
+  if (name === SESSIONS_COMMAND) {
+    return runSessionsCommand(agent, persistence, chatId)
   }
   if (name === HELP_COMMAND) {
     return { reply: helpText(commands, agent), resolved: true }
@@ -136,6 +150,43 @@ export async function runCommandLine(
 /** The agent's scoped Cordis context, when the host agent exposes one. */
 function agentScope(agent: HostAgent): Context | undefined {
   return (agent as { ctx?: Context }).ctx
+}
+
+/**
+ * Handle `/sessions`: list the stored sessions that belong to this chat.
+ * @param agent - the chat's agent (marks the current session).
+ * @param persistence - the session store, when composed.
+ * @param chatId - the conversation facet key; undefined lists nothing.
+ * @returns the reply for the chat.
+ */
+async function runSessionsCommand(
+  agent: HostAgent,
+  persistence: HostSessionPersistence | undefined,
+  chatId: string | undefined,
+): Promise<CommandOutcome> {
+  if (persistence === undefined) {
+    return { reply: `⚠️ 本部署没有组合会话存储，\`/${SESSIONS_COMMAND}\` 不可用。`, resolved: false }
+  }
+  if (chatId === undefined) {
+    return { reply: '⚠️ 无法确定当前聊天。', resolved: false }
+  }
+  const headers = await persistence.list()
+  // A session belongs to this chat when its id is `feishu-<chatId>` (whole
+  // chat scope) or starts with `feishu-<chatId>:` (thread or sender facet).
+  const owned = headers
+    .filter(header => header.id.startsWith(`${SESSION_PREFIX}${chatId}`))
+    .sort((a, b) => b.createdAt - a.createdAt)
+  if (owned.length === 0) {
+    return { reply: '**会话历史**\n还没有本聊天的已保存会话。', resolved: true }
+  }
+  const rows = owned.map(header => {
+    const when = new Date(header.createdAt).toLocaleString('zh-CN', { hour12: false })
+    const mark = header.id === agent.session.id ? ' ← 当前' : ''
+    const facet = header.id.slice(`${SESSION_PREFIX}${chatId}`.length).replace(/^:/, '')
+    const note = facet === '' ? '' : `（${facet === header.id ? '其他' : facet}）`
+    return `· ${when}${mark}${note}`
+  })
+  return { reply: `**会话历史**（${owned.length} 个）\n${rows.join('\n')}\n\n发消息即继续最近的会话；\`/new\` 开新会话。`, resolved: true }
 }
 
 /**

@@ -3,9 +3,10 @@ import {
   PRESET_COMMAND,
   PRESET_NAMES,
   runCommandLine,
+  SESSIONS_COMMAND,
   SHIPPED_PRESET_IDS,
 } from '../src/commands.ts'
-import type { HostAgent, HostAgentPresets, HostCommands } from '../src/host.ts'
+import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence } from '../src/host.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 /** A fake agent whose scoped context carries the preset join. */
@@ -120,5 +121,62 @@ describe('/preset command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('agent-presets')
+  })
+})
+
+describe('/sessions command', () => {
+  /** A fake store with the given session headers. */
+  function fakeStore(headers: { id: string; createdAt: number }[]): HostSessionPersistence {
+    return { list: async () => headers }
+  }
+
+  it('lists this chat sessions, newest first, marking the current one', async () => {
+    const store = fakeStore([
+      { id: 'feishu-oc_chat_1', createdAt: 1_700_000_000_000 },
+      { id: 'feishu-oc_chat_2', createdAt: 1_700_000_500_000 },
+      { id: 'feishu-oc_chat_1:ou_sender', createdAt: 1_700_000_400_000 },
+    ])
+    const agent = { ...fakeAgent(), session: { id: 'feishu-oc_chat_1' } } as unknown as HostAgent
+    const outcome = await runCommandLine(
+      `/${SESSIONS_COMMAND}`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      store,
+      'oc_chat_1',
+    )
+    expect(outcome.resolved).toBe(true)
+    // The whole-chat session is current; the other chat's session is excluded.
+    expect(outcome.reply).toContain('2 个')
+    expect(outcome.reply).toContain('← 当前')
+    expect(outcome.reply).not.toContain('oc_chat_2')
+  })
+
+  it('reports an empty history', async () => {
+    const outcome = await runCommandLine(
+      `/${SESSIONS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      fakeStore([]),
+      'oc_chat_1',
+    )
+    expect(outcome.reply).toContain('还没有')
+  })
+
+  it('reports when the session store is absent', async () => {
+    const outcome = await runCommandLine(
+      `/${SESSIONS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      'oc_chat_1',
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('会话存储')
   })
 })

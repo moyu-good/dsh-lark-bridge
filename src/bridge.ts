@@ -29,6 +29,7 @@ import type {
   HostDefaultModel,
   HostLoader,
   HostSessionEvent,
+  HostSessionPersistence,
   HostCommands,
   HostContentBlock,
   HostSystemPrompt,
@@ -813,6 +814,8 @@ export function installBridge(
           ctx.get('commands') as HostCommands | undefined,
           commandSignal(),
           ctx.get('agentPresets') as HostAgentPresets | undefined,
+          ctx.get('sessionPersistence') as HostSessionPersistence | undefined,
+          msg.chatId,
         )
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
