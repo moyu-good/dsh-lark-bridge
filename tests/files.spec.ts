@@ -33,12 +33,14 @@ describe('send_file tool definition', () => {
       deliverBySession: async () => { throw new Error('unused') },
     }) as {
       name: string
-      schema: Record<string, { type?: string; required?: true }>
+      parameters: { type: string; properties: { path: { type?: string }; caption?: { type?: string } }; required: string[] }
       output: { schema: object }
     }
     expect(tool.name).toBe(SEND_FILE_TOOL_NAME)
-    expect(tool.schema.path.type).toBe('string')
-    expect(tool.schema.path.required).toBe(true)
+    // dsh projects `parameters` (a JSON Schema object) onto the model.
+    expect(tool.parameters.type).toBe('object')
+    expect(tool.parameters.properties.path.type).toBe('string')
+    expect(tool.parameters.required).toContain('path')
   })
 
   it('delivers through the capability and reports the file name', async () => {
@@ -70,7 +72,8 @@ describe('send_file tool definition', () => {
   })
 
   it('renders a success result for the model', () => {
-    expect(renderSendFileResult({ ok: true, fileName: 'a.html' })[0]).toMatchObject({
+    // dsh calls render(args, value); the canonical value is the second arg.
+    expect(renderSendFileResult({ path: 'x' }, { ok: true, fileName: 'a.html' })[0]).toMatchObject({
       type: 'text',
       text: expect.stringContaining('a.html'),
     })

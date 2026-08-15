@@ -46,11 +46,12 @@ export interface SendFileResult {
 }
 
 /** Model-facing content renderer for the tool's canonical result. */
-export function renderSendFileResult(result: SendFileResult): object[] {
-  if (result.ok && result.fileName !== undefined) {
-    return [{ type: 'text', text: `已发送文件 \`${result.fileName}\` 到当前聊天。` }]
+export function renderSendFileResult(args: unknown, value: SendFileResult): object[] {
+  void args
+  if (value.ok && value.fileName !== undefined) {
+    return [{ type: 'text', text: `已发送文件 \`${value.fileName}\` 到当前聊天。` }]
   }
-  return [{ type: 'text', text: `文件发送失败：${result.error ?? '未知错误'}` }]
+  return [{ type: 'text', text: `文件发送失败：${value.error ?? '未知错误'}` }]
 }
 
 /** Presentation title for one pending call, for the call log/card header. */
@@ -75,9 +76,15 @@ export function createSendFileTool(capability: SendFileCapability): object {
       + 'spreadsheets, images, logs. The human can open or download the file '
       + 'directly from the chat. Pass an absolute path, or a path relative to '
       + 'the workspace root.',
-    schema: {
-      path: { type: 'string', required: true, description: 'Absolute or workspace-relative path of the file to send' },
-      caption: { type: 'string', description: 'Optional short caption delivered with the file' },
+    // `parameters` (not `schema`) is the ToolSchema field dsh projects onto
+    // the model. A JSON Schema object, so snapshotJsonValue keeps it lossless.
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute or workspace-relative path of the file to send' },
+        caption: { type: 'string', description: 'Optional short caption delivered with the file' },
+      },
+      required: ['path'],
     },
     output: {
       schema: {
