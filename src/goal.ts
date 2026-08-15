@@ -46,12 +46,37 @@ function boundLine(text: string): string {
   return text.length <= 160 ? text : `${text.slice(0, 159)}…`
 }
 
+/** Marker distinguishing this plugin's goal buttons from other card actions. */
+export const GOAL_ACTION = 'dsh-lark-bridge/goal'
+
+/** Card-button payload carried by a goal control decision. */
+export interface GoalActionValue {
+  readonly kind: typeof GOAL_ACTION
+  readonly sessionId: string
+  readonly operation: 'pause' | 'resume' | 'clear'
+}
+
+/**
+ * Narrow an arbitrary card-action value to this plugin's goal payload.
+ * @param value - raw button value from a card action event.
+ * @returns the typed payload, or undefined for foreign card actions.
+ */
+export function goalActionValue(value: unknown): GoalActionValue | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  if (record.kind !== GOAL_ACTION) return undefined
+  if (typeof record.sessionId !== 'string' || record.sessionId === '') return undefined
+  if (record.operation !== 'pause' && record.operation !== 'resume' && record.operation !== 'clear') return undefined
+  return { kind: GOAL_ACTION, sessionId: record.sessionId, operation: record.operation }
+}
+
 /**
  * Build the goal card for one snapshot.
  * @param goal - the current goal snapshot.
+ * @param sessionId - the session the buttons drive, carried in their values.
  * @returns a Feishu card object for `send({ card })` / `updateCard`.
  */
-function goalCard(goal: HostGoal): object {
+function goalCard(goal: HostGoal, sessionId: string): object {
   const meta = PHASE_META[goal.phase]
   const lines: string[] = [`**目标** ${boundLine(goal.objective)}`, `${meta.emoji} ${meta.label}`]
   if (goal.phase === 'blocked' && goal.blockedReason?.message !== undefined && goal.blockedReason.message !== '') {
@@ -60,11 +85,27 @@ function goalCard(goal: HostGoal): object {
   if (goal.maxGoalRounds !== undefined) {
     lines.push(`轮次上限：${goal.maxGoalRounds}`)
   }
+  const button = (operation: 'pause' | 'resume' | 'clear', text: string, type: string): object => ({
+    tag: 'button',
+    text: { tag: 'plain_text', content: text },
+    type,
+    value: { kind: GOAL_ACTION, sessionId, operation },
+  })
+  const actions: object[] = []
+  if (goal.phase === 'active') {
+    actions.push(button('pause', '⏸️ 暂停', 'default'))
+  } else if (goal.phase === 'paused' || goal.phase === 'blocked') {
+    actions.push(button('resume', '▶️ 继续', 'primary'))
+  }
+  if (goal.phase !== 'complete') {
+    actions.push(button('clear', '⏹ 清除', 'danger'))
+  }
   return {
     config: { wide_screen_mode: true },
     header: { template: 'turquoise', title: { tag: 'plain_text', content: `${meta.emoji} 目标 ${meta.label}` } },
     elements: [
       { tag: 'div', text: { tag: 'lark_md', content: lines.join('\n') } },
+      ...actions.length === 0 ? [] : [{ tag: 'action', actions }],
     ],
   }
 }
@@ -93,7 +134,7 @@ export function createGoalRenderer(
 
   const sendOrUpdate = async (sessionId: string, chatId: string, goal: HostGoal): Promise<void> => {
     const existing = cards.get(sessionId)
-    const card = goalCard(goal)
+    const card = goalCard(goal, sessionId)
     if (existing === undefined || existing.chatId !== chatId) {
       try {
         const sent = await port.send(chatId, { card })

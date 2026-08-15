@@ -57,6 +57,7 @@ import { createQuestionProvider } from './questions.ts'
 import type { HostUserQuestions } from './questions.ts'
 import { createTodoRenderer } from './todo.ts'
 import { createGoalRenderer } from './goal.ts'
+import { goalActionValue, type GoalActionValue } from './goal.ts'
 import {
   agentEndLine,
   agentStartLine,
@@ -892,9 +893,69 @@ export function installBridge(
     })
   }
 
+  /**
+   * Drive a goal card's buttons: pause / resume / clear. The buttons carry the
+   * session id, so a click from elsewhere is refused before touching the goal.
+   */
+  const handleGoalCardAction = (evt: CardActionEvent, value: GoalActionValue): CardActionResponse => {
+    const binding = bySession.get(value.sessionId)
+    if (binding === undefined || binding.chatId !== evt.chatId) {
+      return { toast: { type: 'info', content: '该目标卡已失效' } }
+    }
+    // Same authority as an approval click: whoever may drive this chat may
+    // control its goal; anyone else gets a refusal, not a silent no-op.
+    const clickRefusal = refuseApprovalClick(
+      authorization,
+      { operatorId: evt.operator.openId, chatId: evt.chatId },
+      { chatId: binding.chatId, chatType: binding.chatType },
+    )
+    if (clickRefusal !== undefined) {
+      notify(`dsh-lark-bridge: rejected a goal click: ${clickRefusal}`)
+      return { toast: { type: 'error', content: '你无权操作此目标' } }
+    }
+    const agent = agents.get(value.sessionId)
+    if (agent === undefined) {
+      return { toast: { type: 'info', content: '该会话当前不在线' } }
+    }
+    const goals = (ctx as unknown as { goals?: {
+      get(agent: unknown): { readonly goal?: { readonly id: string; readonly revision: number; readonly phase: string } } | undefined
+      pause(agent: unknown, ref: { id: string; revision: number }): unknown
+      resume(agent: unknown, ref: { id: string; revision: number }): unknown
+      clear(agent: unknown, ref: { id: string; revision: number }): unknown
+    } }).goals
+    if (goals === undefined) {
+      return { toast: { type: 'error', content: '目标服务不可用' } }
+    }
+    const view = goals.get(agent)
+    if (view?.goal === undefined) {
+      return { toast: { type: 'info', content: '当前没有目标' } }
+    }
+    const ref = { id: view.goal.id, revision: view.goal.revision }
+    try {
+      const labels: Record<GoalActionValue['operation'], string> = {
+        pause: '已暂停',
+        resume: '已继续',
+        clear: '已清除',
+      }
+      if (value.operation === 'pause') goals.pause(agent, ref)
+      else if (value.operation === 'resume') goals.resume(agent, ref)
+      else goals.clear(agent, ref)
+      notify(`dsh-lark-bridge: goal ${value.operation} for session ${value.sessionId}`)
+      return { toast: { type: 'success', content: labels[value.operation] } }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      notify(`dsh-lark-bridge: goal ${value.operation} failed for session ${value.sessionId}: ${detail}`)
+      return { toast: { type: 'error', content: `操作失败：${detail}` } }
+    }
+  }
+
   const handleCardAction = (evt: CardActionEvent): CardActionResponse | undefined => {
     const questionResponse = questions.handleCardAction(evt)
     if (questionResponse !== undefined) return questionResponse
+    const goalValue = goalActionValue(evt.action.value)
+    if (goalValue !== undefined) {
+      return handleGoalCardAction(evt, goalValue)
+    }
     const value = approvalActionValue(evt.action.value)
     if (value === undefined) return undefined
     const pending = pendingApprovals.get(value.id)

@@ -195,6 +195,64 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('drives a goal card button through the goals service', async () => {
+    const calls: string[] = []
+    const goals = {
+      get: () => ({ goal: { id: 'goal-1', revision: 3, phase: 'active' } }),
+      pause: () => { calls.push('pause') },
+      resume: () => { calls.push('resume') },
+      clear: () => { calls.push('clear') },
+    }
+    const harness = await mountChannel()
+    harness.ctx.provide('goals', goals)
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const session = harness.agents.created[0]!.agent.session
+    harness.ctx.emit('session/event', session, {
+      type: 'goal/change',
+      data: { operation: 'create', goal: { id: 'goal-1', revision: 3, objective: '写论文', phase: 'active' } },
+    })
+    // The goal card appears with buttons; find the pause button and click it.
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'card' in m.input)).toBe(true) })
+    const card = harness.fake.sent.find(m => 'card' in m.input)!.input as { card: { elements?: { tag?: string; actions?: { value?: object }[] }[] } }
+    const actions = card.card.elements?.find(e => e.tag === 'action')?.actions ?? []
+    expect(actions.length).toBeGreaterThan(0)
+    const pause = actions.find(a => (a.value as { operation?: string }).operation === 'pause')
+    expect(pause).toBeDefined()
+    const response = await harness.fake.emitCardAction(clickAction(pause!.value))
+    expect(response).toEqual({ toast: { type: 'success', content: '已暂停' } })
+    expect(calls).toEqual(['pause'])
+    await harness.dispose()
+  })
+
+  it('refuses a goal card click from an unauthorized operator', async () => {
+    const calls: string[] = []
+    const goals = {
+      get: () => ({ goal: { id: 'goal-1', revision: 3, phase: 'active' } }),
+      pause: () => { calls.push('pause') },
+      resume: () => { calls.push('resume') },
+      clear: () => { calls.push('clear') },
+    }
+    const harness = await mountChannel({ senderAllowlist: [SENDER_ID] })
+    harness.ctx.provide('goals', goals)
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const session = harness.agents.created[0]!.agent.session
+    harness.ctx.emit('session/event', session, {
+      type: 'goal/change',
+      data: { operation: 'create', goal: { id: 'goal-1', revision: 3, objective: '写论文', phase: 'active' } },
+    })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'card' in m.input)).toBe(true) })
+    const card = harness.fake.sent.find(m => 'card' in m.input)!.input as { card: { elements?: { tag?: string; actions?: { value?: object }[] }[] } }
+    const actions = card.card.elements?.find(e => e.tag === 'action')?.actions ?? []
+    const pause = actions.find(a => (a.value as { operation?: string }).operation === 'pause')
+    // An operator who is not allowed to drive this chat gets a refusal.
+    const response = await harness.fake.emitCardAction(clickAction(pause!.value, { openId: 'ou_stranger' }))
+    expect(response).toEqual({ toast: { type: 'error', content: '你无权操作此目标' } })
+    expect(calls).toEqual([])
+    await harness.dispose()
+  })
+
   it('falls back to the host default model selection', async () => {
     const harness = await mountChannel(
       { provider: undefined, model: undefined },
