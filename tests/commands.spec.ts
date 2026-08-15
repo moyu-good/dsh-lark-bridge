@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   AUDIT_COMMAND,
+  CONFIG_COMMAND,
   PRESET_COMMAND,
   PRESET_NAMES,
   runCommandLine,
@@ -10,6 +11,7 @@ import {
   TOOLS_COMMAND,
 } from '../src/commands.ts'
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from '../src/host.ts'
+import type { ResolvedConfig } from '../src/config.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 /** A fake agent whose scoped context carries the preset join. */
@@ -361,5 +363,63 @@ describe('/audit command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('审计')
+  })
+})
+
+describe('/config command', () => {
+  const config = (overrides: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
+    appId: 'cli_secret',
+    appSecret: 'top-secret',
+    sessionScope: 'chat',
+    output: 'cot',
+    showProcess: true,
+    attachImages: false,
+    hideProcessWhenDone: false,
+    syncSlashCommands: true,
+    onboarding: true,
+    denyTools: ['web_search'],
+    requireMention: true,
+    reactionFeedback: true,
+    senderAllowlist: [],
+    groupAllowlist: [],
+    approvers: [],
+    autoResumeGoals: true,
+    approvalReminderMs: 120_000,
+    ...overrides,
+  })
+
+  it('renders the live configuration with credentials redacted', async () => {
+    const outcome = await runCommandLine(
+      `/${CONFIG_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      config(),
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('会话维度：chat')
+    expect(outcome.reply).toContain('禁用工具：web_search')
+    expect(outcome.reply).toContain('审批提醒：120s')
+    expect(outcome.reply).toContain('自动恢复目标：开')
+    // Credentials never reach the chat.
+    expect(outcome.reply).not.toContain('cli_secret')
+    expect(outcome.reply).not.toContain('top-secret')
+  })
+
+  it('reports when no config snapshot exists', async () => {
+    const outcome = await runCommandLine(
+      `/${CONFIG_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('配置')
   })
 })
