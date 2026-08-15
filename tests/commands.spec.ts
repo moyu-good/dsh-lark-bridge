@@ -5,6 +5,7 @@ import {
   runCommandLine,
   SESSIONS_COMMAND,
   SHIPPED_PRESET_IDS,
+  TOOLS_COMMAND,
 } from '../src/commands.ts'
 import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence } from '../src/host.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -178,5 +179,66 @@ describe('/sessions command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('会话存储')
+  })
+})
+
+describe('/tools command', () => {
+  it('lists the current denied tools', async () => {
+    const outcome = await runCommandLine(
+      `/${TOOLS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      new Set(['bash']),
+    )
+    expect(outcome.reply).toContain('bash')
+    expect(outcome.reply).toContain('1')
+  })
+
+  it('denies a tool at runtime', async () => {
+    const denied = new Set(['bash'])
+    const outcome = await runCommandLine(
+      `/${TOOLS_COMMAND} deny web_search`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      denied,
+    )
+    expect(outcome.reply).toContain('已禁用')
+    expect(denied.has('web_search')).toBe(true)
+  })
+
+  it('allows a denied tool back', async () => {
+    const denied = new Set(['bash', 'web_search'])
+    const outcome = await runCommandLine(
+      `/${TOOLS_COMMAND} allow bash`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      denied,
+    )
+    expect(outcome.reply).toContain('已允许')
+    expect(denied.has('bash')).toBe(false)
+    expect(denied.has('web_search')).toBe(true)
+  })
+
+  it('reports when no runtime switch exists', async () => {
+    const outcome = await runCommandLine(
+      `/${TOOLS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('工具开关')
   })
 })

@@ -366,8 +366,16 @@ function boundCardText(text: string): string {
  * @param agentCtx - the agent's scoped Cordis context.
  * @param config - resolved bridge configuration.
  * @param extraTools - channel-owned tools to register on this agent's scope.
+ * @param runtimeDenied - the live denied-tool set shared across agents, when
+ * the bridge offers runtime `/tools` toggling; falls back to a frozen copy of
+ * `config.denyTools` when absent.
  */
-function composeChatAgent(agentCtx: Context, config: ResolvedConfig, extraTools: readonly object[] = []): void {
+function composeChatAgent(
+  agentCtx: Context,
+  config: ResolvedConfig,
+  extraTools: readonly object[] = [],
+  runtimeDenied: ReadonlySet<string> | undefined = undefined,
+): void {
   // Channel-owned tools (currently `send_file`) register on the agent's own
   // scope, so they exist exactly where the agent looks, and vanish with it.
   const tools = agentCtx.get('tools') as (HostTools & { register(definition: object): () => void }) | undefined
@@ -380,8 +388,8 @@ function composeChatAgent(agentCtx: Context, config: ResolvedConfig, extraTools:
       process.stderr.write(`dsh-lark-bridge: channel tool registration skipped (${String(error)})\n`)
     }
   }
-  if (config.denyTools.length > 0) {
-    const denied = new Set(config.denyTools)
+  if (config.denyTools.length > 0 || (runtimeDenied !== undefined && runtimeDenied.size > 0)) {
+    const denied = runtimeDenied ?? new Set(config.denyTools)
     // A guard rather than `tools.restrict()`: restrict validates its names
     // against the inherited registry and THROWS for one this composition does
     // not have, which would fail every chat agent's creation over a tool the
@@ -482,6 +490,10 @@ export function installBridge(
       return deliverFile(replay, binding.chatId, cwd, args)
     },
   })
+  // The live denied-tool set: seeded from config, then toggled at runtime via
+  // /tools. Every chat agent's guard reads this same object, so a switch takes
+  // effect on the next tool call without a restart.
+  const runtimeDeniedTools = new Set<string>(config.denyTools)
   const bySession = new Map<string, ChatBinding>()
   const pendingApprovals = new Map<string, PendingApproval>()
   /**
@@ -611,7 +623,7 @@ export function installBridge(
       presentCall: createCallPresenter(ctx.get('tools') as HostTools | undefined, toolScope),
       setup: async (agentCtx: Context) => {
         if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
-        composeChatAgent(agentCtx, config, [sendFileTool])
+        composeChatAgent(agentCtx, config, [sendFileTool], runtimeDeniedTools)
       },
     }
   }
@@ -816,6 +828,7 @@ export function installBridge(
           ctx.get('agentPresets') as HostAgentPresets | undefined,
           ctx.get('sessionPersistence') as HostSessionPersistence | undefined,
           msg.chatId,
+          runtimeDeniedTools,
         )
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
