@@ -100,11 +100,15 @@ export function createLarkChannelPort(config: ChannelConfig, authorization: Auth
       const response = await raw.request({
         method: 'GET',
         url: `${SLASH_COMMAND_API}?page_size=50`,
-      }) as { data?: { items?: { command?: string; command_id?: string }[] } }
+      }) as { data?: { items?: { command?: string; command_id?: string; description?: { default_value?: string } }[] } }
       return (response.data?.items ?? [])
-        .filter((item): item is { command: string; command_id: string } =>
+        .filter((item): item is { command: string; command_id: string; description?: { default_value?: string } } =>
           typeof item.command === 'string' && typeof item.command_id === 'string')
-        .map(item => ({ command: item.command, commandId: item.command_id }))
+        .map(item => ({
+          command: item.command,
+          commandId: item.command_id,
+          ...item.description?.default_value === undefined ? {} : { description: item.description.default_value },
+        }))
     },
     async deleteSlashCommand(commandId: string): Promise<void> {
       await raw.request({ method: 'DELETE', url: `${SLASH_COMMAND_API}/${commandId}` })

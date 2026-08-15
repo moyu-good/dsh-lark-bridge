@@ -12,6 +12,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
+import { describeCommand, helpHeading } from './i18n.ts'
 
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
@@ -95,20 +96,27 @@ export interface CommandOutcome {
  * @param agent - the agent whose scope decides what is available.
  * @returns the markdown listing.
  */
-export function helpText(commands: HostCommands | undefined, agent: HostAgent): string {
+/**
+ * The `/help` listing, in the bridge's resolved language.
+ * @param commands - the host command runtime, when composed.
+ * @param agent - the agent whose scope decides what is available.
+ * @param locale - the resolved display language.
+ * @returns the markdown listing.
+ */
+export function helpText(commands: HostCommands | undefined, agent: HostAgent, locale: 'zh' | 'en' = 'zh'): string {
   const own = [
-    `\`/${STOP_COMMAND}\` — 停止当前任务`,
-    `\`/${PRESET_COMMAND}\` — 查看/切换模式（标准/PTC/极简/创造）`,
-    `\`/${SESSIONS_COMMAND}\` — 查看本聊天的会话历史`,
-    `\`/${TOOLS_COMMAND}\` — 查看/禁用/恢复工具`,
-    `\`/${SCHEDULES_COMMAND}\` — 查看本聊天的定时提醒`,
-    `\`/${AUDIT_COMMAND}\` — 查看本会话的操作审计`,
-    `\`/${CONFIG_COMMAND}\` — 查看桥的当前配置`,
-    `\`/${HELP_COMMAND}\` — 显示这条帮助`,
+    `\`/${STOP_COMMAND}\` — ${describeCommand(STOP_COMMAND, locale, 'Stop the current task')}`,
+    `\`/${PRESET_COMMAND}\` — ${describeCommand(PRESET_COMMAND, locale, 'View or switch mode')}`,
+    `\`/${SESSIONS_COMMAND}\` — ${describeCommand(SESSIONS_COMMAND, locale, 'View session history')}`,
+    `\`/${TOOLS_COMMAND}\` — ${describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools')}`,
+    `\`/${SCHEDULES_COMMAND}\` — ${describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders')}`,
+    `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
+    `\`/${CONFIG_COMMAND}\` — ${describeCommand(CONFIG_COMMAND, locale, 'View current configuration')}`,
+    `\`/${HELP_COMMAND}\` — ${describeCommand(HELP_COMMAND, locale, 'Show available commands')}`,
   ]
   const hosted = (commands?.list(agent) ?? [])
-    .map(descriptor => `\`/${descriptor.name}\` — ${descriptor.description}`)
-  return ['**可用命令**', ...hosted, ...own].join('\n')
+    .map(descriptor => `\`/${descriptor.name}\` — ${describeCommand(descriptor.name, locale, descriptor.description)}`)
+  return [helpHeading(locale), ...hosted, ...own].join('\n')
 }
 
 /**
@@ -171,14 +179,14 @@ export async function runCommandLine(
     return runConfigCommand(config)
   }
   if (name === HELP_COMMAND) {
-    return { reply: helpText(commands, agent), resolved: true }
+    return { reply: helpText(commands, agent, config?.locale ?? 'zh'), resolved: true }
   }
   if (commands === undefined) {
     return { reply: `⚠️ 本部署没有组合命令运行时，\`/${name}\` 无法执行。`, resolved: false }
   }
   const execution = await commands.execute(agent, trimmed, signal)
   if (execution === undefined) {
-    return { reply: `⚠️ 未知命令 \`/${name}\`。\n\n${helpText(commands, agent)}`, resolved: false }
+    return { reply: `⚠️ 未知命令 \`/${name}\`。\n\n${helpText(commands, agent, config?.locale ?? 'zh')}`, resolved: false }
   }
   const { result } = execution
   if (result.kind === 'error') return { reply: `⚠️ \`/${name}\` 执行失败：${result.text}`, resolved: true }
@@ -243,6 +251,7 @@ function runConfigCommand(config: ResolvedConfig | undefined): CommandOutcome {
       ? `· 模型：${config.provider ?? '默认'} / ${config.model ?? '默认'}`
       : '· 模型：宿主默认',
     config.preset !== undefined ? `· 模式：${config.preset}` : '· 模式：agent-presets 默认',
+    `· 语言：${config.locale === 'en' ? 'English' : '简体中文'}`,
     `· 输出：${config.output === 'cot' ? '思考过程（cot）' : '流式卡片'}`,
     `· 会话维度：${config.sessionScope}`,
     `· 显示过程：${on(config.showProcess)}${config.hideProcessWhenDone ? '（完成后隐藏）' : ''}`,

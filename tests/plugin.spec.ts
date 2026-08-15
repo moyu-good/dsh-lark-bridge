@@ -787,7 +787,7 @@ describe('dsh-lark-bridge', () => {
       const listing = (harness.fake.sent[0]!.input as { markdown: string }).markdown
       // Host commands and the channel's own, in one listing.
       expect(listing).toContain('/clear')
-      expect(listing).toContain('压缩上下文')
+      expect(listing).toContain('压缩较早的对话历史')
       expect(listing).toContain('/stop')
       expect(commands.executed).toEqual([])
       await harness.dispose()
