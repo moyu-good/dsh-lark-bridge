@@ -449,6 +449,12 @@ export async function mountChannel(
     commands?: object
     /** The `attachments` store chat images are committed to. */
     attachments?: object
+    /**
+     * The `goals` service stub (the bridge injects it). Defaults to an empty
+     * view so autoResume reads no goal; tests with a goal pass a stub whose
+     * `get`/`resume` record what the bridge does.
+     */
+    goals?: object
   } = {},
 ) {
   const ctx = new Context()
@@ -472,6 +478,9 @@ export async function mountChannel(
     })
   }
   ctx.provide('agents', agents.service)
+  // The bridge injects `goals` (the dsh GoalService); the harness stubs it so
+  // tree load passes the inject check and autoResume reads the test's view.
+  ctx.provide('goals', services.goals ?? { get: () => undefined, resume: async () => {} })
   if (services.defaultModel !== undefined) ctx.provide('agentDefaultModel', services.defaultModel)
   if (services.settings !== undefined) ctx.provide('settings', services.settings)
   if (services.presets !== undefined) ctx.provide('agentPresets', services.presets)

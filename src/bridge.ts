@@ -530,6 +530,9 @@ export function installBridge(
   // Rebuilt from schedule/change events as they stream in; a restart starts
   // empty (the schedules themselves survive in the session log).
   const scheduleRegistry = new Map<string, Map<string, ScheduleEntry>>()
+  // Per-session preset choice made via /preset. Process-local: a restart
+  // falls back to the configured default, which the /config command states.
+  const sessionPresets = new Map<string, string>()
   // Per-session operation counters for /audit, accumulated from the session
   // event stream. Process-local like the schedule registry.
   const auditStats = new Map<string, AuditStats>()
@@ -646,12 +649,15 @@ export function installBridge(
    * @returns the composition every rung of one session's ladder applies.
    * @throws when the roster supplies no such preset.
    */
-  const composeAgent = async (): Promise<AgentComposition> => {
+  const composeAgent = async (sessionId: string): Promise<AgentComposition> => {
     // Loader siblings mount concurrently; await the complete application so a
     // first message arriving during boot never sees a half-composed agent world.
     await (ctx.get('loader') as HostLoader | undefined)?.await()
     const presets = ctx.get('agentPresets') as HostAgentPresets | undefined
-    const presetId = presets === undefined ? undefined : (await presets.resolve(config.preset)).id
+    // A /preset switch is remembered per session, so a later resume (the chat
+    // speaking again after /stop, or a bridge restart) composes the preset the
+    // human chose instead of silently falling back to the configured default.
+    const presetId = presets === undefined ? undefined : (await presets.resolve(sessionPresets.get(sessionId) ?? config.preset)).id
     // A roster keeps every tool off the global layer, so its standing key is
     // the view that can describe this agent's calls.
     const toolScope = presets === undefined || presetId === undefined
@@ -677,7 +683,7 @@ export function installBridge(
   const compositionFor = (sessionId: string): Promise<AgentComposition> => {
     let pending = compositions.get(sessionId)
     if (pending === undefined) {
-      pending = composeAgent()
+      pending = composeAgent(sessionId)
       compositions.set(sessionId, pending)
       // A rejected composition is not replayed: the next message may arrive
       // after the roster it named was fixed.
@@ -878,6 +884,8 @@ export function installBridge(
       // model turn, so it must not be handed to the model as text — and it
       // needs no reply target, since its answer is not an assistant turn.
       if (isCommandLine(msg.content)) {
+        const sessionId = opened.handle.agent.session.id
+        const presetBefore = sessionPresets.get(sessionId)
         const outcome = await runCommandLine(
           msg.content,
           opened.handle.agent,
@@ -890,7 +898,14 @@ export function installBridge(
           scheduleRegistry,
           auditStats,
           config,
+          sessionPresets,
         )
+        // A /preset switch changed this session's composition contract; the
+        // cached composition would resume the OLD preset, so drop it and let
+        // the next acquire compose from the remembered choice.
+        if (sessionPresets.get(sessionId) !== presetBefore) {
+          compositions.delete(sessionId)
+        }
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
         }
