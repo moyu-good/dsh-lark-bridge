@@ -66,3 +66,40 @@ export function retryLine(retry: { readonly retry: number; readonly maxRetries?:
   const cap = retry.maxRetries === undefined ? '' : `（最多 ${retry.maxRetries} 次）`
   return `⚠️ 模型调用失败，正在重试${cap}…`
 }
+
+/** Extract the visible text from a compaction summary's content blocks. */
+function summaryText(blocks: readonly unknown[]): string {
+  return blocks
+    .filter((block): block is { type: 'text'; text: string } =>
+      typeof block === 'object' && block !== null
+      && (block as { type?: unknown }).type === 'text'
+      && typeof (block as { text?: unknown }).text === 'string')
+    .map(block => block.text)
+    .join('\n')
+}
+
+/**
+ * A compaction summary line: what replaced the old history, and at what cost.
+ * @param data - the `compaction/summary` payload.
+ * @returns the markdown line for the chat.
+ */
+export function compactionSummaryLine(data: {
+  readonly summary: readonly unknown[]
+  readonly shadowedTokenCount: number
+}): string {
+  const text = summaryText(data.summary).trim()
+  const preview = text.length === 0 ? '' : `\n${text.slice(0, 200)}`
+  return `📦 上下文压缩完成，释放约 ${data.shadowedTokenCount} tokens${preview}`
+}
+
+/**
+ * A prune line: old history was trimmed without a model call.
+ * @param data - the `compaction/prune` payload.
+ * @returns the markdown line for the chat.
+ */
+export function compactionPruneLine(data: {
+  readonly shadowedSeqs: readonly number[]
+  readonly shadowedTokenCount: number
+}): string {
+  return `🗑️ 已修剪 ${data.shadowedSeqs.length} 条旧消息（释放约 ${data.shadowedTokenCount} tokens）`
+}

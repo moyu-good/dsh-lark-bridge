@@ -40,7 +40,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import { isCompactionEndEvent, isCompactionStartEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
+import { isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -80,6 +80,8 @@ import {
   runStartLine,
 } from './workflow.ts'
 import {
+  compactionPruneLine,
+  compactionSummaryLine,
   retryLine,
   scheduleLine,
   subagentLine,
@@ -1210,9 +1212,14 @@ export function installBridge(
       void replay.send(binding.chatId, { markdown: runEndLine(event.data) }).catch(reportSendFailure)
     }
     // Context compaction: tell the chat when history is being summarized, so
-    // a later "it forgot" is understood rather than mysterious.
+    // a later "it forgot" is understood rather than mysterious. The summary
+    // and prune events (between start and end) show what the pass produced.
     if (isCompactionStartEvent(event)) {
       void replay.send(binding.chatId, { markdown: '📦 上下文较长，正在压缩（较早内容将被摘要）…' }).catch(reportSendFailure)
+    } else if (isCompactionSummaryEvent(event)) {
+      void replay.send(binding.chatId, { markdown: compactionSummaryLine(event.data) }).catch(reportSendFailure)
+    } else if (isCompactionPruneEvent(event)) {
+      void replay.send(binding.chatId, { markdown: compactionPruneLine(event.data) }).catch(reportSendFailure)
     } else if (isCompactionEndEvent(event)) {
       if (event.data.error !== undefined) {
         void replay.send(binding.chatId, { markdown: `⚠️ 上下文压缩失败：${event.data.error}` }).catch(reportSendFailure)

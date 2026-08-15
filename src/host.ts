@@ -374,6 +374,30 @@ export interface CompactionEndData {
   readonly error?: string
 }
 
+/**
+ * The `compaction/summary` payload: the summary text that replaced old
+ * history, and what it cost. Emitted between `compaction/start` and
+ * `compaction/end`; the bridge renders it so the chat sees what a compaction
+ * actually produced instead of a silent gap after "正在压缩…".
+ */
+export interface CompactionSummaryData {
+  readonly compactionId: string
+  /** The summary's content blocks (text blocks carry the visible summary). */
+  readonly summary: readonly unknown[]
+  readonly shadowedSeqs: readonly number[]
+  /** Heuristic token price of the shadowed history, for the release line. */
+  readonly shadowedTokenCount: number
+  readonly provider: string
+  readonly model: string
+}
+
+/** The `compaction/prune` payload: a model-free trim of old history. */
+export interface CompactionPruneData {
+  readonly shadowedRange: { readonly start: number; readonly end: number }
+  readonly shadowedSeqs: readonly number[]
+  readonly shadowedTokenCount: number
+}
+
 /** The `subagent/descriptor` payload: one session-backed subagent child's durable identity. */
 export interface SubagentDescriptorData {
   readonly version: number
@@ -581,6 +605,20 @@ export function isCompactionEndEvent(
   event: HostSessionEvent,
 ): event is HostSessionEvent & { readonly data: CompactionEndData } {
   return event.type === 'compaction/end'
+}
+
+/** Narrow a session event to a compaction summary (what replaced old history). */
+export function isCompactionSummaryEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: CompactionSummaryData } {
+  return event.type === 'compaction/summary'
+}
+
+/** Narrow a session event to a model-free prune of old history. */
+export function isCompactionPruneEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: CompactionPruneData } {
+  return event.type === 'compaction/prune'
 }
 
 /** Narrow a session event to one subagent descriptor. */
