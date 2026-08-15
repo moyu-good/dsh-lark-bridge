@@ -37,7 +37,7 @@ import type {
   HostWorkspace,
   HostWorkspaceRegistry,
 } from './host.ts'
-import { isGoalChangeEvent, isStepStartEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent } from './host.ts'
+import { isCompactionEndEvent, isCompactionStartEvent, isGoalChangeEvent, isStepStartEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -57,6 +57,12 @@ import { createQuestionProvider } from './questions.ts'
 import type { HostUserQuestions } from './questions.ts'
 import { createTodoRenderer } from './todo.ts'
 import { createGoalRenderer } from './goal.ts'
+import {
+  agentEndLine,
+  agentStartLine,
+  runEndLine,
+  runStartLine,
+} from './workflow.ts'
 import { onboardingMessage } from './first-contact.ts'
 
 /**
@@ -943,6 +949,26 @@ export function installBridge(
           operation: event.data.operation,
           goal: { objective: goal.objective, phase: goal.phase, ...goal.blockedReason !== undefined ? { blockedReason: goal.blockedReason } : {}, ...goal.maxGoalRounds !== undefined ? { maxGoalRounds: goal.maxGoalRounds } : {} },
         })
+      }
+    }
+    // Live workflow fan-out: a text stream per run, so the chat sees the
+    // subagent fan-out instead of a silent gap. Best-effort, like todo/goal.
+    if (isWorkflowRunStartEvent(event)) {
+      void port.send(binding.chatId, { markdown: runStartLine(event.data) }).catch(reportSendFailure)
+    } else if (isWorkflowAgentStartEvent(event)) {
+      void port.send(binding.chatId, { markdown: agentStartLine(event.data) }).catch(reportSendFailure)
+    } else if (isWorkflowAgentEndEvent(event)) {
+      void port.send(binding.chatId, { markdown: agentEndLine(event.data) }).catch(reportSendFailure)
+    } else if (isWorkflowRunEndEvent(event)) {
+      void port.send(binding.chatId, { markdown: runEndLine(event.data) }).catch(reportSendFailure)
+    }
+    // Context compaction: tell the chat when history is being summarized, so
+    // a later "it forgot" is understood rather than mysterious.
+    if (isCompactionStartEvent(event)) {
+      void port.send(binding.chatId, { markdown: '📦 上下文较长，正在压缩（较早内容将被摘要）…' }).catch(reportSendFailure)
+    } else if (isCompactionEndEvent(event)) {
+      if (event.data.error !== undefined) {
+        void port.send(binding.chatId, { markdown: `⚠️ 上下文压缩失败：${event.data.error}` }).catch(reportSendFailure)
       }
     }
     binding.renderer.handle(event)

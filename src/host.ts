@@ -317,6 +317,47 @@ export interface GoalChangeData {
   }
 }
 
+/** The `tool-workflow/run-start` payload: one top-level workflow run opens. */
+export interface WorkflowRunStartData {
+  readonly runId: string
+  readonly name: string
+}
+
+/** The `tool-workflow/agent-start` payload: one workflow member is published. */
+export interface WorkflowAgentStartData {
+  readonly runId: string
+  readonly seq: number
+  readonly label: string
+  readonly phase?: string
+  readonly childId: string
+}
+
+/** The `tool-workflow/agent-end` payload: one workflow member settles. */
+export interface WorkflowAgentEndData {
+  readonly runId: string
+  readonly seq: number
+  readonly outcome: 'completed' | 'failed' | 'cancelled'
+}
+
+/** The `tool-workflow/run-end` payload: one workflow run closes. */
+export interface WorkflowRunEndData {
+  readonly runId: string
+  readonly stopReason: 'completed' | 'cancelled' | 'error'
+}
+
+/** The `compaction/start` payload: a compaction locks the session log. */
+export interface CompactionStartData {
+  readonly compactionId: string
+  readonly turn: number | null
+}
+
+/** The `compaction/end` payload: the lock releases (with an error when one occurred). */
+export interface CompactionEndData {
+  readonly compactionId: string
+  readonly turn: number | null
+  readonly error?: string
+}
+
 /** The `assistant/chunk` payload fields this plugin streams. */
 export interface AssistantChunkData {
   readonly turn: number
@@ -416,6 +457,48 @@ export function isGoalChangeEvent(
   event: HostSessionEvent,
 ): event is HostSessionEvent & { readonly data: GoalChangeData } {
   return event.type === 'goal/change'
+}
+
+/** Narrow a session event to one workflow run opening. */
+export function isWorkflowRunStartEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: WorkflowRunStartData } {
+  return event.type === 'tool-workflow/run-start'
+}
+
+/** Narrow a session event to one workflow member publication. */
+export function isWorkflowAgentStartEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: WorkflowAgentStartData } {
+  return event.type === 'tool-workflow/agent-start'
+}
+
+/** Narrow a session event to one workflow member settlement. */
+export function isWorkflowAgentEndEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: WorkflowAgentEndData } {
+  return event.type === 'tool-workflow/agent-end'
+}
+
+/** Narrow a session event to one workflow run closing. */
+export function isWorkflowRunEndEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: WorkflowRunEndData } {
+  return event.type === 'tool-workflow/run-end'
+}
+
+/** Narrow a session event to a compaction lock opening. */
+export function isCompactionStartEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: CompactionStartData } {
+  return event.type === 'compaction/start'
+}
+
+/** Narrow a session event to a compaction lock releasing. */
+export function isCompactionEndEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: CompactionEndData } {
+  return event.type === 'compaction/end'
 }
 
 /**
