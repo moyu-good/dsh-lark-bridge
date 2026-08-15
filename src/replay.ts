@@ -120,8 +120,8 @@ export function createReplayPort(
     await flushing
   }
 
-  return {
-    ...port,
+  const wrapped: ReplayAwarePort = {
+    ...bindPortMethods(port) as unknown as Pick<ReplayAwarePort, 'connect' | 'disconnect' | 'on'>,
     async send(to, input, opts) {
       if (!live) return enqueueSend(to, input, opts)
       try {
@@ -158,4 +158,29 @@ export function createReplayPort(
     },
     pending: () => queue.length,
   }
+  return wrapped as unknown as ReplayAwarePort
+}
+
+/**
+ * Copy a transport's methods onto a plain object with `this` bound to the
+ * transport. A plain spread (`{ ...port }`) copies only own enumerable fields
+ * — a class instance (LarkChannel) keeps every method on the prototype, so
+ * the spread result has NO `connect`, `send`, or `on`, and the bridge would
+ * call `undefined` and die on the first connection. Binding keeps the
+ * prototype methods callable without losing the instance state they read.
+ * @param port - the transport surface to copy.
+ * @returns own fields plus every method bound to the original port.
+ */
+function bindPortMethods(port: ReplayPort): Record<string, unknown> {
+  const copy: Record<string, unknown> = {}
+  for (const key of Object.keys(port)) {
+    const value = (port as unknown as Record<string, unknown>)[key]
+    copy[key] = typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(port) : value
+  }
+  for (const key of Object.getOwnPropertyNames(Object.getPrototypeOf(port))) {
+    if (key === 'constructor') continue
+    const value = (port as unknown as Record<string, unknown>)[key]
+    if (typeof value === 'function') copy[key] = (value as (...args: never[]) => unknown).bind(port)
+  }
+  return copy
 }

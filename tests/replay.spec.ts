@@ -99,4 +99,30 @@ describe('replay port', () => {
     // Still queued for the next live window.
     expect(port.pending()).toBe(1)
   })
+
+  it('keeps prototype methods callable when wrapping a class instance', async () => {
+    // LarkChannel is a class: methods live on the prototype, so a plain
+    // `{ ...port }` spread yields NO connect/send/on. The wrapper must bind
+    // them, or the bridge calls undefined and dies on the first connection.
+    class ClassPort {
+      calls: string[] = []
+      connect() { this.calls.push('connect'); return Promise.resolve() }
+      disconnect() { this.calls.push('disconnect'); return Promise.resolve() }
+      on() { return () => {} }
+      async send() { return { messageId: 'om_class' } }
+      async stream() { return { messageId: 'om_class' } }
+      async updateCard() {}
+    }
+    const inner = new ClassPort() as unknown as ReplayPort
+    const port = createReplayPort(inner, () => {}, () => {})
+    // Prototype methods must survive the wrapper, bound to the instance.
+    expect(typeof port.connect).toBe('function')
+    expect(typeof port.send).toBe('function')
+    expect(typeof port.on).toBe('function')
+    await port.connect()
+    await port.disconnect()
+    expect((inner as unknown as { calls: string[] }).calls).toEqual(['connect', 'disconnect'])
+    await port.send('oc_1', { markdown: 'hi' })
+    expect(port.pending()).toBe(0)
+  })
 })
