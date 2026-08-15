@@ -109,6 +109,38 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('streams workflow fan-out events into the chat', async () => {
+    const harness = await mountChannel()
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const session = harness.agents.created[0]!.agent.session
+    const emit = (type: string, data: unknown) => harness.ctx.emit('session/event', session, { type, data })
+
+    emit('tool-workflow/run-start', { runId: 'run-1', name: '调研' })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('工作流「调研」'))).toBe(true) })
+    emit('tool-workflow/agent-start', { runId: 'run-1', seq: 1, label: '爬虫', childId: 'child-1' })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('爬虫 启动'))).toBe(true) })
+    emit('tool-workflow/agent-end', { runId: 'run-1', seq: 1, outcome: 'completed' })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('✅'))).toBe(true) })
+    emit('tool-workflow/run-end', { runId: 'run-1', stopReason: 'completed' })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('全部完成'))).toBe(true) })
+    await harness.dispose()
+  })
+
+  it('announces compaction start and reports a failing one', async () => {
+    const harness = await mountChannel()
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const session = harness.agents.created[0]!.agent.session
+    const emit = (type: string, data: unknown) => harness.ctx.emit('session/event', session, { type, data })
+
+    emit('compaction/start', { compactionId: 'c-1', turn: null })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('正在压缩'))).toBe(true) })
+    emit('compaction/end', { compactionId: 'c-1', turn: null, error: 'model timeout' })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('压缩失败'))).toBe(true) })
+    await harness.dispose()
+  })
+
   it('falls back to the host default model selection', async () => {
     const harness = await mountChannel(
       { provider: undefined, model: undefined },
