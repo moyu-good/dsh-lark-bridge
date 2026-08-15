@@ -37,6 +37,7 @@ import type {
   HostUserMessage,
   HostWorkspace,
   HostWorkspaceRegistry,
+  ScheduleEntry,
 } from './host.ts'
 import { isCompactionEndEvent, isCompactionStartEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
@@ -494,6 +495,10 @@ export function installBridge(
   // /tools. Every chat agent's guard reads this same object, so a switch takes
   // effect on the next tool call without a restart.
   const runtimeDeniedTools = new Set<string>(config.denyTools)
+  // Active schedules seen this process, keyed by session id then schedule id.
+  // Rebuilt from schedule/change events as they stream in; a restart starts
+  // empty (the schedules themselves survive in the session log).
+  const scheduleRegistry = new Map<string, Map<string, ScheduleEntry>>()
   const bySession = new Map<string, ChatBinding>()
   const pendingApprovals = new Map<string, PendingApproval>()
   /**
@@ -829,6 +834,7 @@ export function installBridge(
           ctx.get('sessionPersistence') as HostSessionPersistence | undefined,
           msg.chatId,
           runtimeDeniedTools,
+          scheduleRegistry,
         )
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
@@ -1147,6 +1153,35 @@ export function installBridge(
         ...event.data.schedule === undefined ? {} : { kind: event.data.schedule.kind, prompt: event.data.schedule.prompt },
       })
       if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
+      // Track active schedules for /schedules. `create` records, `delete`
+      // forgets, `dispatch` fires a one-shot (drop it) or ticks a repeating
+      // schedule (keep it for the next round).
+      const id = event.data.schedule?.id ?? event.data.id
+      const sessionId = session.id
+      if (id !== undefined) {
+        let byId = scheduleRegistry.get(sessionId)
+        if (event.data.operation === 'create' && event.data.schedule !== undefined) {
+          if (byId === undefined) {
+            byId = new Map()
+            scheduleRegistry.set(sessionId, byId)
+          }
+          byId.set(id, {
+            id,
+            kind: event.data.schedule.kind,
+            prompt: event.data.schedule.prompt,
+            ...event.data.schedule.everySeconds === undefined ? {} : { everySeconds: event.data.schedule.everySeconds },
+            createdAt: Date.now(),
+          })
+        } else if (byId !== undefined) {
+          if (event.data.operation === 'delete') {
+            byId.delete(id)
+          } else if (event.data.operation === 'dispatch' && event.data.schedule?.kind === 'after') {
+            // A one-shot reminder dispatched once is done.
+            byId.delete(id)
+          }
+          if (byId.size === 0) scheduleRegistry.delete(sessionId)
+        }
+      }
     }
     if (isWebSearchRequestEvent(event)) {
       void replay.send(binding.chatId, { markdown: webSearchLine() }).catch(reportSendFailure)

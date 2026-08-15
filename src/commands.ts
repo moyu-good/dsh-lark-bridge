@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence } from './host.ts'
+import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from './host.ts'
 
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
@@ -26,6 +26,9 @@ export const SESSIONS_COMMAND = 'sessions'
 
 /** View or toggle the chat's denied tools at runtime. */
 export const TOOLS_COMMAND = 'tools'
+
+/** List the chat's active schedules (reminders). */
+export const SCHEDULES_COMMAND = 'schedules'
 
 /** The session id prefix this channel owns. */
 const SESSION_PREFIX = 'feishu-'
@@ -91,6 +94,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
     `\`/${PRESET_COMMAND}\` — 查看/切换模式（标准/PTC/极简/创造）`,
     `\`/${SESSIONS_COMMAND}\` — 查看本聊天的会话历史`,
     `\`/${TOOLS_COMMAND}\` — 查看/禁用/恢复工具`,
+    `\`/${SCHEDULES_COMMAND}\` — 查看本聊天的定时提醒`,
     `\`/${HELP_COMMAND}\` — 显示这条帮助`,
   ]
   const hosted = (commands?.list(agent) ?? [])
@@ -113,6 +117,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
  * @param persistence - the session store, when composed (for `/sessions`).
  * @param chatId - the conversation facet key this chat's sessions belong to.
  * @param deniedTools - the live denied-tool set (for `/tools`).
+ * @param schedules - live schedule registry by session id (for `/schedules`).
  * @returns what to report to the chat.
  */
 export async function runCommandLine(
@@ -124,6 +129,7 @@ export async function runCommandLine(
   persistence: HostSessionPersistence | undefined = undefined,
   chatId: string | undefined = undefined,
   deniedTools: ReadonlySet<string> | undefined = undefined,
+  schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -139,6 +145,9 @@ export async function runCommandLine(
   }
   if (name === TOOLS_COMMAND) {
     return runToolsCommand(trimmed, deniedTools)
+  }
+  if (name === SCHEDULES_COMMAND) {
+    return runSchedulesCommand(agent, schedules)
   }
   if (name === HELP_COMMAND) {
     return { reply: helpText(commands, agent), resolved: true }
@@ -196,6 +205,31 @@ async function runSessionsCommand(
     return `· ${when}${mark}${note}`
   })
   return { reply: `**会话历史**（${owned.length} 个）\n${rows.join('\n')}\n\n发消息即继续最近的会话；\`/new\` 开新会话。`, resolved: true }
+}
+
+/**
+ * Handle `/schedules`: list the chat's active reminders.
+ * @param agent - the chat's agent (its session id keys the registry).
+ * @param schedules - live schedule registry by session id.
+ * @returns the reply for the chat.
+ */
+function runSchedulesCommand(
+  agent: HostAgent,
+  schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined,
+): CommandOutcome {
+  if (schedules === undefined) {
+    return { reply: `⚠️ 本部署没有启用定时提醒，\`/${SCHEDULES_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const entries = schedules.get(agent.session.id)
+  if (entries === undefined || entries.size === 0) {
+    return { reply: '**定时提醒**\n当前没有活跃的提醒。让 agent 设一个（例如"10 分钟后提醒我"）后再看。', resolved: true }
+  }
+  const rows = [...entries.values()].map(entry => {
+    const kind = entry.kind === 'after' ? '延时' : entry.kind === 'at' ? '定点' : `周期(${entry.everySeconds ?? '?'}s)`
+    const prompt = entry.prompt.length > 40 ? `${entry.prompt.slice(0, 40)}…` : entry.prompt
+    return `· [${kind}] ${prompt}`
+  })
+  return { reply: `**定时提醒**（${entries.size} 个活跃）\n${rows.join('\n')}`, resolved: true }
 }
 
 /**

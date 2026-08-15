@@ -397,6 +397,16 @@ export interface ScheduleChangeData {
   readonly id?: string
 }
 
+/** One active schedule as the bridge tracks it from schedule/change events. */
+export interface ScheduleEntry {
+  readonly id: string
+  readonly kind: 'after' | 'at' | 'every'
+  readonly prompt: string
+  readonly everySeconds?: number
+  /** Unix epoch milliseconds when the bridge saw the create. */
+  readonly createdAt: number
+}
+
 /** The `web/deepseek-search-llm-request` payload: one DeepSeek search request was made. */
 export interface WebSearchRequestData {
   readonly request?: unknown

@@ -3,11 +3,12 @@ import {
   PRESET_COMMAND,
   PRESET_NAMES,
   runCommandLine,
+  SCHEDULES_COMMAND,
   SESSIONS_COMMAND,
   SHIPPED_PRESET_IDS,
   TOOLS_COMMAND,
 } from '../src/commands.ts'
-import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence } from '../src/host.ts'
+import type { HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from '../src/host.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 /** A fake agent whose scoped context carries the preset join. */
@@ -240,5 +241,64 @@ describe('/tools command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('工具开关')
+  })
+})
+
+describe('/schedules command', () => {
+  const schedule = (id: string, kind: ScheduleEntry['kind'], prompt: string): ScheduleEntry =>
+    ({ id, kind, prompt, createdAt: 1_700_000_000_000 })
+
+  it('lists the session active schedules', async () => {
+    const agent = fakeAgent()
+    const schedules = new Map<string, Map<string, ScheduleEntry>>([
+      [agent.session.id, new Map([
+        ['s1', schedule('s1', 'after', '10 分钟后提醒我喝水')],
+        ['s2', schedule('s2', 'every', '每小时汇总一次进度')],
+      ])],
+    ])
+    const outcome = await runCommandLine(
+      `/${SCHEDULES_COMMAND}`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      schedules,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('2 个活跃')
+    expect(outcome.reply).toContain('延时')
+    expect(outcome.reply).toContain('周期')
+    expect(outcome.reply).toContain('喝水')
+  })
+
+  it('reports an empty schedule registry', async () => {
+    const agent = fakeAgent()
+    const schedules = new Map<string, Map<string, ScheduleEntry>>([[agent.session.id, new Map()]])
+    const outcome = await runCommandLine(
+      `/${SCHEDULES_COMMAND}`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      schedules,
+    )
+    expect(outcome.reply).toContain('没有活跃')
+  })
+
+  it('reports when schedules are not tracked', async () => {
+    const outcome = await runCommandLine(
+      `/${SCHEDULES_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('定时提醒')
   })
 })
