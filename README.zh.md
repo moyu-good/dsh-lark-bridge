@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/dsh--lark--bridge-0.2.0-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/coverage-153%20tests-green" alt="tests">
+  <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
+  <img src="https://img.shields.io/badge/tests-251-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -9,11 +9,11 @@
 
 <p align="center">
   <b>把 DeepSeek Harness 的编码智能搬进飞书</b><br/>
-  <i>在飞书/Lark 里跑完整的编码代理——原生思考过程、审批卡片、Slash 命令、实时 reaction。</i>
+  <i>原生思考过程、审批卡片、实时 goal/todo 卡片、子代理 fan-out、双语 slash 面板——不需要公网回调地址。</i>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="#快速开始">快速开始</a> · <a href="#能力">能力</a> · <a href="#配置">配置</a> · <a href="#开发">开发</a>
+  <a href="README.md">English</a> · <a href="#快速开始">快速开始</a> · <a href="#能力">能力</a> · <a href="#斜杠命令">斜杠命令</a> · <a href="#配置">配置</a> · <a href="#架构">架构</a> · <a href="#开发">开发</a>
 </p>
 
 ---
@@ -23,8 +23,9 @@
 `dsh-lark-bridge` 是一个 **飞书/Lark 即时通讯机器人通道**，让 DeepSeek Harness 的编码代理直接在聊天里工作：
 
 - 每条会话（私聊 / 群聊）驱动一个独立的 dsh agent
-- **思考过程实时可见** —— 用飞书原生的"思考中"消息渲染 reasoning，不再黑盒
-- **审批卡片** —— 需要确认的操作变成可点击的卡片（允许一次 / 拒绝）
+- **思考过程实时可见** —— 用飞书原生的"思考中"消息渲染 reasoning，工具调用带图标、结果以代码块展示，不再黑盒
+- **审批卡片** —— 需要确认的操作变成可点击的卡片（允许一次 / 拒绝），卡片回写决策人与结果
+- **实时卡片流** —— goal 阶段变化、todo 快照、子代理 fan-out、上下文压缩结果，都在聊天里实时可见
 - **reaction 反馈** —— 收到 `OK` → 思考 `THINKING` → 完成 `DONE` / 失败 `ERROR`，一眼看清状态
 - 走 WebSocket 长连接，**不需要公网回调地址**
 
@@ -38,18 +39,23 @@
 | ✅ **Live Reaction** | 每条消息实时反馈：收到 `OK` → 思考 `THINKING` → 完成 `DONE`（失败 `ERROR`），状态互替不堆叠，可配置 |
 | 🗂️ **一会话一 Agent** | `sessionScope` 控制粒度：整个 chat / 话题 thread / 单 sender；会话持久化，重启后恢复 |
 | 📋 **审批卡片** | host 的审批问题渲染为「允许一次 / 拒绝」按钮卡片，点击即决策，卡片回写决策人与结果 |
-| 🔑 **扫码注册** | 首次启动打印二维码，扫码自动创建飞书应用（含事件订阅），凭据持久化 |
-| ⚡ **Slash 面板** | `/stop` 取消当前任务、`/help` 帮助；`syncSlashCommands` 把命令同步到 bot 的 `/` 面板 |
+| 🎯 **Goal 卡片** | goal 阶段（active/paused/blocked/complete）变化实时更新聊天卡片；`autoResumeGoals` 让重启后活跃 goal 自动恢复 |
+| ✅ **Todo 卡片** | `todo_write` 快照实时更新聊天卡片，长任务不再静默 |
+| 🧑💻 **子代理 fan-out** | workflow 运行以文本流呈现：run 开始、子代理开启/结束、run 结束 |
+| 📦 **压缩透明化** | "正在压缩…" → 摘要文本 + 释放 token 数；修剪报告删除条数 |
+| ⏰ **定时提醒** | `schedule_create/list/delete` 工具 + `/schedules` 视图（需在 dsh profile 组合 `@deepseek-ai/dsh-schedule`；桥已实现完整监听与渲染） |
+| ⚡ **完整 Slash 面板** | `/stop /help /preset /sessions /tools /schedules /audit /config` + 宿主命令（`goal`、`plan`、`compact`、`feedback`、`permission`） |
 | 🌐 **双语命令** | slash 面板与 `/help` 的描述按平台自动选语言：Lark（国际版）英文、飞书（国内版）中文；`locale` 可强制指定 |
 | 🖼️ **图片输入（可选）** | `attachImages` 下载聊天图片进 host 附件库，随模型请求发送 |
-| 🏷️ **Workspace 分组** | 聊天会话自动挂到 host workspace，不流落到 Ungrouped |
+| 📎 **文件发送** | Agent 的 `send_file` 带 caption 直接投递到聊天 |
+| 🔑 **扫码注册** | 首次启动打印二维码，扫码自动创建飞书应用（含事件订阅），凭据持久化 |
 | 🔒 **授权窄化** | `senderAllowlist` / `groupAllowlist` / `approvers` 可在 app 可见范围内进一步收窄 |
-| 🧩 **深度 dsh 适配** | 所有能力走 host 服务契约：`agents` / `agentPresets` / `agentDefaultModel` / `settings` / `workspaceRegistry` / `loader` / `invariants` / `approval`，包自包含，无需 host 源码 |
+| 🧩 **深度 dsh 适配** | 所有能力走 host 服务契约：`agents` / `agentPresets` / `agentDefaultModel` / `settings` / `workspaceRegistry` / `loader` / `invariants` / `approval` / `goals`，包自包含，无需 host 源码 |
 
 ## 🚀 快速开始
 
 ```sh
-npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge github:moyu-good/dsh-lark-bridge \
+npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
   && npx @deepseek-ai/dsh web
 ```
 
@@ -57,12 +63,35 @@ npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge gith
 
 > 已经在用 `dsh`？去掉 `npx @deepseek-ai/` 前缀即可。
 
+**无需构建**：包已提交编译产物（`lib/` 进仓库），安装即用。`prepare` 钩子仅在编译产物缺失时（例如源码 clone 且无产物）自动重建。
+
+## 💬 斜杠命令
+
+| 命令 | 说明 |
+|---|---|
+| `/stop` | 取消当前任务 |
+| `/help` | 显示本列表 |
+| `/preset` | 查看/切换 agent 模式（standard / code / minimal / cordis） |
+| `/sessions` | 查看本聊天的会话历史 |
+| `/tools` | 运行时查看/禁用/恢复工具 |
+| `/schedules` | 查看本聊天的定时提醒 |
+| `/audit` | 本会话的操作审计摘要 |
+| `/config` | 查看桥的当前配置 |
+| `/goal` | 查看/设置目标（宿主命令） |
+| `/plan` | 进入/退出计划模式（宿主命令） |
+| `/compact` | 压缩较早对话历史（宿主命令） |
+| `/feedback` | 提交本次会话反馈（宿主命令） |
+| `/permission` | 切换权限模式（宿主命令） |
+
+面板描述自动双语：平台域名为 `open.larksuite.com`（国际版 Lark）显示**英文**，`open.feishu.cn`（国内版飞书）显示**中文**；`locale: zh|en` 可强制指定。
+
 ## ⚙️ 配置
 
 | 字段 | 默认 | 含义 |
 |---|---|---|
 | `appId`、`appSecret` | 首次启动扫码注册 | 飞书/Lark 应用凭证 |
 | `domain` | 飞书 | 开放平台域名；Lark 用 `https://open.larksuite.com` |
+| `locale` | `auto` | 命令描述语言：`auto`（Lark→英文，飞书→中文）/ `zh` / `en` |
 | `cwd` | 宿主进程 cwd | 会话 Agent 的绝对工作目录 |
 | `provider`、`model` | 宿主 `agentDefaultModel` | 会话 Agent 的模型路由 |
 | `preset` | roster 默认 | 部署组合了 roster 时，会话 Agent 加入的 preset |
@@ -72,9 +101,10 @@ npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge gith
 | `reactionFeedback` | `true` | 实时 reaction 反馈（OK → THINKING → DONE/ERROR） |
 | `hideProcessWhenDone` | `false` | 运行结束后让平台收起该过程（仅 `cot`） |
 | `attachImages` | `false` | 是否把图片传给模型。仅用于确实支持图片的路由 |
-| `syncSlashCommands` | `true` | 把会话可用的命令注册到机器人 `/` 面板 |
-| `locale` | `auto` | 命令描述语言：`auto`（Lark→英文，飞书→中文）/ `zh` / `en` |
-| `denyTools` | `['ask_user_question', 'exit_plan_mode']` | 会话 Agent 不可调用的工具。默认值是人类交互工具 |
+| `syncSlashCommands` | `true` | 把会话可用的命令注册到机器人 `/` 面板（幂等 reconcile：创建缺失、移除过期、刷新漂移描述） |
+| `autoResumeGoals` | `false` | 重启后会话回来时自动 re-arm 活跃 goal，部署不再静默杀死进行中的任务 |
+| `approvalReminderMs` | `0` | 审批卡此毫秒数未处理时发提醒（0 = 关闭） |
+| `denyTools` | `[]` | 会话 Agent 不可调用的工具 |
 | `requireMention` | `true` | 群聊中仅在被 @ 时响应 |
 | `senderAllowlist` | `[]` | 允许私聊的 open id；留空则服务应用可用范围内的任何人 |
 | `groupAllowlist` | `[]` | 非空时仅服务这些 `oc_…` 群会话；空=任意群 |
@@ -85,52 +115,40 @@ npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge gith
 ## 🧭 架构
 
 ```
-飞书 / Lark  ── WebSocket 长连接 ──►  dsh-lark-bridge  ── host 服务契约 ──►  DeepSeek Harness
-   (聊天/审批/图片)                         │                                        │
-                                          ▼                                        ▼
-                                   reaction 状态机                        agents / sessions / tools
-                                   cot / stream 渲染器                     approval / workspace / settings
+飞书 / Lark  ── WebSocket 长连接 ──►  dsh-lark-bridge（dsh 进程内的 feishu-channel 插件）
+   (聊天/审批/图片)                         │
+                                           ▼
+                     host 服务契约: agents / sessions / tools / approval /
+                     goal / workspace / settings / commands
+                                           │
+                                           ▼
+                                      DeepSeek Harness 本体
 ```
+
+桥运行在 **dsh 进程内部**，是 `feishu-channel` 插件——不是独立服务器。`npx @deepseek-ai/dsh web`（或 `--profile chat`）启动 dsh 并组合本插件；插件打开 WebSocket 长连接并从那里驱动一切。任意启动器（shell 脚本、systemd、supervisor）都可以托管它，不依赖任何其他 agent 框架。
 
 ## 🛠️ 开发
 
 ```sh
 pnpm install
-pnpm run build    # tsc + tsdown
-pnpm test         # vitest (237 tests)
-node plugin-contract-test.mjs   # 独立契约测试（32/32）
+pnpm run build    # clean + tsc + tsdown（产物进 lib/，已提交仓库）
+pnpm test         # vitest（251 tests）
+node plugin-contract-test.mjs   # 独立契约测试
 ```
 
-仓库自包含：仅依赖已发布的 `@deepseek-ai/cordis`、`@deepseek-ai/schemastery` 与 `@larksuite/channel` 编译，从不需要宿主源码检出。
+仓库自包含：仅依赖已发布的 `@deepseek-ai/cordis`、`@deepseek-ai/schemastery` 与 `@larksuite/channel`，从不需要宿主源码检出。
 
-## 🚀 部署与多实例
-
-单个实例：
-
-```sh
-bash run-dsh-web.sh chat          # 启动 chat profile（嘟嘟嘟）
-bash safe-restart.sh              # 安全重启（活跃会话会拒绝，--force 覆盖）
-bash safe-restart.sh --profile chat   # 只重启 chat 实例
-```
-
-多个 profile 可同时运行（彼此完全隔离：各自的 cordis.patch.yml、会话目录、模型路由）——一个跑飞书 app，另一个跑 web 控制台，互不干扰：
-
-```sh
-bash scripts/multi-profile.sh status             # 查看所有实例
-bash scripts/multi-profile.sh start chat web     # 启动多个实例
-bash scripts/multi-profile.sh stop chat          # 安全停止一个（活跃会话会拒绝）
-bash scripts/multi-profile.sh stop chat --force  # 强制停止
-bash scripts/multi-profile.sh restart chat       # 重启一个
-bash scripts/multi-profile.sh logs chat          # 跟踪某个实例的日志
-```
-
-实例日志在 `/home/user/.dsh/logs/<profile>.log`。
+**打包说明**（为什么 `lib/` 进仓库）：
+- git 依赖安装（`github:user/repo`）不会跑构建；没有已提交的 `lib/` 时插件启动即崩（`ERR_MODULE_NOT_FOUND`）——已通过提交编译产物修复
+- `prepare` 钩子是源码 clone 的安全网：`lib/` 存在时立即退出，仅在真正缺失时重建
+- `build` 先清空 `lib/`（tsdown 自身 `clean: false`，因为它的 entry 在输出目录内）
 
 ## 📋 已知限制
 
 - 通道级配置（appId/appSecret/requireMention/白名单）由 transport 持有，改动需重启；其余配置编辑 profile 的 `cordis.patch.yml` 后由 dsh 的 Config-only HMR 自动生效（`/config` 可查看当前生效值）
 - 长连接中断期间到达的事件不重放（传输层无游标；出站发送由 replay 队列兜底）
 - 飞书 app 需要把事件订阅方式设为**长连接**（自建应用），webhook 模式收不到事件
+- `schedule_create/list/delete` 工具需要在 dsh profile 里组合 `@deepseek-ai/dsh-schedule`（桥已监听 `schedule/change` 并渲染 `/schedules`；工具是模型侧的另一半）
 
 ## 📄 许可
 
