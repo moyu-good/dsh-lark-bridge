@@ -201,6 +201,8 @@ export interface HostSystemPrompt {
  * that joins no preset reaches the model with no tools at all.
  */
 export interface HostAgentPresets {
+  /** The preset id mounted when a caller names none. */
+  readonly defaultId: string
   /**
    * Resolve a preset id, or the roster default when absent.
    * @throws when the roster supplies no such preset.
@@ -217,6 +219,20 @@ export interface HostAgentPresets {
    * every model-facing row off the global layer.
    */
   standingKeyFor(id?: string): Promise<unknown>
+  /** Every preset the configured roots currently supply, broken ones included. */
+  list(): Promise<readonly { readonly id: string; readonly trust: 'system' | 'user'; readonly name?: string; readonly description?: string; readonly broken?: string }[]>
+  /**
+   * The preset one live agent runs on, read from its scope chain.
+   * @param agentCtx - the live agent's scoped context.
+   * @returns the preset id, or undefined for a rosterless join.
+   */
+  composedPreset(agentCtx: Context): string | undefined
+  /**
+   * Re-link one agent to a different preset's standing composition. Valid only
+   * while the agent has produced nothing; the caller owns that check.
+   * @throws when the id is unknown or the agent already produced.
+   */
+  recompose(agentCtx: Context, id: string): Promise<unknown>
 }
 
 /** One workspace record (subset of the host `Workspace` entity). */

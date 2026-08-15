@@ -812,6 +812,7 @@ export function installBridge(
           opened.handle.agent,
           ctx.get('commands') as HostCommands | undefined,
           commandSignal(),
+          ctx.get('agentPresets') as HostAgentPresets | undefined,
         )
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
