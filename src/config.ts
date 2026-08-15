@@ -27,6 +27,12 @@ export interface Config {
   appSecret?: string
   /** Open-platform domain: `https://open.feishu.cn` (default) or `https://open.larksuite.com`. */
   domain?: string
+  /**
+   * Panel and help language. `auto` (default) picks English for the
+   * international Lark domain (`open.larksuite.com`) and Chinese for the
+   * domestic Feishu domain (`open.feishu.cn`); `zh`/`en` force one.
+   */
+  locale?: 'auto' | 'zh' | 'en'
   /** Absolute workspace directory for chat-driven agents; defaults to the host process cwd. */
   cwd?: string
   /** Provider route override for chat agents; defaults to the host `agentDefaultModel` selection. */
@@ -161,6 +167,7 @@ export interface ResolvedConfig {
   provider?: string | undefined
   model?: string | undefined
   preset?: string | undefined
+  locale: 'zh' | 'en'
   sessionScope: SessionScope
   output: 'cot' | 'stream'
   showProcess: boolean
@@ -188,6 +195,7 @@ export const Config: z<Config> = z.object({
   model: z.string(),
   preset: z.string(),
   sessionScope: z.union(['chat', 'chat-thread', 'chat-sender'] as const).default('chat'),
+  locale: z.union(['auto', 'zh', 'en'] as const).default('auto'),
   output: z.union(['cot', 'stream'] as const).default('cot'),
   showProcess: z.boolean().default(true),
   attachImages: z.boolean().default(false),
@@ -205,6 +213,18 @@ export const Config: z<Config> = z.object({
 })
 
 /**
+ * Resolve the panel/help language. Explicit `zh`/`en` wins; `auto` (and
+ * absent) follows the platform domain — the international Lark console lives
+ * at `open.larksuite.com`, the domestic Feishu one at `open.feishu.cn`.
+ * @param config - serialized configuration.
+ * @returns the resolved language.
+ */
+export function resolveLocale(config: Config): 'zh' | 'en' {
+  if (config.locale === 'zh' || config.locale === 'en') return config.locale
+  return config.domain?.includes('larksuite') === true ? 'en' : 'zh'
+}
+
+/**
  * Resolve the same defaults for direct callers that bypass Cordis Loader.
  * @param config - Serialized configuration with the required credentials.
  * @returns Configuration with all schema defaults applied.
@@ -212,6 +232,7 @@ export const Config: z<Config> = z.object({
 export function resolveConfig(config: Config): ResolvedConfig {
   return {
     ...config,
+    locale: resolveLocale(config),
     sessionScope: config.sessionScope ?? 'chat',
     output: config.output ?? 'cot',
     showProcess: config.showProcess ?? true,

@@ -18,6 +18,8 @@
 export interface PanelCommand {
   readonly command: string
   readonly commandId: string
+  /** The description the app currently shows for it, when the API returns one. */
+  readonly description?: string
 }
 
 /** The panel operations this sync needs from the transport. */
@@ -63,17 +65,34 @@ export async function syncSlashPanel(
     notify(`dsh-lark-bridge: slash-command panel not synced: ${error instanceof Error ? error.message : String(error)}`)
     return { added: [], removed: [] }
   }
-  const known = new Set(existing.map(entry => entry.command))
-  const wanted = new Set(desired.map(command => command.name))
+  const known = new Map(existing.map(entry => [entry.command, entry.commandId]))
+  const wanted = new Map(desired.map(command => [command.name, command.description]))
   const added: string[] = []
   const removed: string[] = []
   for (const command of desired) {
-    if (known.has(command.name)) continue
-    try {
-      await port.createSlashCommand(command.name, command.description)
-      added.push(command.name)
-    } catch (error) {
-      notify(`dsh-lark-bridge: could not register /${command.name}: ${error instanceof Error ? error.message : String(error)}`)
+    const existingId = known.get(command.name)
+    if (existingId === undefined) {
+      try {
+        await port.createSlashCommand(command.name, command.description)
+        added.push(command.name)
+      } catch (error) {
+        notify(`dsh-lark-bridge: could not register /${command.name}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      continue
+    }
+    // The name already exists; when its description drifted (a host command
+    // registered in English by an older boot, a locale switch), recreate it
+    // so the panel says what THIS boot offers. The platform has no update
+    // verb, so a drift costs one delete + one create.
+    const previous = existing.find(entry => entry.command === command.name)
+    if (previous?.description !== undefined && previous.description !== command.description) {
+      try {
+        await port.deleteSlashCommand(existingId)
+        await port.createSlashCommand(command.name, command.description)
+        added.push(command.name)
+      } catch (error) {
+        notify(`dsh-lark-bridge: could not refresh /${command.name}: ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
   }
   for (const entry of existing) {

@@ -63,25 +63,7 @@ import { collectImages } from './images.ts'
 import type { CollectedImages, ImagePort } from './images.ts'
 import { syncSlashPanel } from './slash-panel.ts'
 import type { SlashPanelPort } from './slash-panel.ts'
-
-/** Chinese descriptions for the dsh host commands the panel can meet. */
-const HOST_COMMAND_DESCRIPTIONS: Record<string, string> = {
-  goal: '查看/设置目标',
-  compact: '压缩上下文',
-  feedback: '提交反馈',
-  clear: '清空当前上下文',
-  new: '新开会话',
-  help: '显示可用命令',
-  settings: '查看设置',
-  permission: '查看权限',
-  preset: '查看/切换模式',
-  sessions: '查看会话历史',
-  tools: '查看/禁用工具',
-  audit: '查看操作审计',
-  schedules: '查看定时提醒',
-  config: '查看当前配置',
-  stop: '停止当前任务',
-}
+import { describeCommand } from './i18n.ts'
 import { ConversationSessions } from './session.ts'
 import type { SessionLadder } from './session.ts'
 import { createReactionTracker } from './reaction.ts'
@@ -825,21 +807,22 @@ export function installBridge(
     // host's: a command that lives in runCommandLine but never reaches the
     // bot's `/` list is invisible to the human, who reads the panel as the
     // contract of what the bot accepts. Host command descriptions come from
-    // dsh in English; the panel is a Chinese-first surface, so translate the
-    // known set and keep anything unmapped verbatim.
+    // dsh in English; the panel follows the bridge's resolved locale, and
+    // anything unmapped keeps its own description verbatim.
+    const locale = config.locale
     const desired = [
       ...hosted.map(descriptor => ({
         name: descriptor.name,
-        description: HOST_COMMAND_DESCRIPTIONS[descriptor.name] ?? descriptor.description,
+        description: describeCommand(descriptor.name, locale, descriptor.description),
       })),
-      { name: PRESET_COMMAND, description: '查看/切换模式' },
-      { name: SESSIONS_COMMAND, description: '查看会话历史' },
-      { name: TOOLS_COMMAND, description: '查看/禁用/恢复工具' },
-      { name: SCHEDULES_COMMAND, description: '查看定时提醒' },
-      { name: AUDIT_COMMAND, description: '查看操作审计' },
-      { name: CONFIG_COMMAND, description: '查看当前配置' },
-      { name: STOP_COMMAND, description: '停止当前任务' },
-      { name: HELP_COMMAND, description: '显示可用命令' },
+      { name: PRESET_COMMAND, description: describeCommand(PRESET_COMMAND, locale, 'View or switch mode') },
+      { name: SESSIONS_COMMAND, description: describeCommand(SESSIONS_COMMAND, locale, 'View session history') },
+      { name: TOOLS_COMMAND, description: describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools') },
+      { name: SCHEDULES_COMMAND, description: describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders') },
+      { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
+      { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
+      { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
+      { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
     ]
     void syncSlashPanel(port, desired, notify).then(({ added, removed }) => {
       if (added.length > 0) notify(`dsh-lark-bridge: registered /${added.join(', /')} on the bot's slash panel`)
