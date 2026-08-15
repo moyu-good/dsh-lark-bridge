@@ -70,6 +70,7 @@ import {
   webSearchLine,
 } from './notices.ts'
 import { onboardingMessage } from './first-contact.ts'
+import { createReplayPort } from './replay.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -439,6 +440,14 @@ export function installBridge(
   notify: (line: string) => void,
   authorization: Authorization,
 ): void {
+  // Wrap the transport so a long-connection gap queues outbound calls instead
+  // of losing them; `setConnected` toggles the gate from the reconnecting /
+  // reconnected subscriptions below.
+  const rawPort = port
+  const replay = createReplayPort(port, (error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error)
+    notify(`dsh-lark-bridge: replay flush failed: ${detail}`)
+  }, notify)
   const bySession = new Map<string, ChatBinding>()
   const pendingApprovals = new Map<string, PendingApproval>()
   /**
@@ -671,7 +680,7 @@ export function installBridge(
     // First contact this boot: send the one-time guide. Best-effort — a send
     // failure must not block the chat that already has the agent working.
     if (config.onboarding && freshlyCreated.delete(sessionId)) {
-      void port.send(binding.chatId, onboardingMessage()).catch(reportSendFailure)
+      void replay.send(binding.chatId, onboardingMessage()).catch(reportSendFailure)
     }
     return binding
   }
@@ -772,7 +781,7 @@ export function installBridge(
           commandSignal(),
         )
         if (outcome.reply !== '') {
-          await port.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
+          await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
         }
         return
       }
@@ -840,7 +849,7 @@ export function installBridge(
     let sent: SendResult
     try {
       const command = request.callId === undefined ? undefined : pendingCallArguments.get(request.callId)
-      sent = await port.send(binding.chatId, {
+      sent = await rawPort.send(binding.chatId, {
         card: approvalCard(
           request.toolName,
           request.reason,
@@ -917,13 +926,13 @@ export function installBridge(
   }
 
   // Inbound events. Registered before connect so no early event is dropped.
-  ctx.effect(() => port.on('message', (msg) => { void handleMessage(msg) }), 'dsh-lark-bridge:on(message)')
-  ctx.effect(() => port.on('cardAction', handleCardAction), 'dsh-lark-bridge:on(cardAction)')
+  ctx.effect(() => replay.on('message', (msg) => { void handleMessage(msg) }), 'dsh-lark-bridge:on(message)')
+  ctx.effect(() => replay.on('cardAction', handleCardAction), 'dsh-lark-bridge:on(cardAction)')
 
   // Observability. Without these, the failure modes an operator actually hits —
   // "the bot ignored me", "an inbound handler threw", "the connection dropped" —
   // leave no trace at all, because the transport reports each only as an event.
-  ctx.effect(() => port.on('reject', (evt: RejectEvent) => {
+  ctx.effect(() => replay.on('reject', (evt: RejectEvent) => {
     // A missing mention in a group is the configured steady state, not an
     // incident, so it stays off the operator console it would flood.
     if (evt.reason === 'no_mention') {
@@ -938,19 +947,21 @@ export function installBridge(
     }
   }), 'dsh-lark-bridge:on(reject)')
 
-  ctx.effect(() => port.on('error', (error: LarkChannelError) => {
+  ctx.effect(() => replay.on('error', (error: LarkChannelError) => {
     notify(`dsh-lark-bridge: transport error [${error.code}]: ${error.message}`)
     ctx.logger.warn('transport error [%s]: %s', error.code, error.message)
   }), 'dsh-lark-bridge:on(error)')
 
   // A gap in the long connection is a gap in delivery: the transport has no
   // replay and no cursor, so events arriving while it is down are simply lost.
-  ctx.effect(() => port.on('reconnecting', () => {
-    notify('dsh-lark-bridge: connection lost, reconnecting — events arriving now are not replayed')
+  ctx.effect(() => replay.on('reconnecting', () => {
+    replay.setConnected(false)
+    notify('dsh-lark-bridge: connection lost, reconnecting — outbound is queued and will replay once restored')
     ctx.logger.warn('connection lost, reconnecting')
   }), 'dsh-lark-bridge:on(reconnecting)')
 
-  ctx.effect(() => port.on('reconnected', () => {
+  ctx.effect(() => replay.on('reconnected', () => {
+    replay.setConnected(true)
     notify('dsh-lark-bridge: connection restored')
     ctx.logger.info('connection restored')
   }), 'dsh-lark-bridge:on(reconnected)')
@@ -998,41 +1009,41 @@ export function installBridge(
     // Live workflow fan-out: a text stream per run, so the chat sees the
     // subagent fan-out instead of a silent gap. Best-effort, like todo/goal.
     if (isWorkflowRunStartEvent(event)) {
-      void port.send(binding.chatId, { markdown: runStartLine(event.data) }).catch(reportSendFailure)
+      void replay.send(binding.chatId, { markdown: runStartLine(event.data) }).catch(reportSendFailure)
     } else if (isWorkflowAgentStartEvent(event)) {
-      void port.send(binding.chatId, { markdown: agentStartLine(event.data) }).catch(reportSendFailure)
+      void replay.send(binding.chatId, { markdown: agentStartLine(event.data) }).catch(reportSendFailure)
     } else if (isWorkflowAgentEndEvent(event)) {
-      void port.send(binding.chatId, { markdown: agentEndLine(event.data) }).catch(reportSendFailure)
+      void replay.send(binding.chatId, { markdown: agentEndLine(event.data) }).catch(reportSendFailure)
     } else if (isWorkflowRunEndEvent(event)) {
-      void port.send(binding.chatId, { markdown: runEndLine(event.data) }).catch(reportSendFailure)
+      void replay.send(binding.chatId, { markdown: runEndLine(event.data) }).catch(reportSendFailure)
     }
     // Context compaction: tell the chat when history is being summarized, so
     // a later "it forgot" is understood rather than mysterious.
     if (isCompactionStartEvent(event)) {
-      void port.send(binding.chatId, { markdown: '📦 上下文较长，正在压缩（较早内容将被摘要）…' }).catch(reportSendFailure)
+      void replay.send(binding.chatId, { markdown: '📦 上下文较长，正在压缩（较早内容将被摘要）…' }).catch(reportSendFailure)
     } else if (isCompactionEndEvent(event)) {
       if (event.data.error !== undefined) {
-        void port.send(binding.chatId, { markdown: `⚠️ 上下文压缩失败：${event.data.error}` }).catch(reportSendFailure)
+        void replay.send(binding.chatId, { markdown: `⚠️ 上下文压缩失败：${event.data.error}` }).catch(reportSendFailure)
       }
     }
     // One-shot notices for the remaining low-frequency events. `dispatch`
     // stays silent (a schedule firing is noise), retry announces once.
     if (isSubagentDescriptorEvent(event)) {
-      void port.send(binding.chatId, { markdown: subagentLine(event.data) }).catch(reportSendFailure)
+      void replay.send(binding.chatId, { markdown: subagentLine(event.data) }).catch(reportSendFailure)
     }
     if (isScheduleChangeEvent(event)) {
       const line = scheduleLine({
         operation: event.data.operation,
         ...event.data.schedule === undefined ? {} : { kind: event.data.schedule.kind, prompt: event.data.schedule.prompt },
       })
-      if (line !== undefined) void port.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
+      if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
     }
     if (isWebSearchRequestEvent(event)) {
-      void port.send(binding.chatId, { markdown: webSearchLine() }).catch(reportSendFailure)
+      void replay.send(binding.chatId, { markdown: webSearchLine() }).catch(reportSendFailure)
     }
     if (isLlmRetryEvent(event)) {
       const line = retryLine(event.data)
-      if (line !== undefined) void port.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
+      if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
     }
     binding.renderer.handle(event)
   })
@@ -1080,10 +1091,10 @@ export function installBridge(
 
   // Registered last so disposal disconnects the transport first.
   ctx.effect(() => {
-    port.connect().catch((error: unknown) => {
+    replay.connect().catch((error: unknown) => {
       notify(`dsh-lark-bridge: connect failed: ${error instanceof Error ? error.message : String(error)}`)
       ctx.logger.error('dsh-lark-bridge channel connect failed: %s', error)
     })
-    return () => port.disconnect().catch(reportSendFailure)
+    return () => replay.disconnect().catch(reportSendFailure)
   }, 'dsh-lark-bridge:connect')
 }
