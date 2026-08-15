@@ -24,6 +24,9 @@ export const PRESET_COMMAND = 'preset'
 /** List this chat's stored sessions. */
 export const SESSIONS_COMMAND = 'sessions'
 
+/** View or toggle the chat's denied tools at runtime. */
+export const TOOLS_COMMAND = 'tools'
+
 /** The session id prefix this channel owns. */
 const SESSION_PREFIX = 'feishu-'
 
@@ -87,6 +90,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
     `\`/${STOP_COMMAND}\` — 停止当前任务`,
     `\`/${PRESET_COMMAND}\` — 查看/切换模式（标准/PTC/极简/创造）`,
     `\`/${SESSIONS_COMMAND}\` — 查看本聊天的会话历史`,
+    `\`/${TOOLS_COMMAND}\` — 查看/禁用/恢复工具`,
     `\`/${HELP_COMMAND}\` — 显示这条帮助`,
   ]
   const hosted = (commands?.list(agent) ?? [])
@@ -108,6 +112,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
  * @param presets - the agent-preset roster, when composed (for `/preset`).
  * @param persistence - the session store, when composed (for `/sessions`).
  * @param chatId - the conversation facet key this chat's sessions belong to.
+ * @param deniedTools - the live denied-tool set (for `/tools`).
  * @returns what to report to the chat.
  */
 export async function runCommandLine(
@@ -118,6 +123,7 @@ export async function runCommandLine(
   presets: HostAgentPresets | undefined = undefined,
   persistence: HostSessionPersistence | undefined = undefined,
   chatId: string | undefined = undefined,
+  deniedTools: ReadonlySet<string> | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -130,6 +136,9 @@ export async function runCommandLine(
   }
   if (name === SESSIONS_COMMAND) {
     return runSessionsCommand(agent, persistence, chatId)
+  }
+  if (name === TOOLS_COMMAND) {
+    return runToolsCommand(trimmed, deniedTools)
   }
   if (name === HELP_COMMAND) {
     return { reply: helpText(commands, agent), resolved: true }
@@ -187,6 +196,42 @@ async function runSessionsCommand(
     return `· ${when}${mark}${note}`
   })
   return { reply: `**会话历史**（${owned.length} 个）\n${rows.join('\n')}\n\n发消息即继续最近的会话；\`/new\` 开新会话。`, resolved: true }
+}
+
+/**
+ * Handle `/tools`, `/tools deny <name>`, and `/tools allow <name>`.
+ * @param line - the trimmed command line.
+ * @param deniedTools - the live denied-tool set, when the bridge shares one.
+ * @returns the reply for the chat.
+ */
+function runToolsCommand(
+  line: string,
+  deniedTools: ReadonlySet<string> | undefined,
+): CommandOutcome {
+  const args = line.slice(`/${TOOLS_COMMAND}`.length).trim().split(/\s+/).filter(a => a !== '')
+  if (deniedTools === undefined) {
+    return { reply: `⚠️ 本部署没有运行时工具开关，\`/${TOOLS_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const action = args[0]?.toLowerCase()
+  const tool = args[1]?.toLowerCase()
+  if (action === 'deny' && tool !== undefined) {
+    if (deniedTools.has(tool)) return { reply: `\`${tool}\` 已在禁用列表。`, resolved: true }
+    ;(deniedTools as Set<string>).add(tool)
+    return { reply: `⛔ 已禁用 \`${tool}\`。下次调用即被拦截。`, resolved: true }
+  }
+  if (action === 'allow' && tool !== undefined) {
+    if (!deniedTools.has(tool)) return { reply: `\`${tool}\` 不在禁用列表。`, resolved: true }
+    ;(deniedTools as Set<string>).delete(tool)
+    return { reply: `✅ 已允许 \`${tool}\`。`, resolved: true }
+  }
+  const listed = [...deniedTools]
+  const body = listed.length === 0
+    ? '当前没有禁用的工具。'
+    : `当前禁用（${listed.length}）：\n${listed.map(t => `· \`${t}\``).join('\n')}`
+  return {
+    reply: `**工具开关**\n${body}\n\n用法：\`/${TOOLS_COMMAND} deny <name>\` 禁用、\`/${TOOLS_COMMAND} allow <name>\` 恢复。`,
+    resolved: true,
+  }
 }
 
 /**
