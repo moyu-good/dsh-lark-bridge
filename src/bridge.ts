@@ -49,6 +49,7 @@ import { refuseApprovalClick, refuseMessage } from './authorization.ts'
 import type { Authorization } from './authorization.ts'
 import {
   AUDIT_COMMAND,
+  CONFIG_COMMAND,
   HELP_COMMAND,
   isCommandLine,
   PRESET_COMMAND,
@@ -802,6 +803,7 @@ export function installBridge(
       { name: TOOLS_COMMAND, description: '查看/禁用/恢复工具' },
       { name: SCHEDULES_COMMAND, description: '查看定时提醒' },
       { name: AUDIT_COMMAND, description: '查看操作审计' },
+      { name: CONFIG_COMMAND, description: '查看当前配置' },
       { name: STOP_COMMAND, description: '停止当前任务' },
       { name: HELP_COMMAND, description: '显示可用命令' },
     ]
@@ -859,6 +861,7 @@ export function installBridge(
           runtimeDeniedTools,
           scheduleRegistry,
           auditStats,
+          config,
         )
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)

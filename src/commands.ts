@@ -11,6 +11,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from './host.ts'
+import type { ResolvedConfig } from './config.ts'
 
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
@@ -32,6 +33,9 @@ export const SCHEDULES_COMMAND = 'schedules'
 
 /** Show the session's operation audit summary. */
 export const AUDIT_COMMAND = 'audit'
+
+/** Show the chat bridge's live configuration. */
+export const CONFIG_COMMAND = 'config'
 
 /** The session id prefix this channel owns. */
 const SESSION_PREFIX = 'feishu-'
@@ -99,6 +103,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
     `\`/${TOOLS_COMMAND}\` — 查看/禁用/恢复工具`,
     `\`/${SCHEDULES_COMMAND}\` — 查看本聊天的定时提醒`,
     `\`/${AUDIT_COMMAND}\` — 查看本会话的操作审计`,
+    `\`/${CONFIG_COMMAND}\` — 查看桥的当前配置`,
     `\`/${HELP_COMMAND}\` — 显示这条帮助`,
   ]
   const hosted = (commands?.list(agent) ?? [])
@@ -123,6 +128,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
  * @param deniedTools - the live denied-tool set (for `/tools`).
  * @param schedules - live schedule registry by session id (for `/schedules`).
  * @param audits - live audit counters by session id (for `/audit`).
+ * @param config - the bridge's live configuration (for `/config`).
  * @returns what to report to the chat.
  */
 export async function runCommandLine(
@@ -136,6 +142,7 @@ export async function runCommandLine(
   deniedTools: ReadonlySet<string> | undefined = undefined,
   schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined = undefined,
   audits: ReadonlyMap<string, AuditStats> | undefined = undefined,
+  config: ResolvedConfig | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -157,6 +164,9 @@ export async function runCommandLine(
   }
   if (name === AUDIT_COMMAND) {
     return runAuditCommand(agent, audits)
+  }
+  if (name === CONFIG_COMMAND) {
+    return runConfigCommand(config)
   }
   if (name === HELP_COMMAND) {
     return { reply: helpText(commands, agent), resolved: true }
@@ -214,6 +224,42 @@ async function runSessionsCommand(
     return `· ${when}${mark}${note}`
   })
   return { reply: `**会话历史**（${owned.length} 个）\n${rows.join('\n')}\n\n发消息即继续最近的会话；\`/new\` 开新会话。`, resolved: true }
+}
+
+/**
+ * Handle `/config`: show the bridge's live configuration, credentials redacted.
+ * @param config - the bridge's resolved configuration.
+ * @returns the reply for the chat.
+ */
+function runConfigCommand(config: ResolvedConfig | undefined): CommandOutcome {
+  if (config === undefined) {
+    return { reply: `⚠️ 本部署没有提供配置快照，\`/${CONFIG_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const on = (value: boolean): string => (value ? '开' : '关')
+  const rows = [
+    config.provider !== undefined || config.model !== undefined
+      ? `· 模型：${config.provider ?? '默认'} / ${config.model ?? '默认'}`
+      : '· 模型：宿主默认',
+    config.preset !== undefined ? `· 模式：${config.preset}` : '· 模式：agent-presets 默认',
+    `· 输出：${config.output === 'cot' ? '思考过程（cot）' : '流式卡片'}`,
+    `· 会话维度：${config.sessionScope}`,
+    `· 显示过程：${on(config.showProcess)}${config.hideProcessWhenDone ? '（完成后隐藏）' : ''}`,
+    `· 图片传递：${on(config.attachImages)}`,
+    `· 首次引导：${on(config.onboarding)}`,
+    `· 同步面板：${on(config.syncSlashCommands)}`,
+    `· 群内@才回应：${on(config.requireMention)}`,
+    `· 反应反馈：${on(config.reactionFeedback)}`,
+    `· 自动恢复目标：${on(config.autoResumeGoals)}`,
+    `· 审批提醒：${config.approvalReminderMs > 0 ? `${config.approvalReminderMs / 1000}s` : '关'}`,
+    config.denyTools.length > 0 ? `· 禁用工具：${config.denyTools.join(', ')}` : '· 禁用工具：无',
+    config.senderAllowlist.length > 0 ? `· 发送者白名单：${config.senderAllowlist.join(', ')}` : '· 发送者白名单：开放',
+    config.groupAllowlist.length > 0 ? `· 群白名单：${config.groupAllowlist.join(', ')}` : '· 群白名单：开放',
+    config.approvers.length > 0 ? `· 审批人：${config.approvers.join(', ')}` : '· 审批人：对话可答',
+  ]
+  return {
+    reply: `**当前配置**\n${rows.join('\n')}\n\n改配置：编辑 profile 的 cordis.patch.yml，保存后 HMR 自动生效（无需重启桥）。`,
+    resolved: true,
+  }
 }
 
 /**
