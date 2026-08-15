@@ -318,6 +318,51 @@ describe('dsh-lark-bridge', () => {
       await harness.dispose()
     })
 
+    it('nudges an unanswered card after the reminder delay', async () => {
+      vi.useFakeTimers()
+      try {
+        const harness = await mountChannel({ approvalReminderMs: 120_000 })
+        await harness.fake.emitMessage(fakeMessage())
+        await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+        const request: HostApprovalRequest = {
+          agent: harness.agents.created[0]!.agent,
+          toolName: 'bash',
+          reason: 'rm -rf build',
+        }
+        const outcome = harness.ctx.waterfall(
+          'approval/request',
+          request,
+          async (): Promise<HostApprovalOutcome> => 'unavailable',
+        )
+        await vi.waitFor(() => { expect(harness.fake.sent.some((m) => 'card' in m.input)).toBe(true) })
+        const before = harness.fake.sent.filter((m) => 'markdown' in m.input).length
+        await vi.advanceTimersByTimeAsync(120_000)
+        await vi.waitFor(() => {
+          expect(harness.fake.sent.filter((m) => 'markdown' in m.input && m.input.markdown.includes('审批卡'))).toHaveLength(1)
+        })
+        void outcome
+        await harness.dispose()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not nudge a card answered before the delay', async () => {
+      vi.useFakeTimers()
+      try {
+        const harness = await mountChannel({ approvalReminderMs: 120_000 })
+        const { outcome, values } = await boundApproval(harness)
+        const allow = values.find((value) => value.decision === 'allow')!
+        await harness.fake.emitCardAction(clickAction(allow))
+        expect(await outcome).toBe('allowed-once')
+        await vi.advanceTimersByTimeAsync(120_000)
+        expect(harness.fake.sent.filter((m) => 'markdown' in m.input && m.input.markdown.includes('审批卡'))).toHaveLength(0)
+        await harness.dispose()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('ignores foreign and stale card actions', async () => {
       const harness = await mountChannel()
       const { outcome, values } = await boundApproval(harness)

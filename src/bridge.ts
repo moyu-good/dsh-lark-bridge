@@ -165,6 +165,8 @@ interface PendingApproval {
   readonly chatType: string
   readonly messageId: string
   readonly toolName: string
+  /** Cancels the unanswered-card reminder, if one is armed. */
+  clearReminder?: () => void
   settle(outcome: HostApprovalOutcome): void
 }
 
@@ -821,6 +823,7 @@ export function installBridge(
     const pending = pendingApprovals.get(id)
     if (pending === undefined) return false
     pendingApprovals.delete(id)
+    pending.clearReminder?.()
     pending.settle(outcome)
     void port
       .updateCard(pending.messageId, settledCard(pending.toolName, outcome, decidedBy))
@@ -851,11 +854,25 @@ export function installBridge(
       return next()
     }
     return new Promise<HostApprovalOutcome>((resolveOutcome) => {
+      // Nudge an unanswered card: the agent is parked on it, and a chat with
+      // no visual "pending" surface otherwise looks like the bot stopped.
+      let reminder: ReturnType<typeof setTimeout> | undefined
+      if (config.approvalReminderMs > 0) {
+        reminder = setTimeout(() => {
+          if (!pendingApprovals.has(id)) return
+          void port
+            .send(binding.chatId, {
+              markdown: `⏳ 有一张审批卡等你处理（\`${request.toolName}\`）——点卡片上的按钮继续，或发 \`/stop\` 取消当前操作。`,
+            })
+            .catch(reportSendFailure)
+        }, config.approvalReminderMs)
+      }
       pendingApprovals.set(id, {
         chatId: binding.chatId,
         chatType: binding.chatType,
         messageId: sent.messageId,
         toolName: request.toolName,
+        ...reminder === undefined ? {} : { clearReminder: () => clearTimeout(reminder) },
         settle: resolveOutcome,
       })
       request.signal?.addEventListener(
