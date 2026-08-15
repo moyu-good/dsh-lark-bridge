@@ -72,6 +72,7 @@ import {
 } from './notices.ts'
 import { onboardingMessage } from './first-contact.ts'
 import { createReplayPort } from './replay.ts'
+import { createSendFileTool, deliverFile } from './files.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -357,7 +358,27 @@ function boundCardText(text: string): string {
  * @param agentCtx - the agent's scope context, inside creation `setup`.
  * @param config - resolved plugin configuration.
  */
-function composeChatAgent(agentCtx: Context, config: ResolvedConfig): void {
+/**
+ * Compose one chat agent's channel-facing context: tool restrictions, the
+ * channel identity prompt, and the channel-owned `send_file` tool when the
+ * deployment offers file delivery.
+ * @param agentCtx - the agent's scoped Cordis context.
+ * @param config - resolved bridge configuration.
+ * @param extraTools - channel-owned tools to register on this agent's scope.
+ */
+function composeChatAgent(agentCtx: Context, config: ResolvedConfig, extraTools: readonly object[] = []): void {
+  // Channel-owned tools (currently `send_file`) register on the agent's own
+  // scope, so they exist exactly where the agent looks, and vanish with it.
+  const tools = agentCtx.get('tools') as (HostTools & { register(definition: object): () => void }) | undefined
+  for (const tool of extraTools) {
+    try {
+      tools?.register(tool)
+    } catch (error) {
+      // A duplicate or reserved name must not fail the whole agent creation;
+      // the tool simply does not exist for this agent.
+      process.stderr.write(`dsh-lark-bridge: channel tool registration skipped (${String(error)})\n`)
+    }
+  }
   if (config.denyTools.length > 0) {
     const denied = new Set(config.denyTools)
     // A guard rather than `tools.restrict()`: restrict validates its names
@@ -449,6 +470,17 @@ export function installBridge(
     const detail = error instanceof Error ? error.message : String(error)
     notify(`dsh-lark-bridge: replay flush failed: ${detail}`)
   }, notify)
+  // File delivery: `send_file` is the one channel-owned tool, registered per
+  // agent below. The session→chat mapping is the bridge's own registry, and
+  // the send rides the replay-wrapped transport so a connection gap queues
+  // the file like any other outbound message.
+  const sendFileTool = createSendFileTool({
+    deliverBySession: async (sessionId, args) => {
+      const binding = bySession.get(sessionId)
+      if (binding === undefined) throw new Error(`会话 ${sessionId} 不在当前聊天`)
+      return deliverFile(replay, binding.chatId, cwd, args)
+    },
+  })
   const bySession = new Map<string, ChatBinding>()
   const pendingApprovals = new Map<string, PendingApproval>()
   /**
@@ -578,7 +610,7 @@ export function installBridge(
       presentCall: createCallPresenter(ctx.get('tools') as HostTools | undefined, toolScope),
       setup: async (agentCtx: Context) => {
         if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
-        composeChatAgent(agentCtx, config)
+        composeChatAgent(agentCtx, config, [sendFileTool])
       },
     }
   }

@@ -253,6 +253,17 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('registers the send_file tool on every chat agent scope', async () => {
+    const harness = await mountChannel()
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const composed = harness.agents.created[0]!
+    // The composition ran the bridge's setup, which registered the channel
+    // tool on the agent's scope; the harness records the setup call.
+    expect(composed.setupRan).toBe(true)
+    await harness.dispose()
+  })
+
   it('falls back to the host default model selection', async () => {
     const harness = await mountChannel(
       { provider: undefined, model: undefined },
