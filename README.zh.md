@@ -40,6 +40,7 @@
 | 📋 **审批卡片** | host 的审批问题渲染为「允许一次 / 拒绝」按钮卡片，点击即决策，卡片回写决策人与结果 |
 | 🔑 **扫码注册** | 首次启动打印二维码，扫码自动创建飞书应用（含事件订阅），凭据持久化 |
 | ⚡ **Slash 面板** | `/stop` 取消当前任务、`/help` 帮助；`syncSlashCommands` 把命令同步到 bot 的 `/` 面板 |
+| 🌐 **双语命令** | slash 面板与 `/help` 的描述按平台自动选语言：Lark（国际版）英文、飞书（国内版）中文；`locale` 可强制指定 |
 | 🖼️ **图片输入（可选）** | `attachImages` 下载聊天图片进 host 附件库，随模型请求发送 |
 | 🏷️ **Workspace 分组** | 聊天会话自动挂到 host workspace，不流落到 Ungrouped |
 | 🔒 **授权窄化** | `senderAllowlist` / `groupAllowlist` / `approvers` 可在 app 可见范围内进一步收窄 |
@@ -72,6 +73,7 @@ npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge gith
 | `hideProcessWhenDone` | `false` | 运行结束后让平台收起该过程（仅 `cot`） |
 | `attachImages` | `false` | 是否把图片传给模型。仅用于确实支持图片的路由 |
 | `syncSlashCommands` | `true` | 把会话可用的命令注册到机器人 `/` 面板 |
+| `locale` | `auto` | 命令描述语言：`auto`（Lark→英文，飞书→中文）/ `zh` / `en` |
 | `denyTools` | `['ask_user_question', 'exit_plan_mode']` | 会话 Agent 不可调用的工具。默认值是人类交互工具 |
 | `requireMention` | `true` | 群聊中仅在被 @ 时响应 |
 | `senderAllowlist` | `[]` | 允许私聊的 open id；留空则服务应用可用范围内的任何人 |
