@@ -4,6 +4,11 @@
  * do, and what its permission posture is. Existing sessions (resumed across
  * restarts) never get a second copy — the message fires only on `create`,
  * not on `resume`.
+ *
+ * The guide is written from real first-use failures: a user who typed
+ * `/permission` with no argument saw a list and thought it was a menu to
+ * answer, and a user who never clicked an approval card watched the bot hang
+ * waiting for it. Both are covered explicitly below.
  * @module dsh-lark-bridge/first-contact
  */
 
@@ -39,6 +44,30 @@ export function postureLine(posture: PermissionPosture): string {
 }
 
 /**
+ * The commands every user needs on day one, with the exact invocation that
+ * works. Written to prevent the two real first-use failures: `/permission`
+ * without an argument (a status line, not a menu) and an unclicked approval
+ * card (the bot waits on it forever).
+ */
+export function commandGuide(posture: PermissionPosture): string {
+  const lines = [
+    '常用命令：',
+    '- `/help` 查看全部命令',
+    '- `/stop` 停止当前任务（卡住时用它）',
+    '- `/plan` 先出计划再执行',
+    '- `/permission <模式>` 切换权限：`read-only` / `workspace-write` / `danger-full-access`（注意：**不带参数只显示当前状态，不是选项菜单，不要等它让你选**）',
+    '',
+    '审批卡片：',
+    '- 如果出现**卡片**（权限确认），点卡片上的按钮即可，不点它会一直等',
+    '- 如果只是**一段文字**列了几个选项（如 "available: a, b, c"），那不是菜单——直接在输入框发对应的命令，例如 `/permission danger-full-access`',
+  ]
+  if (posture === 'danger-full-access') {
+    lines.splice(4, 0, '- 当前已是全自动模式（danger-full-access），命令不再逐条确认。')
+  }
+  return lines.join('\n')
+}
+
+/**
  * Render the first-contact guide for a brand-new session.
  * @param posture - the deployment's permission posture.
  * @returns the markdown message to send into the chat.
@@ -51,10 +80,7 @@ export function onboardingText(posture: PermissionPosture): string {
     '',
     `权限：${postureLine(posture)}`,
     '',
-    '常用命令：',
-    '- `/help` 查看全部可用命令',
-    '- `/stop` 停止当前任务',
-    '- `/plan` 先出计划再执行',
+    commandGuide(posture),
     '',
     '开始吧——发一句话试试。',
   ].join('\n')

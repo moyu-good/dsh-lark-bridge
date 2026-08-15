@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  commandGuide,
   onboardingMessage,
   onboardingText,
   permissionPosture,
@@ -36,5 +37,23 @@ describe('first-contact', () => {
   it('renders the markdown message for a fresh session', () => {
     const msg = onboardingMessage({ DSH_PERMISSION_MODE: 'danger-full-access' })
     expect(msg.markdown).toContain('全自动模式')
+  })
+
+  it('tells a first user that /permission without an argument is not a menu', () => {
+    const guide = commandGuide('workspace-write')
+    expect(guide).toContain('不带参数只显示当前状态')
+    expect(guide).toContain('不是选项菜单')
+    expect(guide).toContain('/permission danger-full-access')
+  })
+
+  it('tells a first user what approval cards are for and to click them', () => {
+    const guide = commandGuide('workspace-write')
+    expect(guide).toContain('点卡片上的按钮')
+    expect(guide).toContain('不点它会一直等')
+  })
+
+  it('states the current mode when it is danger-full-access', () => {
+    const guide = commandGuide('danger-full-access')
+    expect(guide).toContain('已是全自动模式')
   })
 })
