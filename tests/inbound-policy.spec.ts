@@ -128,12 +128,13 @@ describe('transport observability', () => {
     }
   })
 
-  it('announces a lost connection as a delivery gap, then its recovery', async () => {
+  it('announces a lost connection as a queued gap, then its recovery', async () => {
     const harness = await mountChannel()
     try {
       harness.fake.emitConnectionState('reconnecting')
-      // There is no replay and no cursor, so the gap is a gap in delivery.
-      expect(matching(harness.notices, 'not replayed')).toHaveLength(1)
+      // Outbound is queued during the gap and replayed once the connection
+      // returns; the operator is told, not left guessing.
+      expect(matching(harness.notices, 'queued')).toHaveLength(1)
       harness.fake.emitConnectionState('reconnected')
       expect(matching(harness.notices, 'connection restored')).toHaveLength(1)
     } finally {
