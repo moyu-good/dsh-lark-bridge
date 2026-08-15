@@ -39,6 +39,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, BilingualText> = {
   goal: { zh: '查看/设置目标', en: 'Set or view the goal' },
   compact: { zh: '压缩较早的对话历史', en: 'Compact older conversation history' },
   feedback: { zh: '提交本次会话反馈', en: 'Record feedback about this session' },
+  plan: { zh: '进入/退出计划模式', en: 'Enter or leave plan mode' },
   // Commonly encountered host commands, in case other bundles add them.
   clear: { zh: '清空当前上下文', en: 'Clear the current context' },
   new: { zh: '新开会话', en: 'Start a new session' },
