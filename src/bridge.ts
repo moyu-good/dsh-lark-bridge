@@ -63,6 +63,25 @@ import { collectImages } from './images.ts'
 import type { CollectedImages, ImagePort } from './images.ts'
 import { syncSlashPanel } from './slash-panel.ts'
 import type { SlashPanelPort } from './slash-panel.ts'
+
+/** Chinese descriptions for the dsh host commands the panel can meet. */
+const HOST_COMMAND_DESCRIPTIONS: Record<string, string> = {
+  goal: '查看/设置目标',
+  compact: '压缩上下文',
+  feedback: '提交反馈',
+  clear: '清空当前上下文',
+  new: '新开会话',
+  help: '显示可用命令',
+  settings: '查看设置',
+  permission: '查看权限',
+  preset: '查看/切换模式',
+  sessions: '查看会话历史',
+  tools: '查看/禁用工具',
+  audit: '查看操作审计',
+  schedules: '查看定时提醒',
+  config: '查看当前配置',
+  stop: '停止当前任务',
+}
 import { ConversationSessions } from './session.ts'
 import type { SessionLadder } from './session.ts'
 import { createReactionTracker } from './reaction.ts'
@@ -680,11 +699,16 @@ export function installBridge(
     },
     resume: async (sessionId) => {
       const composition = await compositionFor(sessionId)
-      return agents.resume({
+      const handle = await agents.resume({
         resumeSessionId: sessionId,
         agentOptions: modelSelection(),
         setup: composition.setup,
       })
+      // The panel is app-wide and reconcile is idempotent; a resumed session
+      // after a restart must refresh it too, or the human's `/` list keeps
+      // whatever the previous boot published.
+      publishSlashPanel(handle.agent)
+      return handle
     },
     create: async (sessionId) => {
       const composition = await compositionFor(sessionId)
@@ -781,23 +805,27 @@ export function installBridge(
     })
   }
 
-  /** Mark a message as being worked on. Best-effort: the app may lack the scope. */
-  let panelPublished = false
-
   /**
-   * Publish what this chat accepts to the bot's `/` panel, once. Fire and
-   * forget: discovery is a convenience, and every command works typed by hand.
+   * Publish what this chat accepts to the bot's `/` panel. Reconcile is
+   * idempotent (create missing, remove stale), so it runs on every session
+   * acquire — a restart that resumes sessions still refreshes the panel.
+   * Fire and forget: discovery is a convenience, and every command works
+   * typed by hand.
    */
   const publishSlashPanel = (agent: HostAgent): void => {
-    if (!config.syncSlashCommands || panelPublished) return
-    panelPublished = true
+    if (!config.syncSlashCommands) return
     const hosted = (ctx.get('commands') as HostCommands | undefined)?.list(agent) ?? []
     // The channel's own commands must appear in the panel too, not only the
     // host's: a command that lives in runCommandLine but never reaches the
     // bot's `/` list is invisible to the human, who reads the panel as the
-    // contract of what the bot accepts.
+    // contract of what the bot accepts. Host command descriptions come from
+    // dsh in English; the panel is a Chinese-first surface, so translate the
+    // known set and keep anything unmapped verbatim.
     const desired = [
-      ...hosted.map(descriptor => ({ name: descriptor.name, description: descriptor.description })),
+      ...hosted.map(descriptor => ({
+        name: descriptor.name,
+        description: HOST_COMMAND_DESCRIPTIONS[descriptor.name] ?? descriptor.description,
+      })),
       { name: PRESET_COMMAND, description: '查看/切换模式' },
       { name: SESSIONS_COMMAND, description: '查看会话历史' },
       { name: TOOLS_COMMAND, description: '查看/禁用/恢复工具' },
