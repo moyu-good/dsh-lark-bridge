@@ -47,7 +47,17 @@ import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
 import type { OutboundPort, OutboundRenderer, ReplyTarget, ToolPresentation } from './outbound.ts'
 import { refuseApprovalClick, refuseMessage } from './authorization.ts'
 import type { Authorization } from './authorization.ts'
-import { HELP_COMMAND, isCommandLine, runCommandLine, STOP_COMMAND } from './commands.ts'
+import {
+  AUDIT_COMMAND,
+  HELP_COMMAND,
+  isCommandLine,
+  PRESET_COMMAND,
+  runCommandLine,
+  SCHEDULES_COMMAND,
+  SESSIONS_COMMAND,
+  STOP_COMMAND,
+  TOOLS_COMMAND,
+} from './commands.ts'
 import { collectImages } from './images.ts'
 import type { CollectedImages, ImagePort } from './images.ts'
 import { syncSlashPanel } from './slash-panel.ts'
@@ -781,8 +791,17 @@ export function installBridge(
     if (!config.syncSlashCommands || panelPublished) return
     panelPublished = true
     const hosted = (ctx.get('commands') as HostCommands | undefined)?.list(agent) ?? []
+    // The channel's own commands must appear in the panel too, not only the
+    // host's: a command that lives in runCommandLine but never reaches the
+    // bot's `/` list is invisible to the human, who reads the panel as the
+    // contract of what the bot accepts.
     const desired = [
       ...hosted.map(descriptor => ({ name: descriptor.name, description: descriptor.description })),
+      { name: PRESET_COMMAND, description: '查看/切换模式' },
+      { name: SESSIONS_COMMAND, description: '查看会话历史' },
+      { name: TOOLS_COMMAND, description: '查看/禁用/恢复工具' },
+      { name: SCHEDULES_COMMAND, description: '查看定时提醒' },
+      { name: AUDIT_COMMAND, description: '查看操作审计' },
       { name: STOP_COMMAND, description: '停止当前任务' },
       { name: HELP_COMMAND, description: '显示可用命令' },
     ]
