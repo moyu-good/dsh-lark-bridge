@@ -367,6 +367,7 @@ export function createFakeAgents() {
         throw new Error(`no stored session for ${options.resumeSessionId} (fake)`)
       }
       const agent = makeAgent(options.resumeSessionId)
+      live.set(options.resumeSessionId, agent)
       const record: CreatedAgent = {
         sessionId: options.resumeSessionId,
         meta: undefined,
@@ -385,6 +386,7 @@ export function createFakeAgents() {
       readonly setup?: (agentCtx: Context) => Promise<void>
     }) {
       const agent = makeAgent(options.sessionId)
+      live.set(options.sessionId, agent)
       const record: CreatedAgent = {
         sessionId: options.sessionId,
         meta: options.meta === undefined ? undefined : { ...options.meta },

@@ -101,4 +101,34 @@ describe('goal renderer', () => {
     expect(port.sent[1]!.chatId).toBe('oc_chat_2')
     expect(port.updated).toHaveLength(0)
   })
+
+  it('adds pause/clear buttons to an active goal and carries the session id', async () => {
+    const port = fakePort()
+    const renderer = createGoalRenderer(port as never, () => {})
+
+    await renderer.handle('ses_1', 'oc_chat_1', { operation: 'create', goal: { objective: 'a', phase: 'active' } })
+
+    const card = port.sent[0]!.card as { elements?: { tag?: string; actions?: { text?: { content?: string }; value?: object }[] }[] }
+    const action = card.elements?.find(e => e.tag === 'action')
+    expect(action).toBeDefined()
+    const texts = action!.actions!.map(a => a.text?.content)
+    expect(texts).toContain('⏸️ 暂停')
+    expect(texts).toContain('⏹ 清除')
+    expect(texts).not.toContain('▶️ 继续')
+    const values = action!.actions!.map(a => a.value)
+    expect(values.every(v => (v as { sessionId?: string }).sessionId === 'ses_1')).toBe(true)
+  })
+
+  it('shows resume instead of pause for a paused goal', async () => {
+    const port = fakePort()
+    const renderer = createGoalRenderer(port as never, () => {})
+
+    await renderer.handle('ses_1', 'oc_chat_1', { operation: 'create', goal: { objective: 'a', phase: 'paused' } })
+
+    const card = port.sent[0]!.card as { elements?: { tag?: string; actions?: { text?: { content?: string } }[] }[] }
+    const action = card.elements?.find(e => e.tag === 'action')
+    const texts = action!.actions!.map(a => a.text?.content)
+    expect(texts).toContain('▶️ 继续')
+    expect(texts).not.toContain('⏸️ 暂停')
+  })
 })
