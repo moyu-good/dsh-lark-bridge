@@ -129,6 +129,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent): 
  * @param schedules - live schedule registry by session id (for `/schedules`).
  * @param audits - live audit counters by session id (for `/audit`).
  * @param config - the bridge's live configuration (for `/config`).
+ * @param sessionPresets - per-session preset choices (for `/preset` persistence).
  * @returns what to report to the chat.
  */
 export async function runCommandLine(
@@ -143,6 +144,7 @@ export async function runCommandLine(
   schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined = undefined,
   audits: ReadonlyMap<string, AuditStats> | undefined = undefined,
   config: ResolvedConfig | undefined = undefined,
+  sessionPresets: Map<string, string> | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -151,7 +153,7 @@ export async function runCommandLine(
     return { reply: '⏹ 已停止当前任务。', resolved: true }
   }
   if (name === PRESET_COMMAND) {
-    return runPresetCommand(trimmed, agent, presets)
+    return runPresetCommand(trimmed, agent, presets, sessionPresets)
   }
   if (name === SESSIONS_COMMAND) {
     return runSessionsCommand(agent, persistence, chatId)
@@ -366,6 +368,7 @@ async function runPresetCommand(
   line: string,
   agent: HostAgent,
   presets: HostAgentPresets | undefined,
+  sessionPresets: Map<string, string> | undefined,
 ): Promise<CommandOutcome> {
   const unlisted = `⚠️ 本部署没有组合 agent-presets 服务，\`/${PRESET_COMMAND}\` 不可用。`
   if (presets === undefined) return { reply: unlisted, resolved: false }
@@ -395,6 +398,9 @@ async function runPresetCommand(
   }
   try {
     await presets.recompose(scope, wanted)
+    // Remember the choice for this session so a resume after /stop (or a
+    // bridge restart) composes the same preset instead of the default.
+    if (sessionPresets !== undefined) sessionPresets.set(agent.session.id, wanted)
     return {
       reply: `✅ 已切换到 ${PRESET_NAMES[wanted] ?? wanted}（\`${wanted}\`）。当前会话为空白会话，新工具集已生效。`,
       resolved: true,

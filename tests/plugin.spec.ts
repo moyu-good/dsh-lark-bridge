@@ -46,7 +46,7 @@ describe('dsh-lark-bridge', () => {
     const unwrapped = loader.unwrapExports(plugin) as Record<string, unknown>
     expect(unwrapped).toBe(plugin)
     expect(unwrapped.name).toBe('dsh-lark-bridge')
-    expect(unwrapped.inject).toEqual(['agents'])
+    expect(unwrapped.inject).toEqual(['agents', 'goals'])
     expect(unwrapped.Config).toBeDefined()
     expect(typeof unwrapped.apply).toBe('function')
   })
@@ -168,8 +168,7 @@ describe('dsh-lark-bridge', () => {
       }),
       resume: async (_agent: unknown, ref: { id: string; revision: number }) => { resumed.push(ref) },
     }
-    const harness = await mountChannel({ autoResumeGoals: true }, {})
-    harness.ctx.provide('goals', goals)
+    const harness = await mountChannel({ autoResumeGoals: true }, { goals })
     await harness.fake.emitMessage(fakeMessage())
     await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
     await vi.waitFor(() => { expect(resumed).toHaveLength(1) })
@@ -186,8 +185,7 @@ describe('dsh-lark-bridge', () => {
       }),
       resume: async (_agent: unknown, ref: { id: string; revision: number }) => { resumed.push(ref) },
     }
-    const harness = await mountChannel({ autoResumeGoals: false }, {})
-    harness.ctx.provide('goals', goals)
+    const harness = await mountChannel({ autoResumeGoals: false }, { goals })
     await harness.fake.emitMessage(fakeMessage())
     await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
     await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1) })
@@ -203,8 +201,7 @@ describe('dsh-lark-bridge', () => {
       resume: () => { calls.push('resume') },
       clear: () => { calls.push('clear') },
     }
-    const harness = await mountChannel()
-    harness.ctx.provide('goals', goals)
+    const harness = await mountChannel({}, { goals })
     await harness.fake.emitMessage(fakeMessage())
     await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
     const session = harness.agents.created[0]!.agent.session
@@ -233,8 +230,7 @@ describe('dsh-lark-bridge', () => {
       resume: () => { calls.push('resume') },
       clear: () => { calls.push('clear') },
     }
-    const harness = await mountChannel({ senderAllowlist: [SENDER_ID] })
-    harness.ctx.provide('goals', goals)
+    const harness = await mountChannel({ senderAllowlist: [SENDER_ID] }, { goals })
     await harness.fake.emitMessage(fakeMessage())
     await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
     const session = harness.agents.created[0]!.agent.session

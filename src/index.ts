@@ -9,7 +9,7 @@
 export const name = 'dsh-lark-bridge'
 
 /** Services that must exist before the plugin is applied. */
-export const inject: string[] = ['agents']
+export const inject: string[] = ['agents', 'goals']
 
 export { Config } from './config.ts'
 export type { ResolvedConfig } from './config.ts'
