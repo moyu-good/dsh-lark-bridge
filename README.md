@@ -41,6 +41,7 @@
 | 📋 **审批卡片** | host 的审批问题渲染为「允许一次 / 拒绝」按钮卡片，点击即决策，卡片回写决策人与结果 |
 | 🔑 **扫码注册** | 首次启动打印二维码，扫码自动创建飞书应用（含事件订阅），凭据持久化 |
 | ⚡ **Slash 面板** | `/stop` 取消当前任务、`/help` 帮助；`syncSlashCommands` 把命令同步到 bot 的 `/` 面板 |
+| 🌐 **Bilingual commands** | Slash panel and `/help` descriptions follow the platform: English on Lark (international), Chinese on Feishu (domestic); `locale` overrides |
 | 🖼️ **图片输入（可选）** | `attachImages` 下载聊天图片进 host 附件库，随模型请求发送 |
 | 🏷️ **Workspace 分组** | 聊天会话自动挂到 host workspace，不流落到 Ungrouped |
 | 🔒 **授权窄化** | `senderAllowlist` / `groupAllowlist` / `approvers` 可在 app 可见范围内进一步收窄 |
@@ -73,6 +74,7 @@ npx @deepseek-ai/dsh plugin --profile web add --allow-build=dsh-lark-bridge gith
 | `hideProcessWhenDone` | `false` | Hide finished process (`cot` only) |
 | `attachImages` | `false` | Pass chat images to the model |
 | `syncSlashCommands` | `true` | Publish commands to bot's `/` panel |
+| `locale` | `auto` | Command description language: `auto` (Lark→en, Feishu→zh) / `zh` / `en` |
 | `denyTools` | `['ask_user_question', 'exit_plan_mode']` | Tools chat agents may not call |
 | `requireMention` | `true` | In groups, only respond when @-mentioned |
 | `senderAllowlist` | `[]` | Open ids allowed to DM |
