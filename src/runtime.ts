@@ -69,6 +69,19 @@ export function createLarkChannelPort(config: ChannelConfig, authorization: Auth
     source: 'dsh-lark-bridge',
   }
   if (config.domain !== undefined) options.domain = config.domain
+  // App-level keepalive watchdog: the SDK pings, but a connection that looks
+  // alive while quietly stuck (half-open socket, zombie network) otherwise
+  // sits silent forever. The watchdog probes and force-reconnects; only an
+  // unrecoverable state fires the callback, so a chat that cannot reach the
+  // bot has a paper trail instead of silence.
+  options.keepalive = {
+    enabled: true,
+    intervalMs: 15_000,
+    onUnrecoverable: (error) => {
+      const detail = error instanceof Error ? error.message : String(error)
+      process.stderr.write(`dsh-lark-bridge: connection unrecoverable — restarting the process is likely needed: ${detail}\n`)
+    },
+  }
   const channel = createLarkChannel(options)
   // The transport's own reaction methods must be captured BEFORE the
   // Object.assign below shadows them with the port wrappers: a wrapper whose
