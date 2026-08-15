@@ -135,10 +135,14 @@ export async function deliverFile(
   })
   if (!stat.isFile()) throw new Error(`不是文件：${args.path}`)
   const fileName = absolute.split(/[\\/]/).pop() ?? 'file'
+  // SendInput is a UNION: `file` and `markdown` are mutually exclusive
+  // members, and the transport dispatches on `"markdown" in input` FIRST — a
+  // mixed `{ file, markdown }` shape silently sends only the caption and
+  // drops the file. A caption must be its own message, before the file.
   const caption = args.caption
-  await port.send(chatId, {
-    file: { source: absolute, fileName },
-    ...caption === undefined || caption === '' ? {} : { markdown: caption },
-  })
+  if (caption !== undefined && caption !== '') {
+    await port.send(chatId, { markdown: caption })
+  }
+  await port.send(chatId, { file: { source: absolute, fileName } })
   return { fileName }
 }
