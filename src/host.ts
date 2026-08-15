@@ -407,6 +407,22 @@ export interface ScheduleEntry {
   readonly createdAt: number
 }
 
+/** Per-session operation counters accumulated for `/audit`. */
+export interface AuditStats {
+  /** Unix epoch milliseconds when the bridge first saw this session. */
+  readonly startedAt: number
+  turns: number
+  steps: number
+  toolCalls: number
+  /** Turns that closed with an error reason. */
+  turnErrors: number
+  compactions: number
+  retries: number
+  subagents: number
+  workflows: number
+  schedules: number
+}
+
 /** The `web/deepseek-search-llm-request` payload: one DeepSeek search request was made. */
 export interface WebSearchRequestData {
   readonly request?: unknown

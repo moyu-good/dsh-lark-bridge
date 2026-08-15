@@ -37,6 +37,7 @@ import type {
   HostUserMessage,
   HostWorkspace,
   HostWorkspaceRegistry,
+  AuditStats,
   ScheduleEntry,
 } from './host.ts'
 import { isCompactionEndEvent, isCompactionStartEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
@@ -499,6 +500,9 @@ export function installBridge(
   // Rebuilt from schedule/change events as they stream in; a restart starts
   // empty (the schedules themselves survive in the session log).
   const scheduleRegistry = new Map<string, Map<string, ScheduleEntry>>()
+  // Per-session operation counters for /audit, accumulated from the session
+  // event stream. Process-local like the schedule registry.
+  const auditStats = new Map<string, AuditStats>()
   const bySession = new Map<string, ChatBinding>()
   const pendingApprovals = new Map<string, PendingApproval>()
   /**
@@ -835,6 +839,7 @@ export function installBridge(
           msg.chatId,
           runtimeDeniedTools,
           scheduleRegistry,
+          auditStats,
         )
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
@@ -1088,6 +1093,29 @@ export function installBridge(
   ctx.on('session/event', (session, event: HostSessionEvent) => {
     const binding = bySession.get(session.id)
     if (binding === undefined) return
+    // Audit counters: one lightweight pass over the same stream the renderers
+    // consume, so /audit needs no file access or extra host seam.
+    {
+      let stats = auditStats.get(session.id)
+      if (stats === undefined) {
+        stats = {
+          startedAt: Date.now(),
+          turns: 0, steps: 0, toolCalls: 0, turnErrors: 0,
+          compactions: 0, retries: 0, subagents: 0, workflows: 0, schedules: 0,
+        }
+        auditStats.set(session.id, stats)
+      }
+      if (isToolCallEvent(event)) stats.toolCalls += 1
+      else if (isTurnEndEvent(event)) {
+        stats.turns += 1
+        if (event.data.reason.kind === 'error') stats.turnErrors += 1
+      } else if (isStepStartEvent(event)) stats.steps += 1
+      else if (isCompactionStartEvent(event)) stats.compactions += 1
+      else if (isLlmRetryEvent(event)) stats.retries += 1
+      else if (isSubagentDescriptorEvent(event)) stats.subagents += 1
+      else if (isWorkflowRunStartEvent(event)) stats.workflows += 1
+      else if (isScheduleChangeEvent(event)) stats.schedules += 1
+    }
     if (isToolCallEvent(event)) {
       pendingCallArguments.set(event.data.callId, event.data.arguments)
     } else if (isTurnEndEvent(event)) {
