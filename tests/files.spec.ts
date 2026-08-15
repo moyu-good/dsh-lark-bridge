@@ -103,17 +103,25 @@ describe('deliverFile', () => {
       .rejects.toThrow(/不存在/)
   })
 
-  it('sends the caption alongside the file', async () => {
+  it('sends the caption as its own message, then the file alone', async () => {
     const file = tempFile('r.csv', 'a,b')
     const { port, sent } = fakePort()
     await deliverFile(port, 'oc_1', '/workspace', { path: file, caption: '这是结果' })
+    expect(sent).toHaveLength(2)
+    // SendInput is a union: file and markdown never share one message, or the
+    // transport's markdown-first dispatch drops the file silently.
     expect((sent[0]!.input as { markdown?: string }).markdown).toBe('这是结果')
+    expect('file' in sent[0]!.input).toBe(false)
+    expect('markdown' in sent[1]!.input).toBe(false)
+    expect((sent[1]!.input as { file: { fileName: string } }).file.fileName).toBe('r.csv')
   })
 
-  it('omits the caption field when absent', async () => {
+  it('omits the caption message when absent', async () => {
     const file = tempFile('r.csv', 'a,b')
     const { port, sent } = fakePort()
     await deliverFile(port, 'oc_1', '/workspace', { path: file })
+    expect(sent).toHaveLength(1)
     expect('markdown' in sent[0]!.input).toBe(false)
+    expect((sent[0]!.input as { file: { fileName: string } }).file.fileName).toBe('r.csv')
   })
 })
