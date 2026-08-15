@@ -142,6 +142,14 @@ export interface Config {
    * stopping. Off keeps dsh's default (goal pauses until asked to resume).
    */
   autoResumeGoals?: boolean
+  /**
+   * Milliseconds before an unanswered approval card gets a nudge message.
+   * `0` (default) disables reminders. Set e.g. 120000 to ping the chat two
+   * minutes after a card was published and still unanswered — the agent is
+   * waiting on it, and a chat that has no visual "pending" surface otherwise
+   * looks like it stopped.
+   */
+  approvalReminderMs?: number
 }
 
 /** Configuration after defaults have been resolved; credentials may still be pending onboarding. */
@@ -167,6 +175,7 @@ export interface ResolvedConfig {
   groupAllowlist: string[]
   approvers: string[]
   autoResumeGoals: boolean
+  approvalReminderMs: number
 }
 
 /** Loader-visible configuration schema and defaults. */
@@ -192,6 +201,7 @@ export const Config: z<Config> = z.object({
   groupAllowlist: z.array(String),
   approvers: z.array(String),
   autoResumeGoals: z.boolean().default(false),
+  approvalReminderMs: z.number().min(0).default(0),
 })
 
 /**
@@ -216,5 +226,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
     groupAllowlist: config.groupAllowlist ?? [],
     approvers: config.approvers ?? [],
     autoResumeGoals: config.autoResumeGoals ?? false,
+    approvalReminderMs: config.approvalReminderMs ?? 0,
   }
 }
