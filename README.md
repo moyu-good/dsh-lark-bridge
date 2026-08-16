@@ -119,6 +119,12 @@ Panel descriptions are bilingual: **English** when the platform domain is
 | `senderAllowlist` | `[]` | Open ids allowed to DM |
 | `groupAllowlist` | `[]` | Only these `oc_…` group chats when non-empty |
 | `approvers` | `[]` | Open ids allowed to answer approvals |
+| `outbound.allowedFileDirs` | unset → file sending disabled | Directories `send_file` may read **local** paths from. Required for delivering generated artifacts (HTML reports, screenshots, documents). Example: `outbound: { allowedFileDirs: ['/home/user/work'] }` |
+
+> ⚠️ **File delivery is default-deny.** Without `outbound.allowedFileDirs`,
+> `send_file` with a local path fails with
+> `local file source requires outbound.allowedFileDirs to be configured` —
+> the agent appears to send, nothing arrives. URLs and raw buffers always work.
 
 Credentials resolve in three layers, later wins: bundle patch config → settings
 document plugin section → first-boot QR registration.
