@@ -112,6 +112,37 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 
 凭据三层解析，后者覆盖前者：bundle patch 配置 → settings 文档插件区 → 首次扫码注册。
 
+## 🔐 应用必需权限
+
+**新创建**的飞书应用，面板和消息功能需要以下权限上线。扫码注册流程会自动授予；**手动创建的应用**必须在开发者后台 → 权限管理 开通，然后**创建版本并发布**（最后发布之后新加的权限，API 不认，必须随新版本上线）：
+
+| 权限 | 用途 |
+|---|---|
+| `application:app_slash_command`（read + write） | 斜杠命令面板——缺它时 `syncSlashPanel` 报 `99991672`，`/` 列表永远为空 |
+| `im:message` | 发送与接收消息 |
+| `im:message:readonly` | 读取消息内容 |
+| `im:message.receive_v1` 事件 | 接收消息事件（事件与回调 → 长连接） |
+| `im:resource` | 上传/发送图片和文件 |
+| `im:chat:read` | 群信息（群聊场景） |
+| `im:message.reactions:read` / `write_only` | 实时 reaction 反馈 |
+
+用 API 直接调试——后台显示的是**已勾选**，API 显示的是**线上版本**实际带走的：
+
+```sh
+# 1. 拿 token
+curl -s -X POST https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal \
+  -H 'Content-Type: application/json' \
+  -d "{\"app_id\":\"$APP_ID\",\"app_secret\":\"$APP_SECRET\"}" | jq -r .tenant_access_token
+# 2. 斜杠命令列表（同步后应能看到命令）
+curl -s "https://open.feishu.cn/open-apis/application/v7/app_slash_commands?page_size=50" \
+  -H "Authorization: Bearer $TOKEN"
+# 3. 线上版本 scopes（确认 application:app_slash_command 在里面）
+curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/app_versions?lang=zh_cn" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+面板同步在会话 create/resume 时触发——开通权限后，给 bot 发一条消息即可触发。
+
 ## 🧭 架构
 
 ```
