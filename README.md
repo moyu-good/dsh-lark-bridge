@@ -123,6 +123,43 @@ Panel descriptions are bilingual: **English** when the platform domain is
 Credentials resolve in three layers, later wins: bundle patch config → settings
 document plugin section → first-boot QR registration.
 
+## 🔐 Required app permissions
+
+A **newly created** Feishu app needs these scopes published before the panel
+and messaging work. The QR onboarding flow grants them automatically; a
+manually created app must add them in Developer Console → Permissions, then
+**create and publish a version** (scopes added after the last publish are not
+visible to the API until a new version ships):
+
+| Scope | Needed for |
+|---|---|
+| `application:app_slash_command` (read + write) | Slash command panel — without it, `syncSlashPanel` fails with `99991672` and the `/` list stays empty |
+| `im:message` | Send and receive messages |
+| `im:message:readonly` | Read message content |
+| `im:message.receive_v1` event | Receive message events (Events & Callbacks → long connection) |
+| `im:resource` | Upload / send images and files |
+| `im:chat:read` | Group chat info (group scenarios) |
+| `im:message.reactions:read` / `write_only` | Live reaction feedback |
+
+Debug with the API directly — the console page shows **granted**, the API shows
+what the **published version** carries:
+
+```sh
+# 1. token
+curl -s -X POST https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal \
+  -H 'Content-Type: application/json' \
+  -d "{\"app_id\":\"$APP_ID\",\"app_secret\":\"$APP_SECRET\"}" | jq -r .tenant_access_token
+# 2. slash commands (should list your commands after sync)
+curl -s "https://open.feishu.cn/open-apis/application/v7/app_slash_commands?page_size=50" \
+  -H "Authorization: Bearer $TOKEN"
+# 3. published scopes (check application:app_slash_command is present)
+curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/app_versions?lang=zh_cn" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The slash panel sync runs on session create/resume — after granting the scope,
+send the bot one message to trigger it.
+
 ## 🧭 Architecture
 
 ```
