@@ -109,6 +109,9 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 | `senderAllowlist` | `[]` | 允许私聊的 open id；留空则服务应用可用范围内的任何人 |
 | `groupAllowlist` | `[]` | 非空时仅服务这些 `oc_…` 群会话；空=任意群 |
 | `approvers` | `[]` | 允许作答审批的 open id；空=能驱动该会话的人都可以 |
+| `outbound.allowedFileDirs` | 未配置 → 文件发送禁用 | `send_file` 允许读取**本地路径**的目录。发送生成的产物（HTML 报告、截图、文档）必须配置。示例：`outbound: { allowedFileDirs: ['/home/user/work'] }` |
+
+> ⚠️ **文件发送默认拒绝。** 不配 `outbound.allowedFileDirs` 时，`send_file` 传本地路径会报 `local file source requires outbound.allowedFileDirs to be configured`——Agent 看起来发了，实际没送达。URL 和原始 buffer 始终可用。
 
 凭据三层解析，后者覆盖前者：bundle patch 配置 → settings 文档插件区 → 首次扫码注册。
 
