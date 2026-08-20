@@ -723,6 +723,8 @@ declare module '@deepseek-ai/cordis' {
         'session/event'(session: HostSession, event: HostSessionEvent): void;
         /** Waterfall permission question; answer only for owned agents, else delegate via `next()`. */
         'approval/request'(request: HostApprovalRequest, next: () => Promise<HostApprovalOutcome>): Promise<HostApprovalOutcome>;
+        /** Live subagent settlement, scoped to the delegating agent. */
+        'subagent/end'(info: SubagentEndData): void;
         /** Live workflow run narration (two-argument Cordis events). */
         'workflow/log'(info: WorkflowRunInfoData, message: string): void;
         'workflow/phase'(info: WorkflowRunInfoData, title: string): void;

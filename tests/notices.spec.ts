@@ -5,6 +5,7 @@ import {
   jobDoneLine,
   retryLine,
   scheduleLine,
+  subagentEndLine,
   subagentLine,
   webSearchLine,
 } from '../src/notices.ts'
@@ -17,6 +18,15 @@ describe('notice lines', () => {
 
   it('labels a continuable child', () => {
     expect(subagentLine({ mode: 'continuable', label: '调研' })).toContain('可续')
+  })
+
+  it('renders live subagent settlement per stop reason', () => {
+    expect(subagentEndLine({ id: 'sub-1', provider: 'dsh', stopReason: 'completed' })).toContain('✅')
+    expect(subagentEndLine({ id: 'sub-1', provider: 'dsh', stopReason: 'aborted' })).toContain('⏹️')
+    expect(subagentEndLine({ id: 'sub-2', provider: 'dsh', stopReason: 'error' })).toContain('❌')
+    expect(subagentEndLine({ id: 'sub-3', provider: 'dsh', stopReason: 'max-tokens' })).toContain('⛔')
+    expect(subagentEndLine({ id: 'sub-3', provider: 'dsh', stopReason: 'max-tokens' })).toContain('token 上限')
+    expect(subagentEndLine({ id: 'sub-1', provider: 'dsh', stopReason: 'completed' })).toContain('sub-1')
   })
 
   it('renders schedule creation with kind and prompt', () => {

@@ -60,6 +60,23 @@ export function webSearchLine(): string {
   return '🔍 正在搜索网络…'
 }
 
+/** A live subagent settlement line (`subagent/end`). */
+export function subagentEndLine(info: {
+  readonly id: string
+  readonly provider: string
+  readonly stopReason: 'completed' | 'aborted' | 'error' | 'max-tokens'
+}): string {
+  const mark = info.stopReason === 'completed' ? '✅' : info.stopReason === 'aborted' ? '⏹️' : info.stopReason === 'error' ? '❌' : '⛔'
+  const detail = info.stopReason === 'max-tokens'
+    ? '（达到 token 上限）'
+    : info.stopReason === 'error'
+      ? '（失败）'
+      : info.stopReason === 'aborted'
+        ? '（已中止）'
+        : ''
+  return `${mark} 子任务结束${detail} [${info.id}]`
+}
+
 /** A background job's terminal line (from `JobRegistry.onJobDone`). */
 export function jobDoneLine(job: {
   readonly id: string

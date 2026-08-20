@@ -790,6 +790,8 @@ declare module '@deepseek-ai/cordis' {
       request: HostApprovalRequest,
       next: () => Promise<HostApprovalOutcome>,
     ): Promise<HostApprovalOutcome>
+    /** Live subagent settlement, scoped to the delegating agent. */
+    'subagent/end'(info: SubagentEndData): void
     /** Live workflow run narration (two-argument Cordis events). */
     'workflow/log'(info: WorkflowRunInfoData, message: string): void
     'workflow/phase'(info: WorkflowRunInfoData, title: string): void
