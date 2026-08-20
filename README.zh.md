@@ -46,7 +46,7 @@
 | ⏰ **定时提醒** | `schedule_create/list/delete` 工具 + `/schedules` 视图（需在 dsh profile 组合 `@deepseek-ai/dsh-schedule`；桥已实现完整监听与渲染） |
 | 🔍 **会话历史检索** | `/sessions <关键词>` 对本聊天已存历史做全文检索并展示摘要 |
 | ⚙️ **后台任务通知** | `run_in_background` 任务与直接子代理结束时在聊天里播报结果 |
-| ⚡ **完整 Slash 面板** | `/stop /help /preset /sessions /tools /schedules /audit /config` + 宿主命令（`goal`、`plan`、`compact`、`feedback`、`permission`） |
+| ⚡ **完整 Slash 面板** | `/stop /help /preset /sessions /tools /schedules /jobs /feedback /context /audit /config` + 宿主命令（`goal`、`plan`、`compact`、`permission`） |
 | 🌐 **双语命令** | slash 面板与 `/help` 的描述按平台自动选语言：Lark（国际版）英文、飞书（国内版）中文；`locale` 可强制指定 |
 | 🖼️ **图片输入（可选）** | `attachImages` 下载聊天图片进 host 附件库，随模型请求发送 |
 | 📎 **文件发送** | Agent 的 `send_file` 带 caption 直接投递到聊天 |

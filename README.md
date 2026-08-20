@@ -51,7 +51,7 @@ Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 | ⏰ **Scheduled reminders** | `schedule_create/list/delete` tools + `/schedules` view (compose `@deepseek-ai/dsh-schedule` yourself; the plugin ships the full listener) |
 | 🔍 **Session history search** | `/sessions <keyword>` full-text searches this chat's stored history with snippets |
 | ⚙️ **Background job notifications** | `run_in_background` jobs and direct subagents announce their terminal outcome in the chat |
-| ⚡ **Full slash panel** | `/stop /help /preset /sessions /tools /schedules /audit /config` plus host commands (`goal`, `plan`, `compact`, `feedback`, `permission`) |
+| ⚡ **Full slash panel** | `/stop /help /preset /sessions /tools /schedules /jobs /feedback /context /audit /config` plus host commands (`goal`, `plan`, `compact`, `permission`) |
 | 🌐 **Bilingual commands** | Panel and `/help` follow the platform: English on international Lark, Chinese on domestic Feishu; `locale` overrides |
 | 🖼️ **Image input (opt-in)** | `attachImages` downloads chat images into the host attachment store |
 | 📎 **File delivery** | Agent `send_file` delivers files with caption into the chat |
