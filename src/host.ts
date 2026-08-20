@@ -850,3 +850,11 @@ export interface HostMessageFeedback {
     readonly ifVersion: unknown
   }): Promise<{ readonly ok: boolean; readonly error?: { readonly code: string } }>
 }
+
+/** The `tokenMeter` service (subset of the host `TokenMeter`). */
+export interface HostTokenMeter {
+  measure(session: { readonly id: string }): {
+    readonly totalTokens: number
+    readonly surfaceTokens: number
+  }
+}

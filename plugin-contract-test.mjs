@@ -160,6 +160,11 @@ check('messageFeedback put 载荷镜像 dsh', () => {
   assert(/readonly rating: 'positive' \| 'negative'/.test(hostSrc))
   assert(/readonly ifVersion: unknown/.test(hostSrc))
 })
+check('tokenMeter measure 载荷镜像 dsh', () => {
+  assert(/interface HostTokenMeter/.test(hostSrc))
+  assert(/measure\(session: \{ readonly id: string \}\)/.test(hostSrc))
+  assert(/readonly totalTokens: number/.test(hostSrc))
+})
 check('jobs onJobDone 载荷镜像 dsh', () => {
   assert(/interface HostJobs/.test(hostSrc))
   assert(/onJobDone\(listener: HostJobDoneListener\): \(\) => void/.test(hostSrc))

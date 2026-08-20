@@ -790,4 +790,13 @@ export interface HostMessageFeedback {
         };
     }>;
 }
+/** The `tokenMeter` service (subset of the host `TokenMeter`). */
+export interface HostTokenMeter {
+    measure(session: {
+        readonly id: string;
+    }): {
+        readonly totalTokens: number;
+        readonly surfaceTokens: number;
+    };
+}
 //# sourceMappingURL=host.d.ts.map
