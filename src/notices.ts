@@ -60,6 +60,36 @@ export function webSearchLine(): string {
   return '🔍 正在搜索网络…'
 }
 
+/** A live subagent settlement line (`subagent/end`). */
+export function subagentEndLine(info: {
+  readonly id: string
+  readonly provider: string
+  readonly stopReason: 'completed' | 'aborted' | 'error' | 'max-tokens'
+}): string {
+  const mark = info.stopReason === 'completed' ? '✅' : info.stopReason === 'aborted' ? '⏹️' : info.stopReason === 'error' ? '❌' : '⛔'
+  const detail = info.stopReason === 'max-tokens'
+    ? '（达到 token 上限）'
+    : info.stopReason === 'error'
+      ? '（失败）'
+      : info.stopReason === 'aborted'
+        ? '（已中止）'
+        : ''
+  return `${mark} 子任务结束${detail} [${info.id}]`
+}
+
+/** A background job's terminal line (from `JobRegistry.onJobDone`). */
+export function jobDoneLine(job: {
+  readonly id: string
+  readonly kind: string
+  readonly label: string
+  readonly status: 'completed' | 'killed' | 'failed'
+  readonly detail?: string
+}): string {
+  const mark = job.status === 'completed' ? '✅' : job.status === 'killed' ? '⏹️' : '❌'
+  const detail = job.detail === undefined || job.detail === '' ? '' : `（${job.detail}）`
+  return `${mark} 后台任务完成：${job.label}${detail} [${job.id}]`
+}
+
 /** A model-call retry line; only the first retry of a failure is announced. */
 export function retryLine(retry: { readonly retry: number; readonly maxRetries?: number }): string | undefined {
   if (retry.retry !== 1) return undefined

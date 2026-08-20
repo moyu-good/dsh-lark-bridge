@@ -39,4 +39,8 @@ export declare function agentStartLine(agent: WorkflowAgentStart): string;
 export declare function agentEndLine(agent: WorkflowAgentEnd): string;
 /** The run-closing line. */
 export declare function runEndLine(run: WorkflowRunEnd): string;
+/** A workflow phase-change line (live `workflow/phase` event). */
+export declare function phaseLine(title: string): string;
+/** A workflow narration line (live `workflow/log` event). */
+export declare function workflowLogLine(message: string): string;
 //# sourceMappingURL=workflow.d.ts.map

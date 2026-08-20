@@ -58,6 +58,20 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('reconnects when re-applied after disposal (HMR reload)', async () => {
+    const harness = await mountChannel()
+    expect(harness.fake.state.connects).toBe(1)
+    // Unload the plugin fiber without restoring internals, then apply it again
+    // on the same context — exactly what a Cordis HMR reload does.
+    await harness.fiber.dispose()
+    expect(harness.fake.state.disconnects).toBe(1)
+    const fiber2 = await harness.ctx.plugin(plugin, harness.config)
+    await vi.waitFor(() => {
+      if (harness.fake.state.connects !== 2) throw new Error('bridge did not reconnect on reload')
+    })
+    await fiber2.dispose()
+  })
+
   it('drives one agent per chat from inbound messages', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage({ content: 'first' }))
@@ -109,6 +123,24 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('announces background job terminals in the chat', async () => {
+    const jobsListeners: { fn: (snapshot: unknown, owner: unknown) => void }[] = []
+    const fakeJobs = {
+      onJobDone: (fn: (snapshot: unknown, owner: unknown) => void) => {
+        jobsListeners.push({ fn })
+        return () => { /* no-op: the test disposes the harness */ }
+      },
+    }
+    const harness = await mountChannel({}, { jobs: fakeJobs } as never)
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const owner = harness.agents.created[0]!.agent
+    expect(jobsListeners).toHaveLength(1)
+    jobsListeners[0]!.fn({ id: 'bash-1', kind: 'bash', label: 'pnpm build', status: 'completed' }, owner)
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('后台任务完成'))).toBe(true) })
+    await harness.dispose()
+  })
+
   it('streams workflow fan-out events into the chat', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage())
@@ -120,6 +152,10 @@ describe('dsh-lark-bridge', () => {
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('工作流「调研」'))).toBe(true) })
     emit('tool-workflow/agent-start', { runId: 'run-1', seq: 1, label: '爬虫', childId: 'child-1' })
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('爬虫 启动'))).toBe(true) })
+    harness.ctx.emit('workflow/phase', { id: 'run-1', meta: {} }, '爬取数据')
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('阶段：爬取数据'))).toBe(true) })
+    harness.ctx.emit('workflow/log', { id: 'run-1', meta: {} }, '正在抓取 100 页')
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('正在抓取 100 页'))).toBe(true) })
     emit('tool-workflow/agent-end', { runId: 'run-1', seq: 1, outcome: 'completed' })
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('✅'))).toBe(true) })
     emit('tool-workflow/run-end', { runId: 'run-1', stopReason: 'completed' })

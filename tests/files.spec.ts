@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createSendFileTool, deliverFile, renderSendFileResult, SEND_FILE_TOOL_NAME } from '../src/files.ts'
 import type { SendFileArgs, SendFileResult } from '../src/files.ts'
 
@@ -93,7 +93,7 @@ describe('deliverFile', () => {
   it('resolves a relative path against the workspace root', async () => {
     const file = tempFile('report.md', '# 报告')
     const { port, sent } = fakePort()
-    await deliverFile(port, 'oc_1', file.slice(0, file.lastIndexOf('/')), { path: 'report.md' })
+    await deliverFile(port, 'oc_1', dirname(file), { path: 'report.md' })
     expect(sent).toHaveLength(1)
   })
 
