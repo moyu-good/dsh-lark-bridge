@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-260-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-263-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -85,6 +85,7 @@ A `prepare` hook rebuilds automatically only when the compiled output is missing
 | `/sessions` | List this chat's session history |
 | `/tools` | View / deny / allow tools at runtime |
 | `/schedules` | View this chat's scheduled reminders |
+| `/jobs` | View this chat's background jobs |
 | `/audit` | Operation audit summary for the session |
 | `/config` | View the bridge's live configuration |
 | `/goal` | View / set the goal (host) |
@@ -205,7 +206,7 @@ can host it; it has no dependency on any other agent framework.
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
-pnpm test         # vitest (260 tests)
+pnpm test         # vitest (263 tests)
 node plugin-contract-test.mjs   # standalone contract tests
 ```
 

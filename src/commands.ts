@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 
@@ -31,6 +31,9 @@ export const TOOLS_COMMAND = 'tools'
 
 /** List the chat's active schedules (reminders). */
 export const SCHEDULES_COMMAND = 'schedules'
+
+/** List this session's background jobs. */
+export const JOBS_COMMAND = 'jobs'
 
 /** Show the session's operation audit summary. */
 export const AUDIT_COMMAND = 'audit'
@@ -110,6 +113,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent, l
     `\`/${SESSIONS_COMMAND}\` — ${describeCommand(SESSIONS_COMMAND, locale, 'View session history')}`,
     `\`/${TOOLS_COMMAND}\` — ${describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools')}`,
     `\`/${SCHEDULES_COMMAND}\` — ${describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders')}`,
+    `\`/${JOBS_COMMAND}\` — ${describeCommand(JOBS_COMMAND, locale, 'View background jobs')}`,
     `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
     `\`/${CONFIG_COMMAND}\` — ${describeCommand(CONFIG_COMMAND, locale, 'View current configuration')}`,
     `\`/${HELP_COMMAND}\` — ${describeCommand(HELP_COMMAND, locale, 'Show available commands')}`,
@@ -154,6 +158,7 @@ export async function runCommandLine(
   config: ResolvedConfig | undefined = undefined,
   sessionPresets: Map<string, string> | undefined = undefined,
   sessionQuery: HostSessionQuery | undefined = undefined,
+  jobs: HostJobs | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -167,6 +172,9 @@ export async function runCommandLine(
   if (name === SESSIONS_COMMAND) {
     const query = trimmed.slice(1 + SESSIONS_COMMAND.length).trim()
     return runSessionsCommand(agent, persistence, chatId, query, sessionQuery)
+  }
+  if (name === JOBS_COMMAND) {
+    return runJobsCommand(agent, jobs)
   }
   if (name === TOOLS_COMMAND) {
     return runToolsCommand(trimmed, deniedTools)
@@ -341,6 +349,38 @@ function runAuditCommand(
  * @param schedules - live schedule registry by session id.
  * @returns the reply for the chat.
  */
+/**
+ * Handle `/jobs`: list this session's background jobs, active first.
+ * @param agent - the chat's agent (fences job ownership).
+ * @param jobs - the background-job registry, when composed.
+ * @returns the reply for the chat.
+ */
+function runJobsCommand(
+  agent: HostAgent,
+  jobs: HostJobs | undefined,
+): CommandOutcome {
+  if (jobs === undefined) {
+    return { reply: `⚠️ 本部署没有组合后台任务运行时，\`/${JOBS_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const snapshots = jobs.list(agent)
+  if (snapshots.length === 0) {
+    return {
+      reply: `**后台任务**\n当前没有任务。让 agent 用 \`run_in_background\` 起一个（如"后台跑构建，完成后告诉我"）。`,
+      resolved: true,
+    }
+  }
+  const row = (job: { readonly id: string; readonly label: string; readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'; readonly detail?: string; readonly startedAt: number }): string => {
+    const mark = job.status === 'running' ? '🔵' : job.status === 'stopping' ? '⏸️' : job.status === 'completed' ? '✅' : job.status === 'killed' ? '⏹️' : '❌'
+    const detail = job.detail === undefined ? '' : `（${job.detail}）`
+    const when = new Date(job.startedAt).toLocaleTimeString('zh-CN', { hour12: false })
+    return `· ${mark} ${job.label}${detail} [${job.id}] ${when}`
+  }
+  const active = snapshots.filter(s => s.status === 'running' || s.status === 'stopping')
+  const done = snapshots.filter(s => s.status !== 'running' && s.status !== 'stopping')
+  const lines = [...active.map(row), ...done.map(row)]
+  return { reply: `**后台任务**（${snapshots.length} 个，${active.length} 活动）\n${lines.join('\n')}`, resolved: true }
+}
+
 function runSchedulesCommand(
   agent: HostAgent,
   schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined,

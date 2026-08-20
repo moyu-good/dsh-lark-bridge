@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-260-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-263-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -77,6 +77,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 | `/sessions` | 查看本聊天的会话历史 |
 | `/tools` | 运行时查看/禁用/恢复工具 |
 | `/schedules` | 查看本聊天的定时提醒 |
+| `/jobs` | 查看本会话的后台任务 |
 | `/audit` | 本会话的操作审计摘要 |
 | `/config` | 查看桥的当前配置 |
 | `/goal` | 查看/设置目标（宿主命令） |
@@ -181,7 +182,7 @@ curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/ap
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown（产物进 lib/，已提交仓库）
-pnpm test         # vitest（260 tests）
+pnpm test         # vitest（263 tests）
 node plugin-contract-test.mjs   # 独立契约测试
 ```
 

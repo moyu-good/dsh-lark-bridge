@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
+  JOBS_COMMAND,
   PRESET_COMMAND,
   PRESET_NAMES,
   runCommandLine,
@@ -492,5 +493,71 @@ describe('/config command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('配置')
+  })
+})
+
+describe('/jobs command', () => {
+  /** A fake job registry with the given snapshots. */
+  function fakeJobs(snapshots: object[]): object {
+    return { onJobDone: async () => () => {}, list: () => snapshots }
+  }
+
+  it('lists jobs with active ones first', async () => {
+    const jobs = fakeJobs([
+      { id: 'bash-2', kind: 'bash', label: 'watch', status: 'completed', startedAt: 1_700_000_000_000 },
+      { id: 'bash-1', kind: 'bash', label: 'pnpm build', status: 'running', startedAt: 1_699_000_000_000 },
+    ])
+    const outcome = await runCommandLine(
+      `/${JOBS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      jobs as never,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('2 个')
+    expect(outcome.reply).toContain('1 活动')
+    expect(outcome.reply.indexOf('🔵')).toBeLessThan(outcome.reply.indexOf('✅'))
+    expect(outcome.reply).toContain('pnpm build')
+  })
+
+  it('reports an empty job list', async () => {
+    const outcome = await runCommandLine(
+      `/${JOBS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fakeJobs([]) as never,
+    )
+    expect(outcome.reply).toContain('当前没有任务')
+  })
+
+  it('reports when the job registry is absent', async () => {
+    const outcome = await runCommandLine(
+      `/${JOBS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('后台任务运行时')
   })
 })

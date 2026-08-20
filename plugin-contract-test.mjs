@@ -157,6 +157,8 @@ check('sessionQuery 载荷镜像 dsh', () => {
 check('jobs onJobDone 载荷镜像 dsh', () => {
   assert(/interface HostJobs/.test(hostSrc))
   assert(/onJobDone\(listener: HostJobDoneListener\): \(\) => void/.test(hostSrc))
+  assert(/list\(caller\?: \{ readonly id: string \}\): readonly HostJobSnapshot\[\]/.test(hostSrc))
+  assert(/readonly startedAt: number/.test(hostSrc))
 })
 
 console.log('== 模块契约（静态读源码）==')
