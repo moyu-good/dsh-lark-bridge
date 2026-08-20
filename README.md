@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-251-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-253-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -94,6 +94,19 @@ A `prepare` hook rebuilds automatically only when the compiled output is missing
 Panel descriptions are bilingual: **English** when the platform domain is
 `open.larksuite.com` (international Lark), **Chinese** for `open.feishu.cn`
 (domestic Feishu). Set `locale: zh|en` to force one.
+
+## vs. other Feishu/Lark bridges
+
+| Capability | **dsh-lark-bridge** | xmanrui/dsh-im | omdsh-dev/dsh-lark | AX1202/ax-feishu-bridge |
+|---|---|---|---|---|
+| Positioning | Deep Harness channel | Multi-platform gateway | Scan-to-use | Pi + DSH dual bridge |
+| Native thinking process (Feishu CoT) | ✅ | — | — | — |
+| Approval cards + decider trail | ✅ | — | — | remote approve |
+| Live goal/todo cards | ✅ | — | — | — |
+| Workflow fan-out + phase/log lines | ✅ | — | — | — |
+| Compaction transparency | ✅ | — | — | — |
+| Goal auto-resume after restart | ✅ | — | crash-safe | — |
+| Bilingual slash panel sync | ✅ | — | — | panel buttons |
 
 ## ⚙️ Configuration
 
@@ -190,7 +203,7 @@ can host it; it has no dependency on any other agent framework.
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
-pnpm test         # vitest (251 tests)
+pnpm test         # vitest (253 tests)
 node plugin-contract-test.mjs   # standalone contract tests
 ```
 
