@@ -15,6 +15,7 @@ const FILES = {
   goal: 'packages/goal/goal/src/domain.ts',
   subagent: 'packages/subagent/subagent/src/types.ts',
   workflow: 'packages/workflow/workflow/src/index.ts',
+  jobs: 'packages/jobs/jobs/src/index.ts',
 }
 
 const checks = [
@@ -48,6 +49,11 @@ const checks = [
     file: 'workflow',
     pattern: /'workflow\/phase'\(info: WorkflowRunInfo, title: string\): void/,
   },
+  {
+    name: 'jobs keeps the onJobDone listener contract',
+    file: 'jobs',
+    pattern: /abstract onJobDone\(listener: JobDoneListener\): \(\) => void/,
+  },
 ]
 
 const HOST_PATTERNS = [
@@ -57,6 +63,7 @@ const HOST_PATTERNS = [
   ['workflow/log declared structurally', /'workflow\/log'\(info: WorkflowRunInfoData, message: string\): void/],
   ['workflow/phase declared structurally', /'workflow\/phase'\(info: WorkflowRunInfoData, title: string\): void/],
   ['AgentStatusData mirrors { agent, status }', /readonly agent: \{ readonly id: string \}/],
+  ['HostJobs mirrors onJobDone', /onJobDone\(listener: HostJobDoneListener\): \(\) => void/],
 ]
 
 async function main() {

@@ -40,7 +40,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostSessionQuery, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostSessionQuery, WorkflowRunInfoData } from './host.ts'
 import { isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
@@ -85,6 +85,7 @@ import {
 import {
   compactionPruneLine,
   compactionSummaryLine,
+  jobDoneLine,
   retryLine,
   scheduleLine,
   subagentLine,
@@ -658,6 +659,29 @@ export function installBridge(
       setup: async (agentCtx: Context) => {
         if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
         composeChatAgent(agentCtx, config, [sendFileTool], runtimeDeniedTools)
+        // Background jobs: a registered under this agent scope sees exactly the
+        // jobs its owner starts. Announce terminals so a long-running task's
+        // completion is visible in the chat instead of silent until asked.
+        const jobs = agentCtx.get('jobs') as HostJobs | undefined
+        jobs?.onJobDone((snapshot) => {
+          if (snapshot.status === 'running' || snapshot.status === 'stopping') return
+          const binding = bySession.get(sessionId)
+          if (binding === undefined) return
+          const terminal: {
+            readonly id: string
+            readonly kind: string
+            readonly label: string
+            readonly status: 'completed' | 'killed' | 'failed'
+            readonly detail?: string
+          } = {
+            id: snapshot.id,
+            kind: snapshot.kind,
+            label: snapshot.label,
+            status: snapshot.status,
+            ...snapshot.detail === undefined ? {} : { detail: snapshot.detail },
+          }
+          void replay.send(binding.chatId, { markdown: jobDoneLine(terminal) }).catch(reportSendFailure)
+        })
       },
     }
   }
