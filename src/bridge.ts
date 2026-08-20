@@ -454,6 +454,16 @@ function composeChatAgent(
         ? `These tools are unavailable here: ${[...new Set(config.denyTools)].join(', ')}.`
         : ''),
   })
+  prompt?.section({
+    name: 'dsh-lark-bridge:governance',
+    order: 160,
+    text: 'the personal governance layer治理层（跨 bot 共享进度）：所有任务/事项先查共享进度再动手，'
+      + '有实质进展或完成时更新任务状态并留痕。统一入口 = the personal governance layer（/path/to/projects/the personal governance layer/），'
+      + '命令：python3 /path/to/projects/the personal governance layer/scripts/task_status.py --as dsh list '
+      + '（查）/ update <ID> --status ... --note ...（更新）/ done <ID>（完成），'
+      + '数据在 data/tasks.json + data/任务进度.md，与 hermes/codex/pi 互通。'
+      + '新增事项可用 python3 /path/to/projects/the personal governance layer/sansheng.py dispatch --input "..." 立案归部。',
+  })
 }
 
 /**
