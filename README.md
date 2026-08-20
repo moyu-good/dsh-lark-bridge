@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-258-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-259-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -49,6 +49,8 @@ Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 | 🧑💻 **Subagent fan-out** | Workflow runs stream as text lines: run start, child open, child end, run end |
 | 📦 **Compaction transparency** | "Compacting…" → summary text + released tokens; prunes report trimmed count |
 | ⏰ **Scheduled reminders** | `schedule_create/list/delete` tools + `/schedules` view (compose `@deepseek-ai/dsh-schedule` yourself; the plugin ships the full listener) |
+| 🔍 **Session history search** | `/sessions <keyword>` full-text searches this chat's stored history with snippets |
+| ⚙️ **Background job notifications** | `run_in_background` jobs and direct subagents announce their terminal outcome in the chat |
 | ⚡ **Full slash panel** | `/stop /help /preset /sessions /tools /schedules /audit /config` plus host commands (`goal`, `plan`, `compact`, `feedback`, `permission`) |
 | 🌐 **Bilingual commands** | Panel and `/help` follow the platform: English on international Lark, Chinese on domestic Feishu; `locale` overrides |
 | 🖼️ **Image input (opt-in)** | `attachImages` downloads chat images into the host attachment store |
@@ -203,7 +205,7 @@ can host it; it has no dependency on any other agent framework.
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
-pnpm test         # vitest (258 tests)
+pnpm test         # vitest (259 tests)
 node plugin-contract-test.mjs   # standalone contract tests
 ```
 

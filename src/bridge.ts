@@ -40,7 +40,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostSessionQuery, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostSessionQuery, SubagentEndData, WorkflowRunInfoData } from './host.ts'
 import { isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
@@ -88,6 +88,7 @@ import {
   jobDoneLine,
   retryLine,
   scheduleLine,
+  subagentEndLine,
   subagentLine,
   webSearchLine,
 } from './notices.ts'
@@ -662,6 +663,14 @@ export function installBridge(
         // Background jobs: a registered under this agent scope sees exactly the
         // jobs its owner starts. Announce terminals so a long-running task's
         // completion is visible in the chat instead of silent until asked.
+        // Direct subagent tool calls announce their settlement live. The
+        // opening is already covered by the durable subagent/descriptor line,
+        // so only the terminal edge is rendered here.
+        agentCtx.on('subagent/end', (info: SubagentEndData) => {
+          const binding = bySession.get(sessionId)
+          if (binding === undefined) return
+          void replay.send(binding.chatId, { markdown: subagentEndLine(info) }).catch(reportSendFailure)
+        })
         const jobs = agentCtx.get('jobs') as HostJobs | undefined
         jobs?.onJobDone((snapshot) => {
           if (snapshot.status === 'running' || snapshot.status === 'stopping') return
