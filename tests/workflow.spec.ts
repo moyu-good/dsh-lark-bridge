@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   agentEndLine,
   agentStartLine,
+  phaseLine,
   runEndLine,
   runStartLine,
+  workflowLogLine,
 } from '../src/workflow.ts'
 
 describe('workflow progress lines', () => {
@@ -26,5 +28,14 @@ describe('workflow progress lines', () => {
     expect(runEndLine({ runId: 'r1', stopReason: 'completed' })).toContain('全部完成')
     expect(runEndLine({ runId: 'r1', stopReason: 'cancelled' })).toContain('已取消')
     expect(runEndLine({ runId: 'r1', stopReason: 'error' })).toContain('出错终止')
+  })
+
+  it('renders a phase-change line', () => {
+    expect(phaseLine('爬取数据')).toContain('阶段')
+    expect(phaseLine('爬取数据')).toContain('爬取数据')
+  })
+
+  it('renders a narration line', () => {
+    expect(workflowLogLine('正在抓取 100 页')).toContain('正在抓取 100 页')
   })
 })

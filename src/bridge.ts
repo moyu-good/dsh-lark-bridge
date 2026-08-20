@@ -40,6 +40,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
+import type { WorkflowRunInfoData } from './host.ts'
 import { isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
@@ -76,8 +77,10 @@ import { goalActionValue, type GoalActionValue } from './goal.ts'
 import {
   agentEndLine,
   agentStartLine,
+  phaseLine,
   runEndLine,
   runStartLine,
+  workflowLogLine,
 } from './workflow.ts'
 import {
   compactionPruneLine,
@@ -528,6 +531,8 @@ export function installBridge(
    * an escalation without seeing the command; the log already published these.
    */
   const pendingCallArguments = new Map<string, string>()
+  /** Live workflow run id -> chat id, fed by the durable run-start event. */
+  const workflowChats = new Map<string, string>()
   const cwd = resolve(config.cwd ?? process.cwd())
 
   /**
@@ -1140,6 +1145,20 @@ export function installBridge(
   // Outbound: the owned chat's renderer decides what reaches the chat. The
   // bridge additionally remembers each call's arguments for the approval card,
   // and forgets the turn's calls once it closes.
+  // Live workflow narration: phase and log events carry only the run identity,
+  // so the durable tool-workflow/run-start event supplies the run->chat map.
+  // Best-effort: lines arriving before the durable mapping exists are dropped.
+  ctx.on('workflow/phase', (info: WorkflowRunInfoData, title: string) => {
+    const chatId = workflowChats.get(info.id)
+    if (chatId === undefined) return
+    void replay.send(chatId, { markdown: phaseLine(title) }).catch(reportSendFailure)
+  })
+  ctx.on('workflow/log', (info: WorkflowRunInfoData, message: string) => {
+    const chatId = workflowChats.get(info.id)
+    if (chatId === undefined) return
+    void replay.send(chatId, { markdown: workflowLogLine(message) }).catch(reportSendFailure)
+  })
+
   ctx.on('session/event', (session, event: HostSessionEvent) => {
     const binding = bySession.get(session.id)
     if (binding === undefined) return
@@ -1203,12 +1222,14 @@ export function installBridge(
     // Live workflow fan-out: a text stream per run, so the chat sees the
     // subagent fan-out instead of a silent gap. Best-effort, like todo/goal.
     if (isWorkflowRunStartEvent(event)) {
+      workflowChats.set(event.data.runId, binding.chatId)
       void replay.send(binding.chatId, { markdown: runStartLine(event.data) }).catch(reportSendFailure)
     } else if (isWorkflowAgentStartEvent(event)) {
       void replay.send(binding.chatId, { markdown: agentStartLine(event.data) }).catch(reportSendFailure)
     } else if (isWorkflowAgentEndEvent(event)) {
       void replay.send(binding.chatId, { markdown: agentEndLine(event.data) }).catch(reportSendFailure)
     } else if (isWorkflowRunEndEvent(event)) {
+      workflowChats.delete(event.data.runId)
       void replay.send(binding.chatId, { markdown: runEndLine(event.data) }).catch(reportSendFailure)
     }
     // Context compaction: tell the chat when history is being summarized, so
