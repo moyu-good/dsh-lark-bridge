@@ -32,6 +32,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, BilingualText> = {
   sessions: { zh: '查看本聊天的会话历史', en: 'View this chat’s session history' },
   tools: { zh: '查看/禁用/恢复工具', en: 'View, deny, or allow tools' },
   schedules: { zh: '查看本聊天的定时提醒', en: 'View this chat’s scheduled reminders' },
+  jobs: { zh: '查看本会话的后台任务', en: 'View this session’s background jobs' },
   audit: { zh: '查看本会话的操作审计', en: 'View this session’s operation audit' },
   config: { zh: '查看桥的当前配置', en: 'View the bridge’s current configuration' },
   help: { zh: '显示可用命令', en: 'Show available commands' },

@@ -54,6 +54,11 @@ const checks = [
     file: 'jobs',
     pattern: /abstract onJobDone\(listener: JobDoneListener\): \(\) => void/,
   },
+  {
+    name: 'jobs keeps the list(caller) contract',
+    file: 'jobs',
+    pattern: /abstract list\(caller\?: Agent\): JobSnapshot\[\]/,
+  },
 ]
 
 const HOST_PATTERNS = [
@@ -64,6 +69,7 @@ const HOST_PATTERNS = [
   ['workflow/phase declared structurally', /'workflow\/phase'\(info: WorkflowRunInfoData, title: string\): void/],
   ['AgentStatusData mirrors { agent, status }', /readonly agent: \{ readonly id: string \}/],
   ['HostJobs mirrors onJobDone', /onJobDone\(listener: HostJobDoneListener\): \(\) => void/],
+  ['HostJobs mirrors list(caller)', /list\(caller\?: \{ readonly id: string \}\): readonly HostJobSnapshot\[\]/],
 ]
 
 async function main() {

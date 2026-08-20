@@ -53,6 +53,7 @@ import {
   CONFIG_COMMAND,
   HELP_COMMAND,
   isCommandLine,
+  JOBS_COMMAND,
   PRESET_COMMAND,
   runCommandLine,
   SCHEDULES_COMMAND,
@@ -859,6 +860,7 @@ export function installBridge(
       { name: SESSIONS_COMMAND, description: describeCommand(SESSIONS_COMMAND, locale, 'View session history') },
       { name: TOOLS_COMMAND, description: describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools') },
       { name: SCHEDULES_COMMAND, description: describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders') },
+      { name: JOBS_COMMAND, description: describeCommand(JOBS_COMMAND, locale, 'View background jobs') },
       { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
       { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
       { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
@@ -923,6 +925,7 @@ export function installBridge(
           config,
           sessionPresets,
           ctx.get('sessionQuery') as HostSessionQuery | undefined,
+          ctx.get('jobs') as HostJobs | undefined,
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let

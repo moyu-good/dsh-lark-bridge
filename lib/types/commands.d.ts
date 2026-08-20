@@ -8,7 +8,7 @@
  * — and `/help` lists what this chat accepts, which no host command provides.
  * @module dsh-lark-bridge/commands
  */
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts';
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts';
 import type { ResolvedConfig } from './config.ts';
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export declare const STOP_COMMAND = "stop";
@@ -22,6 +22,8 @@ export declare const SESSIONS_COMMAND = "sessions";
 export declare const TOOLS_COMMAND = "tools";
 /** List the chat's active schedules (reminders). */
 export declare const SCHEDULES_COMMAND = "schedules";
+/** List this session's background jobs. */
+export declare const JOBS_COMMAND = "jobs";
 /** Show the session's operation audit summary. */
 export declare const AUDIT_COMMAND = "audit";
 /** Show the chat bridge's live configuration. */
@@ -89,5 +91,5 @@ export declare function helpText(commands: HostCommands | undefined, agent: Host
  * @param sessionPresets - per-session preset choices (for `/preset` persistence).
  * @returns what to report to the chat.
  */
-export declare function runCommandLine(line: string, agent: HostAgent, commands: HostCommands | undefined, signal: AbortSignal, presets?: HostAgentPresets | undefined, persistence?: HostSessionPersistence | undefined, chatId?: string | undefined, deniedTools?: ReadonlySet<string> | undefined, schedules?: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined, audits?: ReadonlyMap<string, AuditStats> | undefined, config?: ResolvedConfig | undefined, sessionPresets?: Map<string, string> | undefined, sessionQuery?: HostSessionQuery | undefined): Promise<CommandOutcome>;
+export declare function runCommandLine(line: string, agent: HostAgent, commands: HostCommands | undefined, signal: AbortSignal, presets?: HostAgentPresets | undefined, persistence?: HostSessionPersistence | undefined, chatId?: string | undefined, deniedTools?: ReadonlySet<string> | undefined, schedules?: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined, audits?: ReadonlyMap<string, AuditStats> | undefined, config?: ResolvedConfig | undefined, sessionPresets?: Map<string, string> | undefined, sessionQuery?: HostSessionQuery | undefined, jobs?: HostJobs | undefined): Promise<CommandOutcome>;
 //# sourceMappingURL=commands.d.ts.map
