@@ -58,6 +58,20 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('reconnects when re-applied after disposal (HMR reload)', async () => {
+    const harness = await mountChannel()
+    expect(harness.fake.state.connects).toBe(1)
+    // Unload the plugin fiber without restoring internals, then apply it again
+    // on the same context — exactly what a Cordis HMR reload does.
+    await harness.fiber.dispose()
+    expect(harness.fake.state.disconnects).toBe(1)
+    const fiber2 = await harness.ctx.plugin(plugin, harness.config)
+    await vi.waitFor(() => {
+      if (harness.fake.state.connects !== 2) throw new Error('bridge did not reconnect on reload')
+    })
+    await fiber2.dispose()
+  })
+
   it('drives one agent per chat from inbound messages', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage({ content: 'first' }))
