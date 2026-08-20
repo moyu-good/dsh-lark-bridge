@@ -751,4 +751,20 @@ export interface HostSessionQuery {
         readonly items: readonly HostSessionQueryHit[];
     }>;
 }
+/** A read-only job projection (subset of the host `JobSnapshot`). */
+export interface HostJobSnapshot {
+    readonly id: string;
+    readonly kind: string;
+    readonly label: string;
+    readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed';
+    readonly detail?: string;
+}
+/** Completion listener shape of `JobRegistry.onJobDone`. */
+export type HostJobDoneListener = (snapshot: HostJobSnapshot, owner: {
+    readonly id: string;
+} | undefined) => void | PromiseLike<void>;
+/** The `jobs` registry (subset of the host `JobRegistry`), per-agent scoped. */
+export interface HostJobs {
+    onJobDone(listener: HostJobDoneListener): () => void;
+}
 //# sourceMappingURL=host.d.ts.map

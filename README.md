@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-256-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-258-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -203,7 +203,7 @@ can host it; it has no dependency on any other agent framework.
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
-pnpm test         # vitest (256 tests)
+pnpm test         # vitest (258 tests)
 node plugin-contract-test.mjs   # standalone contract tests
 ```
 

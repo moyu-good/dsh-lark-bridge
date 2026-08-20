@@ -26,6 +26,14 @@ export interface ScheduleNotice {
 export declare function scheduleLine(notice: ScheduleNotice): string | undefined;
 /** A DeepSeek search firing line. */
 export declare function webSearchLine(): string;
+/** A background job's terminal line (from `JobRegistry.onJobDone`). */
+export declare function jobDoneLine(job: {
+    readonly id: string;
+    readonly kind: string;
+    readonly label: string;
+    readonly status: 'completed' | 'killed' | 'failed';
+    readonly detail?: string;
+}): string;
 /** A model-call retry line; only the first retry of a failure is announced. */
 export declare function retryLine(retry: {
     readonly retry: number;

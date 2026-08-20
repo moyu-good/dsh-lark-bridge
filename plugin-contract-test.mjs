@@ -154,6 +154,10 @@ check('sessionQuery 载荷镜像 dsh', () => {
   assert(/searchSessions\(/.test(hostSrc))
   assert(/readonly bestMatch: \{ readonly snippet: string \}/.test(hostSrc))
 })
+check('jobs onJobDone 载荷镜像 dsh', () => {
+  assert(/interface HostJobs/.test(hostSrc))
+  assert(/onJobDone\(listener: HostJobDoneListener\): \(\) => void/.test(hostSrc))
+})
 
 console.log('== 模块契约（静态读源码）==')
 const srcFiles = ['index.ts', 'runtime.ts', 'invariant.ts', 'startup.ts']

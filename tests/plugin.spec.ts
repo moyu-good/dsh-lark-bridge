@@ -109,6 +109,24 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('announces background job terminals in the chat', async () => {
+    const jobsListeners: { fn: (snapshot: unknown, owner: unknown) => void }[] = []
+    const fakeJobs = {
+      onJobDone: (fn: (snapshot: unknown, owner: unknown) => void) => {
+        jobsListeners.push({ fn })
+        return () => { /* no-op: the test disposes the harness */ }
+      },
+    }
+    const harness = await mountChannel({}, { jobs: fakeJobs } as never)
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const owner = harness.agents.created[0]!.agent
+    expect(jobsListeners).toHaveLength(1)
+    jobsListeners[0]!.fn({ id: 'bash-1', kind: 'bash', label: 'pnpm build', status: 'completed' }, owner)
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('后台任务完成'))).toBe(true) })
+    await harness.dispose()
+  })
+
   it('streams workflow fan-out events into the chat', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage())
