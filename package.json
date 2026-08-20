@@ -12,7 +12,8 @@
     "prepare": "node scripts/prepare.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --pretty false",
-    "contract-test": "node plugin-contract-test.mjs"
+    "contract-test": "node plugin-contract-test.mjs",
+    "contract-drift": "node scripts/verify-dsh-contract.mjs"
   },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
