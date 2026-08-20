@@ -149,6 +149,11 @@ check('workflow run info 载荷镜像 dsh', () => {
   assert(/interface WorkflowRunInfoData/.test(hostSrc))
   assert(/readonly id: string/.test(hostSrc))
 })
+check('sessionQuery 载荷镜像 dsh', () => {
+  assert(/interface HostSessionQuery/.test(hostSrc))
+  assert(/searchSessions\(/.test(hostSrc))
+  assert(/readonly bestMatch: \{ readonly snippet: string \}/.test(hostSrc))
+})
 
 console.log('== 模块契约（静态读源码）==')
 const srcFiles = ['index.ts', 'runtime.ts', 'invariant.ts', 'startup.ts']
