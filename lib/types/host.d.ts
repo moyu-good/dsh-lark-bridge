@@ -728,4 +728,27 @@ declare module '@deepseek-ai/cordis' {
         'workflow/phase'(info: WorkflowRunInfoData, title: string): void;
     }
 }
+/** One cross-session search hit (subset of the host `SessionSearchHit`). */
+export interface HostSessionQueryHit {
+    readonly session: {
+        readonly id: string;
+        readonly createdAt?: number;
+    };
+    readonly bestMatch: {
+        readonly snippet: string;
+    };
+}
+/**
+ * The `sessionQuery` service (subset of the host `SessionQuery`), consumed by
+ * `/sessions <keyword>` when the deployment composes a search backend.
+ */
+export interface HostSessionQuery {
+    searchSessions(request: {
+        readonly query: string;
+        readonly limit?: number;
+        readonly signal?: AbortSignal;
+    }): Promise<{
+        readonly items: readonly HostSessionQueryHit[];
+    }>;
+}
 //# sourceMappingURL=host.d.ts.map
