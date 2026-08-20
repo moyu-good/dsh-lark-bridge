@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-251-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-253-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -85,6 +85,19 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 
 面板描述自动双语：平台域名为 `open.larksuite.com`（国际版 Lark）显示**英文**，`open.feishu.cn`（国内版飞书）显示**中文**；`locale: zh|en` 可强制指定。
 
+## 与其他飞书/Lark 桥对比
+
+| 能力 | **dsh-lark-bridge** | xmanrui/dsh-im | omdsh-dev/dsh-lark | AX1202/ax-feishu-bridge |
+|---|---|---|---|---|
+| 定位 | 深度 Harness 通道 | 多平台网关 | 扫码即用 | Pi + DSH 双桥 |
+| 原生思考过程（飞书 CoT） | ✅ | — | — | — |
+| 审批卡片 + 决策人留痕 | ✅ | — | — | 远程批准 |
+| 实时 goal/todo 卡片 | ✅ | — | — | — |
+| 工作流展开 + 阶段/日志行 | ✅ | — | — | — |
+| 压缩透明化 | ✅ | — | — | — |
+| 重启后 goal 自动续跑 | ✅ | — | 崩溃安全网 | — |
+| 双语斜杠面板同步 | ✅ | — | — | 面板按钮 |
+
 ## ⚙️ 配置
 
 | 字段 | 默认 | 含义 |
@@ -166,7 +179,7 @@ curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/ap
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown（产物进 lib/，已提交仓库）
-pnpm test         # vitest（251 tests）
+pnpm test         # vitest（253 tests）
 node plugin-contract-test.mjs   # 独立契约测试
 ```
 
