@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-258-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-259-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -44,6 +44,8 @@
 | 🧑💻 **子代理 fan-out** | workflow 运行以文本流呈现：run 开始、子代理开启/结束、run 结束 |
 | 📦 **压缩透明化** | "正在压缩…" → 摘要文本 + 释放 token 数；修剪报告删除条数 |
 | ⏰ **定时提醒** | `schedule_create/list/delete` 工具 + `/schedules` 视图（需在 dsh profile 组合 `@deepseek-ai/dsh-schedule`；桥已实现完整监听与渲染） |
+| 🔍 **会话历史检索** | `/sessions <关键词>` 对本聊天已存历史做全文检索并展示摘要 |
+| ⚙️ **后台任务通知** | `run_in_background` 任务与直接子代理结束时在聊天里播报结果 |
 | ⚡ **完整 Slash 面板** | `/stop /help /preset /sessions /tools /schedules /audit /config` + 宿主命令（`goal`、`plan`、`compact`、`feedback`、`permission`） |
 | 🌐 **双语命令** | slash 面板与 `/help` 的描述按平台自动选语言：Lark（国际版）英文、飞书（国内版）中文；`locale` 可强制指定 |
 | 🖼️ **图片输入（可选）** | `attachImages` 下载聊天图片进 host 附件库，随模型请求发送 |
@@ -179,7 +181,7 @@ curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/ap
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown（产物进 lib/，已提交仓库）
-pnpm test         # vitest（258 tests）
+pnpm test         # vitest（259 tests）
 node plugin-contract-test.mjs   # 独立契约测试
 ```
 
