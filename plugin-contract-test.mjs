@@ -123,6 +123,36 @@ check('stripToolCallMarkup 未闭合截断', () => {
   assert(!clean.includes('tool_calls>'), 'unterminated markup removed')
 })
 
+
+console.log('== host.ts: P1 契约对齐 ==')
+const host = await import('./lib/types/host.js')
+check('agent/status guard', () => {
+  assert(host.isAgentStatusEvent({ type: 'agent/status', data: { agentId: 'a', status: 'running' } }) === true)
+  assert(host.isAgentStatusEvent({ type: 'turn/end', data: {} }) === false)
+})
+check('subagent/start guard', () => {
+  assert(host.isSubagentStartEvent({ type: 'subagent/start', data: { subagentId: 's', parentId: 'p' } }) === true)
+})
+check('subagent/end guard', () => {
+  assert(host.isSubagentEndEvent({ type: 'subagent/end', data: { subagentId: 's', parentId: 'p', outcome: 'completed' } }) === true)
+})
+check('skills/change guard', () => {
+  assert(host.isSkillsChangeEvent({ type: 'skills/change', data: { skills: [] } }) === true)
+})
+check('workflow/log guard', () => {
+  assert(host.isWorkflowLogEvent({ type: 'workflow/log', data: { runId: 'r', message: 'm' } }) === true)
+})
+check('workflow/phase guard', () => {
+  assert(host.isWorkflowPhaseEvent({ type: 'workflow/phase', data: { runId: 'r', phase: 'p' } }) === true)
+})
+check('goal/change 兼容 clear 墓碑', () => {
+  const ev = host.isGoalChangeEvent({ type: 'goal/change', data: { operation: 'clear', cleared: { id: 'g' }, clearedAt: 1 } })
+  assert(ev === true)
+})
+const hostSrc = readFileSync(join(root, 'src', 'host.ts'), 'utf8')
+check('host.ts cancel 签名含 options', () => assert(/cancel\(cause: string, options\?:/.test(hostSrc)))
+check('host.ts GoalChange 支持 clear 墓碑', () => assert(/cleared\?:/.test(hostSrc)))
+
 console.log('== 模块契约（静态读源码）==')
 const srcFiles = ['index.ts', 'runtime.ts', 'invariant.ts', 'startup.ts']
 for (const file of srcFiles) {
