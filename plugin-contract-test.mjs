@@ -154,6 +154,12 @@ check('sessionQuery 载荷镜像 dsh', () => {
   assert(/searchSessions\(/.test(hostSrc))
   assert(/readonly bestMatch: \{ readonly snippet: string \}/.test(hostSrc))
 })
+check('messageFeedback put 载荷镜像 dsh', () => {
+  assert(/interface HostMessageFeedback/.test(hostSrc))
+  assert(/put\(request: \{/.test(hostSrc))
+  assert(/readonly rating: 'positive' \| 'negative'/.test(hostSrc))
+  assert(/readonly ifVersion: unknown/.test(hostSrc))
+})
 check('jobs onJobDone 载荷镜像 dsh', () => {
   assert(/interface HostJobs/.test(hostSrc))
   assert(/onJobDone\(listener: HostJobDoneListener\): \(\) => void/.test(hostSrc))

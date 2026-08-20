@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 
@@ -34,6 +34,9 @@ export const SCHEDULES_COMMAND = 'schedules'
 
 /** List this session's background jobs. */
 export const JOBS_COMMAND = 'jobs'
+
+/** Rate the chat's most recent assistant answer. */
+export const FEEDBACK_COMMAND = 'feedback'
 
 /** Show the session's operation audit summary. */
 export const AUDIT_COMMAND = 'audit'
@@ -159,6 +162,8 @@ export async function runCommandLine(
   sessionPresets: Map<string, string> | undefined = undefined,
   sessionQuery: HostSessionQuery | undefined = undefined,
   jobs: HostJobs | undefined = undefined,
+  feedback: HostMessageFeedback | undefined = undefined,
+  lastAssistantMessageId: string | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -175,6 +180,9 @@ export async function runCommandLine(
   }
   if (name === JOBS_COMMAND) {
     return runJobsCommand(agent, jobs)
+  }
+  if (name === FEEDBACK_COMMAND) {
+    return runFeedbackCommand(trimmed, agent, feedback, lastAssistantMessageId)
   }
   if (name === TOOLS_COMMAND) {
     return runToolsCommand(trimmed, deniedTools)
@@ -379,6 +387,54 @@ function runJobsCommand(
   const done = snapshots.filter(s => s.status !== 'running' && s.status !== 'stopping')
   const lines = [...active.map(row), ...done.map(row)]
   return { reply: `**后台任务**（${snapshots.length} 个，${active.length} 活动）\n${lines.join('\n')}`, resolved: true }
+}
+
+/**
+ * Handle `/feedback <positive|negative> [note]`: rate the chat's most recent
+ * assistant answer through the host message-feedback seam.
+ * @param line - the trimmed command line.
+ * @param agent - the chat's agent (owns the session being rated).
+ * @param feedback - the message-feedback service, when composed.
+ * @param lastAssistantMessageId - the most recent assistant message id, or
+ *   undefined when the session has produced no answer yet.
+ * @returns the reply for the chat.
+ */
+async function runFeedbackCommand(
+  line: string,
+  agent: HostAgent,
+  feedback: HostMessageFeedback | undefined,
+  lastAssistantMessageId: string | undefined,
+): Promise<CommandOutcome> {
+  if (feedback === undefined) {
+    return { reply: `⚠️ 本部署没有组合反馈服务，` + '`' + `/${FEEDBACK_COMMAND}` + '`' + ` 不可用。`, resolved: false }
+  }
+  if (lastAssistantMessageId === undefined) {
+    return { reply: '⚠️ 还没有可评分的回答。先让 agent 回答一条，再给这条回答评分。', resolved: false }
+  }
+  const args = line.slice(`/${FEEDBACK_COMMAND}`.length).trim().split(/\s+/).filter(a => a !== '')
+  const rating = args[0]?.toLowerCase()
+  if (rating !== 'positive' && rating !== 'negative') {
+    return {
+      reply: `用法：` + '`' + `/${FEEDBACK_COMMAND} positive|negative [备注]` + '`' + `（给上一条回答评分）。`,
+      resolved: false,
+    }
+  }
+  const note = args.slice(1).join(' ').trim()
+  const result = await feedback.put({
+    sessionId: agent.session.id,
+    messageId: lastAssistantMessageId,
+    rating,
+    ...note === '' ? {} : { note },
+    ifVersion: null,
+  })
+  if (!result.ok) {
+    const code = result.error?.code ?? 'unknown'
+    return { reply: `⚠️ 评分未记录（${code}）。可能是这条回答已被清空或会话已归档。`, resolved: false }
+  }
+  return {
+    reply: `✅ 已记录本次评分（${rating === 'positive' ? '👍 正面' : '👎 负面'}）${note === '' ? '' : `：${note}`}`,
+    resolved: true,
+  }
 }
 
 function runSchedulesCommand(

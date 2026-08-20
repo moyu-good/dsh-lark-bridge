@@ -452,6 +452,8 @@ export async function mountChannel(
     attachments?: object
     /** The `jobs` registry background tasks register with. */
     jobs?: object
+    /** The `messageFeedback` service `/feedback` writes through. */
+    messageFeedback?: object
     /**
      * The `goals` service stub (the bridge injects it). Defaults to an empty
      * view so autoResume reads no goal; tests with a goal pass a stub whose
@@ -492,6 +494,7 @@ export async function mountChannel(
   if (services.commands !== undefined) ctx.provide('commands', services.commands)
   if (services.attachments !== undefined) ctx.provide('attachments', services.attachments)
   if (services.jobs !== undefined) ctx.provide('jobs', services.jobs)
+  if (services.messageFeedback !== undefined) ctx.provide('messageFeedback', services.messageFeedback)
   const fake = createFakePort()
   const portConfigs: ChannelConfig[] = []
   const notices: string[] = []

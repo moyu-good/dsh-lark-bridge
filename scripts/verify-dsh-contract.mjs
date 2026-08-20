@@ -16,6 +16,7 @@ const FILES = {
   subagent: 'packages/subagent/subagent/src/types.ts',
   workflow: 'packages/workflow/workflow/src/index.ts',
   jobs: 'packages/jobs/jobs/src/index.ts',
+  feedback: 'packages/feedback/message-feedback/src/types.ts',
 }
 
 const checks = [
@@ -59,6 +60,11 @@ const checks = [
     file: 'jobs',
     pattern: /abstract list\(caller\?: Agent\): JobSnapshot\[\]/,
   },
+  {
+    name: 'message feedback put request keeps its fields',
+    file: 'feedback',
+    pattern: /readonly sessionId: SessionId[\s\S]*readonly messageId: MessageId[\s\S]*readonly rating: MessageFeedbackRating[\s\S]*readonly ifVersion: MessageFeedbackVersion \| null/,
+  },
 ]
 
 const HOST_PATTERNS = [
@@ -70,6 +76,7 @@ const HOST_PATTERNS = [
   ['AgentStatusData mirrors { agent, status }', /readonly agent: \{ readonly id: string \}/],
   ['HostJobs mirrors onJobDone', /onJobDone\(listener: HostJobDoneListener\): \(\) => void/],
   ['HostJobs mirrors list(caller)', /list\(caller\?: \{ readonly id: string \}\): readonly HostJobSnapshot\[\]/],
+  ['HostMessageFeedback mirrors put', /put\(request: \{[\\s\\S]*readonly sessionId: string[\\s\\S]*readonly rating: 'positive' \\| 'negative'/],
 ]
 
 async function main() {

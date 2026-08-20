@@ -123,6 +123,28 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('rates the last assistant message through /feedback', async () => {
+    const puts: { sessionId: string; messageId: string; rating: string; note?: string }[] = []
+    const feedback = {
+      put: async (req: { sessionId: string; messageId: string; rating: string; note?: string }) => {
+        puts.push(req)
+        return { ok: true }
+      },
+    }
+    const harness = await mountChannel({}, { messageFeedback: feedback } as never)
+    await harness.fake.emitMessage(fakeMessage({ content: '帮我看看' }))
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    const session = harness.agents.created[0]!.agent.session
+    harness.ctx.emit('session/event', session, {
+      type: 'assistant/message',
+      data: { turn: 1, step: 0, message: { id: 'assistant-1', content: [{ type: 'text', text: '答案' }] } },
+    })
+    await harness.fake.emitMessage(fakeMessage({ content: '/feedback positive 很好' }))
+    await vi.waitFor(() => { expect(puts).toHaveLength(1) })
+    expect(puts[0]).toMatchObject({ sessionId: session.id, messageId: 'assistant-1', rating: 'positive', note: '很好' })
+    await harness.dispose()
+  })
+
   it('announces background job terminals in the chat', async () => {
     const jobsListeners: { fn: (snapshot: unknown, owner: unknown) => void }[] = []
     const fakeJobs = {

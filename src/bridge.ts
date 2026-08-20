@@ -40,8 +40,8 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostSessionQuery, SubagentEndData, WorkflowRunInfoData } from './host.ts'
-import { isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
+import type { HostJobs, HostMessageFeedback, HostSessionQuery, SubagentEndData, WorkflowRunInfoData } from './host.ts'
+import { isAssistantMessageEvent, isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -51,6 +51,7 @@ import type { Authorization } from './authorization.ts'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
+  FEEDBACK_COMMAND,
   HELP_COMMAND,
   isCommandLine,
   JOBS_COMMAND,
@@ -536,6 +537,8 @@ export function installBridge(
   const pendingCallArguments = new Map<string, string>()
   /** Live workflow run id -> chat id, fed by the durable run-start event. */
   const workflowChats = new Map<string, string>()
+  /** Most recent assistant message id per session, for `/feedback`. */
+  const lastAssistantIds = new Map<string, string>()
   const cwd = resolve(config.cwd ?? process.cwd())
 
   /**
@@ -862,6 +865,7 @@ export function installBridge(
       { name: SCHEDULES_COMMAND, description: describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders') },
       { name: JOBS_COMMAND, description: describeCommand(JOBS_COMMAND, locale, 'View background jobs') },
       { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
+      { name: FEEDBACK_COMMAND, description: describeCommand(FEEDBACK_COMMAND, locale, 'Record feedback about this session') },
       { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
       { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
       { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
@@ -926,6 +930,8 @@ export function installBridge(
           sessionPresets,
           ctx.get('sessionQuery') as HostSessionQuery | undefined,
           ctx.get('jobs') as HostJobs | undefined,
+          ctx.get('messageFeedback') as HostMessageFeedback | undefined,
+          lastAssistantIds.get(sessionId),
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let
@@ -1222,6 +1228,9 @@ export function installBridge(
       else if (isWorkflowRunStartEvent(event)) stats.workflows += 1
       else if (isScheduleChangeEvent(event)) stats.schedules += 1
     }
+    if (isAssistantMessageEvent(event)) {
+      lastAssistantIds.set(session.id, event.data.message.id)
+    }
     if (isToolCallEvent(event)) {
       pendingCallArguments.set(event.data.callId, event.data.arguments)
     } else if (isTurnEndEvent(event)) {
@@ -1364,6 +1373,7 @@ export function installBridge(
     bySession.clear()
     compositions.clear()
     pendingCallArguments.clear()
+    lastAssistantIds.clear()
     goals.dispose()
     todos.dispose()
     for (const binding of bindings) {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
+  FEEDBACK_COMMAND,
   JOBS_COMMAND,
   PRESET_COMMAND,
   PRESET_NAMES,
@@ -559,5 +560,115 @@ describe('/jobs command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('后台任务运行时')
+  })
+})
+
+describe('/feedback command', () => {
+  function fakeFeedback(ok = true, code = 'unknown'): object {
+    return { put: async () => ok ? { ok: true } : { ok: false, error: { code } } }
+  }
+  const agent = fakeAgent()
+
+  it('records a positive rating with a note', async () => {
+    const feedback = fakeFeedback()
+    const outcome = await runCommandLine(
+      `/${FEEDBACK_COMMAND} positive 很好`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      feedback as never,
+      'msg-1',
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('正面')
+    expect(outcome.reply).toContain('很好')
+  })
+
+  it('reports a rejected put with its code', async () => {
+    const outcome = await runCommandLine(
+      `/${FEEDBACK_COMMAND} negative`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fakeFeedback(false, 'target-not-found') as never,
+      'msg-1',
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('target-not-found')
+  })
+
+  it('asks for an answer before rating', async () => {
+    const outcome = await runCommandLine(
+      `/${FEEDBACK_COMMAND} positive`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fakeFeedback() as never,
+      undefined,
+    )
+    expect(outcome.reply).toContain('还没有可评分')
+  })
+
+  it('rejects an invalid rating with usage', async () => {
+    const outcome = await runCommandLine(
+      `/${FEEDBACK_COMMAND} great`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fakeFeedback() as never,
+      'msg-1',
+    )
+    expect(outcome.reply).toContain('用法')
+  })
+
+  it('reports when the feedback service is absent', async () => {
+    const outcome = await runCommandLine(
+      `/${FEEDBACK_COMMAND} positive`,
+      agent,
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('反馈服务')
   })
 })

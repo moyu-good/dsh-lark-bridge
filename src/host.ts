@@ -301,6 +301,7 @@ export interface HostSessionEvent {
 export interface AssistantMessageData {
   readonly turn: number
   readonly message: {
+    readonly id: string
     readonly content: readonly { readonly type: string; readonly text?: string }[]
   }
 }
@@ -837,4 +838,15 @@ export interface HostJobs {
   onJobDone(listener: HostJobDoneListener): () => void
   /** List caller-owned and unowned jobs in registration order. */
   list(caller?: { readonly id: string }): readonly HostJobSnapshot[]
+}
+
+/** The `messageFeedback` service (subset of the host `MessageFeedback`). */
+export interface HostMessageFeedback {
+  put(request: {
+    readonly sessionId: string
+    readonly messageId: string
+    readonly rating: 'positive' | 'negative'
+    readonly note?: string
+    readonly ifVersion: unknown
+  }): Promise<{ readonly ok: boolean; readonly error?: { readonly code: string } }>
 }
