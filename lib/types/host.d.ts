@@ -4,7 +4,9 @@
  * packages) lets the package build self-contained; a composed DSH profile
  * supplies the real implementations at runtime. Field shapes mirror
  * `@deepseek-ai/dsh-agent`, `@deepseek-ai/dsh-session`, and
- * `@deepseek-ai/dsh-user-approval` as of dsh 0.0.1-rc.2.
+ * `@deepseek-ai/dsh-user-approval` as of dsh main 2026-08-20 (was 0.0.1-rc.2).
+ * P1 alignment: cancel signature, GoalChange clear-tombstone, and Cordis event
+ * guards expanded for perfect-plugin roadmap.
  * @module dsh-lark-bridge/host
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -73,8 +75,11 @@ export interface HostAgent {
     /**
      * Clear queued work and abort the active turn. A no-op when nothing is
      * active, so a chat may offer it unconditionally.
+     * Signature mirrors Agent.cancel(cause: AgentCancelCause, options?: CancelOptions).
      */
-    cancel(cause: string): void;
+    cancel(cause: string, options?: {
+        readonly keepInbox?: boolean;
+    }): void;
 }
 /** An owned agent plus its teardown capability, from `agents.create()`. */
 export interface HostAgentHandle {
@@ -337,6 +342,7 @@ export interface TodoWriteData {
 }
 /** The `goal/change` payload: a whole-value goal snapshot mutation. */
 export interface GoalChangeData {
+    readonly version?: number;
     readonly operation: string;
     readonly goal?: {
         readonly objective: string;
@@ -346,7 +352,18 @@ export interface GoalChangeData {
             readonly message?: string;
         };
         readonly maxGoalRounds?: number;
+        readonly id?: string;
+        readonly revision?: number;
     };
+    /** Present on clear tombstone (no current goal) */
+    readonly cleared?: {
+        readonly id: string;
+        readonly revision?: number;
+    };
+    readonly clearedAt?: number;
+    readonly roundsStarted?: number;
+    readonly createdAt?: number;
+    readonly updatedAt?: number;
 }
 /** The `tool-workflow/run-start` payload: one top-level workflow run opens. */
 export interface WorkflowRunStartData {
@@ -439,6 +456,36 @@ export interface ScheduleEntry {
     readonly createdAt: number;
 }
 /** Per-session operation counters accumulated for `/audit`. */
+/** Cordis `agent/status` payload: lifecycle of one live agent. */
+export interface AgentStatusData {
+    readonly agentId: string;
+    readonly status: 'idle' | 'running';
+}
+/** Cordis `subagent/start|end` payloads (provider-agnostic). */
+export interface SubagentStartData {
+    readonly subagentId: string;
+    readonly parentId: string;
+    readonly label?: string;
+}
+export interface SubagentEndData {
+    readonly subagentId: string;
+    readonly parentId: string;
+    readonly outcome: 'completed' | 'failed' | 'cancelled';
+}
+/** Cordis `skills/change` payload. */
+export interface SkillsChangeData {
+    readonly skills: readonly unknown[];
+}
+/** workflow/log and workflow/phase payloads for richer workflow viz. */
+export interface WorkflowLogData {
+    readonly runId: string;
+    readonly seq?: number;
+    readonly message: string;
+}
+export interface WorkflowPhaseData {
+    readonly runId: string;
+    readonly phase: string;
+}
 export interface AuditStats {
     /** Unix epoch milliseconds when the bridge first saw this session. */
     readonly startedAt: number;
@@ -615,6 +662,27 @@ export declare function isLlmRetryEvent(event: HostSessionEvent): event is HostS
  * @param event - any session event.
  * @returns whether `event.data` carries {@link AssistantChunkData}.
  */
+/**
+ * Narrow a Cordis event to agent lifecycle status.
+ */
+export declare function isAgentStatusEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: AgentStatusData;
+};
+export declare function isSubagentStartEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: SubagentStartData;
+};
+export declare function isSubagentEndEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: SubagentEndData;
+};
+export declare function isSkillsChangeEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: SkillsChangeData;
+};
+export declare function isWorkflowLogEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: WorkflowLogData;
+};
+export declare function isWorkflowPhaseEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: WorkflowPhaseData;
+};
 export declare function isAssistantChunkEvent(event: HostSessionEvent): event is HostSessionEvent & {
     readonly data: AssistantChunkData;
 };
