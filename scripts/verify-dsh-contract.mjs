@@ -76,7 +76,7 @@ const HOST_PATTERNS = [
   ['AgentStatusData mirrors { agent, status }', /readonly agent: \{ readonly id: string \}/],
   ['HostJobs mirrors onJobDone', /onJobDone\(listener: HostJobDoneListener\): \(\) => void/],
   ['HostJobs mirrors list(caller)', /list\(caller\?: \{ readonly id: string \}\): readonly HostJobSnapshot\[\]/],
-  ['HostMessageFeedback mirrors put', /put\(request: \{[\\s\\S]*readonly sessionId: string[\\s\\S]*readonly rating: 'positive' \\| 'negative'/],
+  ['HostMessageFeedback mirrors put', /put\(request: \{[\s\S]*readonly sessionId: string[\s\S]*readonly rating: 'positive' \| 'negative'/],
 ]
 
 async function main() {

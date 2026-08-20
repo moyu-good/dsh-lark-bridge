@@ -40,7 +40,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostMessageFeedback, HostSessionQuery, SubagentEndData, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostMessageFeedback, HostSessionQuery, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
 import { isAssistantMessageEvent, isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
@@ -51,6 +51,7 @@ import type { Authorization } from './authorization.ts'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
+  CONTEXT_COMMAND,
   FEEDBACK_COMMAND,
   HELP_COMMAND,
   isCommandLine,
@@ -866,6 +867,7 @@ export function installBridge(
       { name: JOBS_COMMAND, description: describeCommand(JOBS_COMMAND, locale, 'View background jobs') },
       { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
       { name: FEEDBACK_COMMAND, description: describeCommand(FEEDBACK_COMMAND, locale, 'Record feedback about this session') },
+      { name: CONTEXT_COMMAND, description: describeCommand(CONTEXT_COMMAND, locale, 'View context pressure') },
       { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
       { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
       { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
@@ -932,6 +934,7 @@ export function installBridge(
           ctx.get('jobs') as HostJobs | undefined,
           ctx.get('messageFeedback') as HostMessageFeedback | undefined,
           lastAssistantIds.get(sessionId),
+          ctx.get('tokenMeter') as HostTokenMeter | undefined,
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let

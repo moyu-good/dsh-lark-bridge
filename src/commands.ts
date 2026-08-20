@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostTokenMeter, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 
@@ -37,6 +37,9 @@ export const JOBS_COMMAND = 'jobs'
 
 /** Rate the chat's most recent assistant answer. */
 export const FEEDBACK_COMMAND = 'feedback'
+
+/** Show the session's current context pressure. */
+export const CONTEXT_COMMAND = 'context'
 
 /** Show the session's operation audit summary. */
 export const AUDIT_COMMAND = 'audit'
@@ -117,6 +120,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent, l
     `\`/${TOOLS_COMMAND}\` — ${describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools')}`,
     `\`/${SCHEDULES_COMMAND}\` — ${describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders')}`,
     `\`/${JOBS_COMMAND}\` — ${describeCommand(JOBS_COMMAND, locale, 'View background jobs')}`,
+    `\`/${CONTEXT_COMMAND}\` — ${describeCommand(CONTEXT_COMMAND, locale, 'View context pressure')}`,
     `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
     `\`/${CONFIG_COMMAND}\` — ${describeCommand(CONFIG_COMMAND, locale, 'View current configuration')}`,
     `\`/${HELP_COMMAND}\` — ${describeCommand(HELP_COMMAND, locale, 'Show available commands')}`,
@@ -164,6 +168,7 @@ export async function runCommandLine(
   jobs: HostJobs | undefined = undefined,
   feedback: HostMessageFeedback | undefined = undefined,
   lastAssistantMessageId: string | undefined = undefined,
+  tokenMeter: HostTokenMeter | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -183,6 +188,9 @@ export async function runCommandLine(
   }
   if (name === FEEDBACK_COMMAND) {
     return runFeedbackCommand(trimmed, agent, feedback, lastAssistantMessageId)
+  }
+  if (name === CONTEXT_COMMAND) {
+    return runContextCommand(agent, tokenMeter)
   }
   if (name === TOOLS_COMMAND) {
     return runToolsCommand(trimmed, deniedTools)
@@ -435,6 +443,30 @@ async function runFeedbackCommand(
     reply: `✅ 已记录本次评分（${rating === 'positive' ? '👍 正面' : '👎 负面'}）${note === '' ? '' : `：${note}`}`,
     resolved: true,
   }
+}
+
+/**
+ * Handle `/context`: show the session's current context token pressure.
+ * @param agent - the chat's agent (owns the measured session).
+ * @param tokenMeter - the token-meter service, when composed.
+ * @returns the reply for the chat.
+ */
+function runContextCommand(
+  agent: HostAgent,
+  tokenMeter: HostTokenMeter | undefined,
+): CommandOutcome {
+  if (tokenMeter === undefined) {
+    return { reply: `⚠️ 本部署没有组合 token 计量服务，` + '`' + `/${CONTEXT_COMMAND}` + '`' + ` 不可用。`, resolved: false }
+  }
+  const measure = tokenMeter.measure(agent.session)
+  const total = measure.totalTokens.toLocaleString('zh-CN')
+  const surface = measure.surfaceTokens.toLocaleString('zh-CN')
+  const hint = measure.totalTokens > 120_000
+    ? '\n⚠️ 上下文已偏高，长任务建议先 `/compact` 压缩。'
+    : measure.totalTokens > 60_000
+      ? '\n📈 上下文正在增长，超过 12 万 tokens 后建议压缩。'
+      : ''
+  return { reply: `**上下文压力**\n当前约 ${total} tokens（会话表面 ${surface}）${hint}`, resolved: true }
 }
 
 function runSchedulesCommand(

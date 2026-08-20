@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
+  CONTEXT_COMMAND,
   FEEDBACK_COMMAND,
   JOBS_COMMAND,
   PRESET_COMMAND,
@@ -670,5 +671,68 @@ describe('/feedback command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('反馈服务')
+  })
+})
+
+describe('/context command', () => {
+  it('shows current context pressure', async () => {
+    const meter = { measure: () => ({ totalTokens: 123_456, surfaceTokens: 20_000 }) }
+    const outcome = await runCommandLine(
+      `/${CONTEXT_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      meter as never,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('123,456')
+    expect(outcome.reply).toContain('/compact')
+  })
+
+  it('stays quiet below the high-pressure threshold', async () => {
+    const outcome = await runCommandLine(
+      `/${CONTEXT_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { measure: () => ({ totalTokens: 30_000, surfaceTokens: 5_000 }) } as never,
+    )
+    expect(outcome.reply).toContain('30,000')
+    expect(outcome.reply).not.toContain('偏高')
+  })
+
+  it('reports when the token meter is absent', async () => {
+    const outcome = await runCommandLine(
+      `/${CONTEXT_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('token 计量')
   })
 })
