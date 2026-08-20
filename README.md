@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-263-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-269-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -91,7 +91,7 @@ A `prepare` hook rebuilds automatically only when the compiled output is missing
 | `/goal` | View / set the goal (host) |
 | `/plan` | Enter / leave plan mode (host) |
 | `/compact` | Compact older history (host) |
-| `/feedback` | Record session feedback (host) |
+| `/feedback` | Rate the last answer: `positive`/`negative` + optional note |
 | `/permission` | Switch permission preset (host) |
 
 Panel descriptions are bilingual: **English** when the platform domain is
@@ -206,7 +206,7 @@ can host it; it has no dependency on any other agent framework.
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
-pnpm test         # vitest (263 tests)
+pnpm test         # vitest (269 tests)
 node plugin-contract-test.mjs   # standalone contract tests
 ```
 
