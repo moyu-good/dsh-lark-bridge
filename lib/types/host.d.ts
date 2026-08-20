@@ -458,33 +458,26 @@ export interface ScheduleEntry {
 /** Per-session operation counters accumulated for `/audit`. */
 /** Cordis `agent/status` payload: lifecycle of one live agent. */
 export interface AgentStatusData {
-    readonly agentId: string;
+    readonly agent: {
+        readonly id: string;
+    };
     readonly status: 'idle' | 'running';
 }
 /** Cordis `subagent/start|end` payloads (provider-agnostic). */
 export interface SubagentStartData {
-    readonly subagentId: string;
-    readonly parentId: string;
-    readonly label?: string;
-}
-export interface SubagentEndData {
-    readonly subagentId: string;
-    readonly parentId: string;
-    readonly outcome: 'completed' | 'failed' | 'cancelled';
-}
-/** Cordis `skills/change` payload. */
-export interface SkillsChangeData {
-    readonly skills: readonly unknown[];
-}
-/** workflow/log and workflow/phase payloads for richer workflow viz. */
-export interface WorkflowLogData {
     readonly runId: string;
-    readonly seq?: number;
-    readonly message: string;
+    readonly provider: string;
+    readonly id: string;
+    readonly local: boolean;
 }
-export interface WorkflowPhaseData {
-    readonly runId: string;
-    readonly phase: string;
+export interface SubagentEndData extends SubagentStartData {
+    readonly stopReason: 'completed' | 'aborted' | 'error' | 'max-tokens';
+    readonly lastAssistantMessage?: readonly unknown[];
+}
+/** Cordis `workflow/*` run identity carried by every live workflow event. */
+export interface WorkflowRunInfoData {
+    readonly id: string;
+    readonly meta: unknown;
 }
 export interface AuditStats {
     /** Unix epoch milliseconds when the bridge first saw this session. */
@@ -665,24 +658,6 @@ export declare function isLlmRetryEvent(event: HostSessionEvent): event is HostS
 /**
  * Narrow a Cordis event to agent lifecycle status.
  */
-export declare function isAgentStatusEvent(event: HostSessionEvent): event is HostSessionEvent & {
-    readonly data: AgentStatusData;
-};
-export declare function isSubagentStartEvent(event: HostSessionEvent): event is HostSessionEvent & {
-    readonly data: SubagentStartData;
-};
-export declare function isSubagentEndEvent(event: HostSessionEvent): event is HostSessionEvent & {
-    readonly data: SubagentEndData;
-};
-export declare function isSkillsChangeEvent(event: HostSessionEvent): event is HostSessionEvent & {
-    readonly data: SkillsChangeData;
-};
-export declare function isWorkflowLogEvent(event: HostSessionEvent): event is HostSessionEvent & {
-    readonly data: WorkflowLogData;
-};
-export declare function isWorkflowPhaseEvent(event: HostSessionEvent): event is HostSessionEvent & {
-    readonly data: WorkflowPhaseData;
-};
 export declare function isAssistantChunkEvent(event: HostSessionEvent): event is HostSessionEvent & {
     readonly data: AssistantChunkData;
 };

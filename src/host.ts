@@ -447,36 +447,26 @@ export interface ScheduleEntry {
 
 /** Cordis `agent/status` payload: lifecycle of one live agent. */
 export interface AgentStatusData {
-  readonly agentId: string
+  readonly agent: { readonly id: string }
   readonly status: 'idle' | 'running'
 }
 
 /** Cordis `subagent/start|end` payloads (provider-agnostic). */
 export interface SubagentStartData {
-  readonly subagentId: string
-  readonly parentId: string
-  readonly label?: string
+  readonly runId: string
+  readonly provider: string
+  readonly id: string
+  readonly local: boolean
 }
-export interface SubagentEndData {
-  readonly subagentId: string
-  readonly parentId: string
-  readonly outcome: 'completed' | 'failed' | 'cancelled'
+export interface SubagentEndData extends SubagentStartData {
+  readonly stopReason: 'completed' | 'aborted' | 'error' | 'max-tokens'
+  readonly lastAssistantMessage?: readonly unknown[]
 }
 
-/** Cordis `skills/change` payload. */
-export interface SkillsChangeData {
-  readonly skills: readonly unknown[]
-}
-
-/** workflow/log and workflow/phase payloads for richer workflow viz. */
-export interface WorkflowLogData {
-  readonly runId: string
-  readonly seq?: number
-  readonly message: string
-}
-export interface WorkflowPhaseData {
-  readonly runId: string
-  readonly phase: string
+/** Cordis `workflow/*` run identity carried by every live workflow event. */
+export interface WorkflowRunInfoData {
+  readonly id: string
+  readonly meta: unknown
 }
 
 export interface AuditStats {
@@ -705,24 +695,6 @@ export function isLlmRetryEvent(
 /**
  * Narrow a Cordis event to agent lifecycle status.
  */
-export function isAgentStatusEvent(event: HostSessionEvent): event is HostSessionEvent & { readonly data: AgentStatusData } {
-  return event.type === 'agent/status'
-}
-export function isSubagentStartEvent(event: HostSessionEvent): event is HostSessionEvent & { readonly data: SubagentStartData } {
-  return event.type === 'subagent/start'
-}
-export function isSubagentEndEvent(event: HostSessionEvent): event is HostSessionEvent & { readonly data: SubagentEndData } {
-  return event.type === 'subagent/end'
-}
-export function isSkillsChangeEvent(event: HostSessionEvent): event is HostSessionEvent & { readonly data: SkillsChangeData } {
-  return event.type === 'skills/change'
-}
-export function isWorkflowLogEvent(event: HostSessionEvent): event is HostSessionEvent & { readonly data: WorkflowLogData } {
-  return event.type === 'workflow/log'
-}
-export function isWorkflowPhaseEvent(event: HostSessionEvent): event is HostSessionEvent & { readonly data: WorkflowPhaseData } {
-  return event.type === 'workflow/phase'
-}
 export function isAssistantChunkEvent(
   event: HostSessionEvent,
 ): event is HostSessionEvent & { readonly data: AssistantChunkData } {
