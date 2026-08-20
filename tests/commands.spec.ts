@@ -184,6 +184,77 @@ describe('/sessions command', () => {
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('会话存储')
   })
+
+  it('searches this chat sessions with a full-text query', async () => {
+    const query = {
+      searchSessions: async (req: { query: string }) => ({
+        items: req.query === '飞书'
+          ? [
+              { session: { id: 'feishu-oc_chat_1', createdAt: 1_700_000_000_000 }, bestMatch: { snippet: '用户在做飞书桥的 i18n 开发' } },
+              { session: { id: 'feishu-oc_chat_2', createdAt: 1_700_000_500_000 }, bestMatch: { snippet: '其他话题' } },
+            ]
+          : [],
+      }),
+    }
+    const agent = { ...fakeAgent(), session: { id: 'feishu-oc_chat_1' } } as unknown as HostAgent
+    const outcome = await runCommandLine(
+      `/${SESSIONS_COMMAND} 飞书`,
+      agent,
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      'oc_chat_1',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      query as never,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('飞书桥的 i18n 开发')
+    expect(outcome.reply).toContain('← 当前')
+    expect(outcome.reply).not.toContain('oc_chat_2')
+    expect(outcome.reply).not.toContain('其他话题')
+  })
+
+  it('reports no search matches', async () => {
+    const query = {
+      searchSessions: async () => ({ items: [] }),
+    }
+    const outcome = await runCommandLine(
+      `/${SESSIONS_COMMAND} 不存在`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      'oc_chat_1',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      query as never,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('没有找到')
+  })
+
+  it('hints when search is requested without a query backend', async () => {
+    const outcome = await runCommandLine(
+      `/${SESSIONS_COMMAND} 飞书`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      'oc_chat_1',
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('全文检索')
+  })
 })
 
 describe('/tools command', () => {

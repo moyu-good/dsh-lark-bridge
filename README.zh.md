@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-251-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-260-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -44,6 +44,8 @@
 | 🧑💻 **子代理 fan-out** | workflow 运行以文本流呈现：run 开始、子代理开启/结束、run 结束 |
 | 📦 **压缩透明化** | "正在压缩…" → 摘要文本 + 释放 token 数；修剪报告删除条数 |
 | ⏰ **定时提醒** | `schedule_create/list/delete` 工具 + `/schedules` 视图（需在 dsh profile 组合 `@deepseek-ai/dsh-schedule`；桥已实现完整监听与渲染） |
+| 🔍 **会话历史检索** | `/sessions <关键词>` 对本聊天已存历史做全文检索并展示摘要 |
+| ⚙️ **后台任务通知** | `run_in_background` 任务与直接子代理结束时在聊天里播报结果 |
 | ⚡ **完整 Slash 面板** | `/stop /help /preset /sessions /tools /schedules /audit /config` + 宿主命令（`goal`、`plan`、`compact`、`feedback`、`permission`） |
 | 🌐 **双语命令** | slash 面板与 `/help` 的描述按平台自动选语言：Lark（国际版）英文、飞书（国内版）中文；`locale` 可强制指定 |
 | 🖼️ **图片输入（可选）** | `attachImages` 下载聊天图片进 host 附件库，随模型请求发送 |
@@ -84,6 +86,19 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 | `/permission` | 切换权限模式（宿主命令） |
 
 面板描述自动双语：平台域名为 `open.larksuite.com`（国际版 Lark）显示**英文**，`open.feishu.cn`（国内版飞书）显示**中文**；`locale: zh|en` 可强制指定。
+
+## 与其他飞书/Lark 桥对比
+
+| 能力 | **dsh-lark-bridge** | xmanrui/dsh-im | omdsh-dev/dsh-lark | AX1202/ax-feishu-bridge |
+|---|---|---|---|---|
+| 定位 | 深度 Harness 通道 | 多平台网关 | 扫码即用 | Pi + DSH 双桥 |
+| 原生思考过程（飞书 CoT） | ✅ | — | — | — |
+| 审批卡片 + 决策人留痕 | ✅ | — | — | 远程批准 |
+| 实时 goal/todo 卡片 | ✅ | — | — | — |
+| 工作流展开 + 阶段/日志行 | ✅ | — | — | — |
+| 压缩透明化 | ✅ | — | — | — |
+| 重启后 goal 自动续跑 | ✅ | — | 崩溃安全网 | — |
+| 双语斜杠面板同步 | ✅ | — | — | 面板按钮 |
 
 ## ⚙️ 配置
 
@@ -166,7 +181,7 @@ curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/ap
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown（产物进 lib/，已提交仓库）
-pnpm test         # vitest（251 tests）
+pnpm test         # vitest（260 tests）
 node plugin-contract-test.mjs   # 独立契约测试
 ```
 

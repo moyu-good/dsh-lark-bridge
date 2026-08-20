@@ -302,7 +302,7 @@ export interface CreatedAgent {
 }
 
 /** An in-memory `agents` registry capturing every agent it produced. */
-export function createFakeAgents() {
+export function createFakeAgents(extraServices: { jobs?: object } = {}) {
   const created: CreatedAgent[] = []
   /** Session ids a test declared stored, so `resume` loads them instead of rejecting. */
   const resumable = new Set<string>()
@@ -328,6 +328,7 @@ export function createFakeAgents() {
     const sections: { name: string; order: number; text: string }[] = []
     if (setup !== undefined) {
       const agentCtx = new Context()
+      if (extraServices.jobs !== undefined) agentCtx.provide('jobs', extraServices.jobs)
       agentCtx.provide('tools', { guard: (g: (e: { name: string }) => string | undefined) => {
         guards.push(g)
         return () => { guards.splice(guards.indexOf(g), 1) }
@@ -449,6 +450,8 @@ export async function mountChannel(
     commands?: object
     /** The `attachments` store chat images are committed to. */
     attachments?: object
+    /** The `jobs` registry background tasks register with. */
+    jobs?: object
     /**
      * The `goals` service stub (the bridge injects it). Defaults to an empty
      * view so autoResume reads no goal; tests with a goal pass a stub whose
@@ -468,7 +471,7 @@ export async function mountChannel(
       logs.push({ type: message.type, text: (message.args as unknown[]).map(part => String(part)).join(' ') })
     },
   })
-  const agents = createFakeAgents()
+  const agents = createFakeAgents({ jobs: services.jobs })
   const competing = services.competingAnswerer
   if (competing !== undefined) {
     ctx.on('approval/request', (request) => {
@@ -488,6 +491,7 @@ export async function mountChannel(
   if (services.workspaces !== undefined) ctx.provide('workspaceRegistry', services.workspaces)
   if (services.commands !== undefined) ctx.provide('commands', services.commands)
   if (services.attachments !== undefined) ctx.provide('attachments', services.attachments)
+  if (services.jobs !== undefined) ctx.provide('jobs', services.jobs)
   const fake = createFakePort()
   const portConfigs: ChannelConfig[] = []
   const notices: string[] = []
@@ -540,6 +544,8 @@ export async function mountChannel(
     portAuthorizations,
     notices,
     logs,
+    /** The config the plugin was applied with, for HMR re-apply tests. */
+    config: merged,
     async dispose(): Promise<void> {
       try {
         await fiber.dispose()

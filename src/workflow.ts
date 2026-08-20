@@ -65,3 +65,13 @@ export function runEndLine(run: WorkflowRunEnd): string {
   const label = run.stopReason === 'completed' ? '全部完成' : run.stopReason === 'cancelled' ? '已取消' : '出错终止'
   return `🧩 工作流结束：${label}`
 }
+
+/** A workflow phase-change line (live `workflow/phase` event). */
+export function phaseLine(title: string): string {
+  return `🗂️ 阶段：${title}`
+}
+
+/** A workflow narration line (live `workflow/log` event). */
+export function workflowLogLine(message: string): string {
+  return `📝 ${message}`
+}

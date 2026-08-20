@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   compactionPruneLine,
   compactionSummaryLine,
+  jobDoneLine,
   retryLine,
   scheduleLine,
+  subagentEndLine,
   subagentLine,
   webSearchLine,
 } from '../src/notices.ts'
@@ -16,6 +18,15 @@ describe('notice lines', () => {
 
   it('labels a continuable child', () => {
     expect(subagentLine({ mode: 'continuable', label: '调研' })).toContain('可续')
+  })
+
+  it('renders live subagent settlement per stop reason', () => {
+    expect(subagentEndLine({ id: 'sub-1', provider: 'dsh', stopReason: 'completed' })).toContain('✅')
+    expect(subagentEndLine({ id: 'sub-1', provider: 'dsh', stopReason: 'aborted' })).toContain('⏹️')
+    expect(subagentEndLine({ id: 'sub-2', provider: 'dsh', stopReason: 'error' })).toContain('❌')
+    expect(subagentEndLine({ id: 'sub-3', provider: 'dsh', stopReason: 'max-tokens' })).toContain('⛔')
+    expect(subagentEndLine({ id: 'sub-3', provider: 'dsh', stopReason: 'max-tokens' })).toContain('token 上限')
+    expect(subagentEndLine({ id: 'sub-1', provider: 'dsh', stopReason: 'completed' })).toContain('sub-1')
   })
 
   it('renders schedule creation with kind and prompt', () => {
@@ -31,6 +42,14 @@ describe('notice lines', () => {
 
   it('announces a web search', () => {
     expect(webSearchLine()).toContain('搜索网络')
+  })
+
+  it('renders job terminal lines per outcome', () => {
+    expect(jobDoneLine({ id: 'bash-1', kind: 'bash', label: 'pnpm build', status: 'completed' })).toContain('✅')
+    expect(jobDoneLine({ id: 'bash-1', kind: 'bash', label: 'pnpm build', status: 'completed' })).toContain('pnpm build')
+    expect(jobDoneLine({ id: 'bash-2', kind: 'bash', label: 'watch', status: 'killed' })).toContain('⏹️')
+    expect(jobDoneLine({ id: 'subagent-3', kind: 'subagent', label: '调研', status: 'failed', detail: 'exit code: 3' })).toContain('❌')
+    expect(jobDoneLine({ id: 'subagent-3', kind: 'subagent', label: '调研', status: 'failed', detail: 'exit code: 3' })).toContain('exit code: 3')
   })
 
   it('announces only the first retry', () => {

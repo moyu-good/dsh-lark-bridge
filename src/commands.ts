@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, HostSessionQuery, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 
@@ -153,6 +153,7 @@ export async function runCommandLine(
   audits: ReadonlyMap<string, AuditStats> | undefined = undefined,
   config: ResolvedConfig | undefined = undefined,
   sessionPresets: Map<string, string> | undefined = undefined,
+  sessionQuery: HostSessionQuery | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -164,7 +165,8 @@ export async function runCommandLine(
     return runPresetCommand(trimmed, agent, presets, sessionPresets)
   }
   if (name === SESSIONS_COMMAND) {
-    return runSessionsCommand(agent, persistence, chatId)
+    const query = trimmed.slice(1 + SESSIONS_COMMAND.length).trim()
+    return runSessionsCommand(agent, persistence, chatId, query, sessionQuery)
   }
   if (name === TOOLS_COMMAND) {
     return runToolsCommand(trimmed, deniedTools)
@@ -210,12 +212,40 @@ async function runSessionsCommand(
   agent: HostAgent,
   persistence: HostSessionPersistence | undefined,
   chatId: string | undefined,
+  query = '',
+  sessionQuery: HostSessionQuery | undefined = undefined,
 ): Promise<CommandOutcome> {
-  if (persistence === undefined) {
-    return { reply: `⚠️ 本部署没有组合会话存储，\`/${SESSIONS_COMMAND}\` 不可用。`, resolved: false }
-  }
   if (chatId === undefined) {
     return { reply: '⚠️ 无法确定当前聊天。', resolved: false }
+  }
+  // Full-text search path: /sessions <keyword> consults the optional
+  // sessionQuery seam when composed; without it the keyword cannot be honored.
+  // Search does not depend on the header store, so it runs before the
+  // persistence availability check below.
+  if (query !== '') {
+    if (sessionQuery === undefined) {
+      return {
+        reply: `⚠️ 本部署没有组合全文检索，\`/${SESSIONS_COMMAND} <关键词>\` 不可用；不带关键词可查看历史列表。`,
+        resolved: false,
+      }
+    }
+    const page = await sessionQuery.searchSessions({ query, limit: 8 })
+    const owned = page.items.filter(hit => hit.session.id.startsWith(`${SESSION_PREFIX}${chatId}`))
+    if (owned.length === 0) {
+      return { reply: `**会话检索**\n没有找到与「${query}」匹配的本聊天记录。`, resolved: true }
+    }
+    const rows = owned.map(hit => {
+      const when = hit.session.createdAt === undefined
+        ? ''
+        : `${new Date(hit.session.createdAt).toLocaleString('zh-CN', { hour12: false })} `
+      const mark = hit.session.id === agent.session.id ? ' ← 当前' : ''
+      const snippet = hit.bestMatch.snippet.length <= 60 ? hit.bestMatch.snippet : `${hit.bestMatch.snippet.slice(0, 59)}…`
+      return `· ${when}${mark}「${snippet}」`
+    })
+    return { reply: `**会话检索**（${owned.length} 条匹配）\n${rows.join('\n')}`, resolved: true }
+  }
+  if (persistence === undefined) {
+    return { reply: `⚠️ 本部署没有组合会话存储，\`/${SESSIONS_COMMAND}\` 不可用。`, resolved: false }
   }
   const headers = await persistence.list()
   // A session belongs to this chat when its id is `feishu-<chatId>` (whole

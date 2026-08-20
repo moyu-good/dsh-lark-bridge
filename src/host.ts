@@ -4,7 +4,9 @@
  * packages) lets the package build self-contained; a composed DSH profile
  * supplies the real implementations at runtime. Field shapes mirror
  * `@deepseek-ai/dsh-agent`, `@deepseek-ai/dsh-session`, and
- * `@deepseek-ai/dsh-user-approval` as of dsh 0.0.1-rc.2.
+ * `@deepseek-ai/dsh-user-approval` as of dsh main 2026-08-20 (was 0.0.1-rc.2).
+ * P1 alignment: cancel signature, GoalChange clear-tombstone, and Cordis event
+ * guards expanded for perfect-plugin roadmap.
  * @module dsh-lark-bridge/host
  */
 
@@ -71,8 +73,9 @@ export interface HostAgent {
   /**
    * Clear queued work and abort the active turn. A no-op when nothing is
    * active, so a chat may offer it unconditionally.
+   * Signature mirrors Agent.cancel(cause: AgentCancelCause, options?: CancelOptions).
    */
-  cancel(cause: string): void
+  cancel(cause: string, options?: { readonly keepInbox?: boolean }): void
 }
 
 /** An owned agent plus its teardown capability, from `agents.create()`. */
@@ -324,13 +327,22 @@ export interface TodoWriteData {
 
 /** The `goal/change` payload: a whole-value goal snapshot mutation. */
 export interface GoalChangeData {
+  readonly version?: number
   readonly operation: string
   readonly goal?: {
     readonly objective: string
     readonly phase: string
     readonly blockedReason?: { readonly code?: string; readonly message?: string }
     readonly maxGoalRounds?: number
+    readonly id?: string
+    readonly revision?: number
   }
+  /** Present on clear tombstone (no current goal) */
+  readonly cleared?: { readonly id: string; readonly revision?: number }
+  readonly clearedAt?: number
+  readonly roundsStarted?: number
+  readonly createdAt?: number
+  readonly updatedAt?: number
 }
 
 /** The `tool-workflow/run-start` payload: one top-level workflow run opens. */
@@ -432,6 +444,31 @@ export interface ScheduleEntry {
 }
 
 /** Per-session operation counters accumulated for `/audit`. */
+
+/** Cordis `agent/status` payload: lifecycle of one live agent. */
+export interface AgentStatusData {
+  readonly agent: { readonly id: string }
+  readonly status: 'idle' | 'running'
+}
+
+/** Cordis `subagent/start|end` payloads (provider-agnostic). */
+export interface SubagentStartData {
+  readonly runId: string
+  readonly provider: string
+  readonly id: string
+  readonly local: boolean
+}
+export interface SubagentEndData extends SubagentStartData {
+  readonly stopReason: 'completed' | 'aborted' | 'error' | 'max-tokens'
+  readonly lastAssistantMessage?: readonly unknown[]
+}
+
+/** Cordis `workflow/*` run identity carried by every live workflow event. */
+export interface WorkflowRunInfoData {
+  readonly id: string
+  readonly meta: unknown
+}
+
 export interface AuditStats {
   /** Unix epoch milliseconds when the bridge first saw this session. */
   readonly startedAt: number
@@ -654,6 +691,10 @@ export function isLlmRetryEvent(
  * @param event - any session event.
  * @returns whether `event.data` carries {@link AssistantChunkData}.
  */
+
+/**
+ * Narrow a Cordis event to agent lifecycle status.
+ */
 export function isAssistantChunkEvent(
   event: HostSessionEvent,
 ): event is HostSessionEvent & { readonly data: AssistantChunkData } {
@@ -749,5 +790,48 @@ declare module '@deepseek-ai/cordis' {
       request: HostApprovalRequest,
       next: () => Promise<HostApprovalOutcome>,
     ): Promise<HostApprovalOutcome>
+    /** Live subagent settlement, scoped to the delegating agent. */
+    'subagent/end'(info: SubagentEndData): void
+    /** Live workflow run narration (two-argument Cordis events). */
+    'workflow/log'(info: WorkflowRunInfoData, message: string): void
+    'workflow/phase'(info: WorkflowRunInfoData, title: string): void
   }
+}
+
+/** One cross-session search hit (subset of the host `SessionSearchHit`). */
+export interface HostSessionQueryHit {
+  readonly session: { readonly id: string; readonly createdAt?: number }
+  readonly bestMatch: { readonly snippet: string }
+}
+
+/**
+ * The `sessionQuery` service (subset of the host `SessionQuery`), consumed by
+ * `/sessions <keyword>` when the deployment composes a search backend.
+ */
+export interface HostSessionQuery {
+  searchSessions(request: {
+    readonly query: string
+    readonly limit?: number
+    readonly signal?: AbortSignal
+  }): Promise<{ readonly items: readonly HostSessionQueryHit[] }>
+}
+
+/** A read-only job projection (subset of the host `JobSnapshot`). */
+export interface HostJobSnapshot {
+  readonly id: string
+  readonly kind: string
+  readonly label: string
+  readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
+  readonly detail?: string
+}
+
+/** Completion listener shape of `JobRegistry.onJobDone`. */
+export type HostJobDoneListener = (
+  snapshot: HostJobSnapshot,
+  owner: { readonly id: string } | undefined,
+) => void | PromiseLike<void>
+
+/** The `jobs` registry (subset of the host `JobRegistry`), per-agent scoped. */
+export interface HostJobs {
+  onJobDone(listener: HostJobDoneListener): () => void
 }
