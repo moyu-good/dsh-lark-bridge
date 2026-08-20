@@ -544,6 +544,8 @@ export async function mountChannel(
     portAuthorizations,
     notices,
     logs,
+    /** The config the plugin was applied with, for HMR re-apply tests. */
+    config: merged,
     async dispose(): Promise<void> {
       try {
         await fiber.dispose()
