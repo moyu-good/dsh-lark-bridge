@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-263-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-269-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -83,7 +83,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 | `/goal` | 查看/设置目标（宿主命令） |
 | `/plan` | 进入/退出计划模式（宿主命令） |
 | `/compact` | 压缩较早对话历史（宿主命令） |
-| `/feedback` | 提交本次会话反馈（宿主命令） |
+| `/feedback` | 给上一条回答评分：`positive`/`negative` + 可选备注 |
 | `/permission` | 切换权限模式（宿主命令） |
 
 面板描述自动双语：平台域名为 `open.larksuite.com`（国际版 Lark）显示**英文**，`open.feishu.cn`（国内版飞书）显示**中文**；`locale: zh|en` 可强制指定。
@@ -182,7 +182,7 @@ curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/ap
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown（产物进 lib/，已提交仓库）
-pnpm test         # vitest（263 tests）
+pnpm test         # vitest（269 tests）
 node plugin-contract-test.mjs   # 独立契约测试
 ```
 
