@@ -56,12 +56,15 @@ import {
   HELP_COMMAND,
   isCommandLine,
   JOBS_COMMAND,
+  MODEL_COMMAND,
   PRESET_COMMAND,
   runCommandLine,
   SCHEDULES_COMMAND,
   SESSIONS_COMMAND,
+  SKILLS_COMMAND,
   STOP_COMMAND,
   TOOLS_COMMAND,
+  WS_COMMAND,
 } from './commands.ts'
 import { collectImages } from './images.ts'
 import type { CollectedImages, ImagePort } from './images.ts'
@@ -915,6 +918,9 @@ export function installBridge(
       { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
       { name: FEEDBACK_COMMAND, description: describeCommand(FEEDBACK_COMMAND, locale, 'Record feedback about this session') },
       { name: CONTEXT_COMMAND, description: describeCommand(CONTEXT_COMMAND, locale, 'View context pressure') },
+      { name: SKILLS_COMMAND, description: describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills') },
+      { name: MODEL_COMMAND, description: describeCommand(MODEL_COMMAND, locale, 'View or switch the default model') },
+      { name: WS_COMMAND, description: describeCommand(WS_COMMAND, locale, 'List registered workspaces') },
       { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
       { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
       { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
