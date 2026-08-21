@@ -7,6 +7,7 @@ import {
   scheduleLine,
   subagentEndLine,
   subagentLine,
+  tokenPressureLine,
   webSearchLine,
 } from '../src/notices.ts'
 
@@ -85,5 +86,13 @@ describe('notice lines', () => {
     const line = compactionPruneLine({ shadowedSeqs: [1, 2, 3, 4, 5], shadowedTokenCount: 4321 })
     expect(line).toContain('5 条旧消息')
     expect(line).toContain('4321')
+  })
+
+  it('renders a token-pressure warning with total, surface, and threshold', () => {
+    const line = tokenPressureLine({ total: 145_000, surface: 12_300, threshold: 120_000 })
+    expect(line).toContain('145,000')
+    expect(line).toContain('12,300')
+    expect(line).toContain('120,000')
+    expect(line).toContain('/compact')
   })
 })

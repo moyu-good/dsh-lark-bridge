@@ -133,3 +133,23 @@ export function compactionPruneLine(data: {
 }): string {
   return `🗑️ 已修剪 ${data.shadowedSeqs.length} 条旧消息（释放约 ${data.shadowedTokenCount} tokens）`
 }
+
+/**
+ * A proactive token-pressure warning: the session's context has climbed past
+ * the compaction advice threshold. Unlike the compaction notices (which fire
+ * after the fact), this is a heads-up the bridge polls for while a long task
+ * is running, so the chat hears about pressure before the model degrades.
+ * @param total - current measured total tokens.
+ * @param surface - the session-surface portion of the total.
+ * @param threshold - the configured warning threshold.
+ * @returns the markdown line for the chat.
+ */
+export function tokenPressureLine(data: {
+  readonly total: number
+  readonly surface: number
+  readonly threshold: number
+}): string {
+  const total = data.total.toLocaleString('zh-CN')
+  const surface = data.surface.toLocaleString('zh-CN')
+  return `⚠️ 上下文压力偏高（当前约 ${total} tokens / 会话表面 ${surface}）\n已超过 ${data.threshold.toLocaleString('zh-CN')} tokens 的建议压缩线。长任务建议先 \`/compact\` 压缩，或让 agent 收尾当前阶段。`
+}
