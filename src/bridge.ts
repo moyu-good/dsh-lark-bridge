@@ -988,6 +988,8 @@ export function installBridge(
             ...config.provider === undefined ? {} : { provider: config.provider },
             ...config.model === undefined ? {} : { model: config.model },
           },
+          ctx.get('workspaceRegistry') as HostWorkspaceRegistry | undefined,
+          cwd,
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let

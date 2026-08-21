@@ -14,6 +14,7 @@ import {
   SHIPPED_PRESET_IDS,
   SKILLS_COMMAND,
   TOOLS_COMMAND,
+  WS_COMMAND,
 } from '../src/commands.ts'
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from '../src/host.ts'
 import type { ResolvedConfig } from '../src/config.ts'
@@ -943,4 +944,59 @@ describe('/model command', () => {
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('agent-default-model')
   })
+})
+
+describe('/ws command', () => {
+  function fakeRegistry(entries: ReadonlyArray<{ id: string; path: string }>, withList = true) {
+    return {
+      resolveByPath: async () => undefined,
+      create: async () => ({ id: 'x', path: '/x', attachSession: async () => undefined }),
+      ...withList ? { list: () => entries.map(e => ({ ...e, attachSession: async () => undefined })) } : {},
+    }
+  }
+
+  it('lists registered workspaces and marks the current one', async () => {
+    const outcome = await runWs(
+      fakeRegistry([
+        { id: 'ws_project-a', path: '/home/user/project-a' },
+        { id: 'ws_project-b', path: '/srv/work/project-b' },
+      ]) as never,
+      '/srv/work/project-b',
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('/home/user/project-a')
+    expect(outcome.reply).toContain('← 当前')
+  })
+
+  it('reports an empty registry with the deployment cwd', async () => {
+    const outcome = await runWs(fakeRegistry([]) as never, '/srv/work')
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('为空')
+    expect(outcome.reply).toContain('/srv/work')
+  })
+
+  it('refuses when the registry is absent or list-less', async () => {
+    const outcome = await runWs(undefined, '/srv/work')
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('workspace 插件')
+    const noList = await runWs(fakeRegistry([], false) as never, undefined)
+    expect(noList.resolved).toBe(false)
+  })
+
+  async function runWs(workspaces: unknown, currentCwd: string | undefined) {
+    // runCommandLine's trailing params: indexes 20/21 = (…, workspaces, currentCwd);
+    // 16 undefineds fill presets(4) … configModel(19).
+    return await runCommandLine(
+      `/${WS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined, undefined, undefined, undefined, // 4-7
+      undefined, undefined, undefined, undefined, // 8-11
+      undefined, undefined, undefined, undefined, // 12-15
+      undefined, undefined, undefined, undefined, // 16-19
+      workspaces as never,
+      currentCwd,
+    ) as unknown as { resolved: boolean; reply: string }
+  }
 })

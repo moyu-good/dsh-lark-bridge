@@ -256,11 +256,14 @@ export interface HostWorkspace {
  * accounted, not derived: a session whose cwd merely matches a workspace stays
  * Ungrouped until something attaches it.
  */
+/** The `workspaceRegistry` service (subset of the host registry), extended with the synchronous `list()`. */
 export interface HostWorkspaceRegistry {
   /** The record for a canonical path, or undefined when none is registered. */
   resolveByPath(path: string): Promise<HostWorkspace | undefined>
   /** Register a workspace for a directory; at most one record exists per canonical path. */
   create(path: string, title?: string): Promise<HostWorkspace>
+  /** All registered workspaces in durable order (synchronous, cache-served). */
+  list?(): readonly HostWorkspace[]
 }
 
 /** The `agentDefaultModel` service (subset of `AgentDefaultModelConfig`). */
