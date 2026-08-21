@@ -6,3 +6,5 @@ node_modules/
 
 # 本地运维脚本(含本机路径)
 run-*.sh
+# node 编译缓存
+node-compile-cache/
