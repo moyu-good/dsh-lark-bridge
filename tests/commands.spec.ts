@@ -5,6 +5,7 @@ import {
   CONTEXT_COMMAND,
   FEEDBACK_COMMAND,
   JOBS_COMMAND,
+  MODEL_COMMAND,
   PRESET_COMMAND,
   PRESET_NAMES,
   runCommandLine,
@@ -838,5 +839,108 @@ describe('/skills command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('skill 注册表')
+  })
+})
+
+describe('/model command', () => {
+  function fakeDefaultModel(selection: { provider: string; model: string }, withSave = true) {
+    const saved: Array<{ provider: string; model: string }> = []
+    return {
+      currentSelection: () => ({ ...selection }),
+      ...withSave ? { saveSelection: async (s: { provider: string; model: string }) => { saved.push(s) } } : {},
+      saved,
+    }
+  }
+
+  it('shows the current default model when bare', async () => {
+    const dm = fakeDefaultModel({ provider: 'deepseek-official', model: 'deepseek-v4' })
+    const outcome = await runCommandLine(
+      `/${MODEL_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined,
+      dm as never,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('deepseek-official/deepseek-v4')
+  })
+
+  it('switches through saveSelection', async () => {
+    const dm = fakeDefaultModel({ provider: 'deepseek-official', model: 'deepseek-v4' })
+    const outcome = await runCommandLine(
+      `/${MODEL_COMMAND} opencode-go/deepseek-v4-flash`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined,
+      dm as never,
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('opencode-go/deepseek-v4-flash')
+    expect(dm.saved).toEqual([{ provider: 'opencode-go', model: 'deepseek-v4-flash' }])
+  })
+
+  it('refuses a malformed selection', async () => {
+    const dm = fakeDefaultModel({ provider: 'a', model: 'b' })
+    const outcome = await runCommandLine(
+      `/${MODEL_COMMAND} just-a-model-name`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined,
+      dm as never,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('格式')
+  })
+
+  it('refuses when the deployment pins provider/model in bridge config', async () => {
+    const outcome = await runCommandLine(
+      `/${MODEL_COMMAND} opencode-go/deepseek-v4-flash`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined,
+      undefined,
+      { provider: 'opencode-go', model: 'deepseek-v4-flash' },
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('固定了模型')
+  })
+
+  it('reports when saveSelection is unavailable (no settings layer)', async () => {
+    const dm = fakeDefaultModel({ provider: 'a', model: 'b' }, false)
+    const outcome = await runCommandLine(
+      `/${MODEL_COMMAND} x/y`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined,
+      dm as never,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('settings')
+  })
+
+  it('reports when the agent-default-model service is absent', async () => {
+    const outcome = await runCommandLine(
+      `/${MODEL_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('agent-default-model')
   })
 })

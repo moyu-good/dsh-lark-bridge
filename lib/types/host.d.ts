@@ -280,6 +280,12 @@ export interface HostWorkspaceRegistry {
 export interface HostDefaultModel {
     /** The deployment's current default provider/model selection. */
     currentSelection(): HostAgentOptions;
+    /**
+     * Save a complete user selection (provider/model/reasoningEffort). A no-op
+     * without a settings provider; with one, it persists across restarts.
+     * Mirrors AgentDefaultModelConfig.saveSelection(selection).
+     */
+    saveSelection?(selection: HostAgentOptions): Promise<void>;
 }
 /** The Cordis loader service; awaited so agents never see a half-composed tree. */
 export interface HostLoader {
