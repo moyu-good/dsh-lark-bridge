@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-272-green" alt="tests">
+  <img src="https://img.shields.io/badge/tests-273-green" alt="tests">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -61,13 +61,26 @@ Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 
 ## 🚀 Quick Start
 
+### One command (recommended)
+
+```sh
+npm i -g dsh-lark-bridge        # or: npx dsh-lark-bridge@latest start
+dsh-lark-bridge start
+```
+
+`start` installs dsh if needed, wires the plugin into a profile, patches the
+config, and boots the bridge. The console prints a QR code → scan with Feishu
+to create the app → fill in your DeepSeek API Key in Settings → Models → DM
+the bot or @ it in a group.
+
+Daily loop: `dsh-lark-bridge status` · `logs` · `restart` · `stop`.
+
+### Manual (already using dsh)
+
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
   && npx @deepseek-ai/dsh web
 ```
-
-The console prints a QR code → scan with Feishu to create the app → fill in your
-DeepSeek API Key in Settings → Models → DM the bot or @ it in a group.
 
 > Already using `dsh`? Drop the `npx @deepseek-ai/` prefix.
 
@@ -186,6 +199,10 @@ send the bot one message to trigger it.
 ## 🧭 Architecture
 
 ```
+┌─ CLI 引导器 (bin/dsh-lark-bridge) ── npm i -g → dsh-lark-bridge start
+│   安装 dsh / 创建 profile / 写入 cordis.patch.yml / 启动
+└──────────────────────────────────────────┐
+                                           ▼
 Feishu / Lark ── WebSocket 长连接 ──►  dsh-lark-bridge (dsh 进程内的 feishu-channel 插件)
    (聊天/审批/图片)                        │
                                           ▼
@@ -197,17 +214,18 @@ Feishu / Lark ── WebSocket 长连接 ──►  dsh-lark-bridge (dsh 进程�
 ```
 
 The bridge runs **inside the dsh process** as the `feishu-channel` plugin — it is
-not a separate server. `npx @deepseek-ai/dsh web` (or `--profile chat`) boots dsh
-with this plugin composed; the plugin opens the WebSocket long connection and
-drives everything from there. Any launcher (shell script, systemd, supervisor)
-can host it; it has no dependency on any other agent framework.
+not a separate server. `dsh-lark-bridge start` (or manually
+`npx @deepseek-ai/dsh web`) boots dsh with this plugin composed; the plugin
+opens the WebSocket long connection and drives everything from there. Any
+launcher (shell script, systemd, supervisor) can host it; it has no dependency
+on any other agent framework.
 
 ## 🛠️ Development
 
 ```sh
 pnpm install
 pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
-pnpm test         # vitest (272 tests)
+pnpm test         # vitest (273 tests)
 node plugin-contract-test.mjs   # standalone contract tests
 ```
 
