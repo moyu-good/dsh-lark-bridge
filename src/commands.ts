@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostTokenMeter, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 
@@ -43,6 +43,9 @@ export const CONTEXT_COMMAND = 'context'
 
 /** Show the session's operation audit summary. */
 export const AUDIT_COMMAND = 'audit'
+
+/** List / inspect the workspace's discoverable skills. */
+export const SKILLS_COMMAND = 'skills'
 
 /** Show the chat bridge's live configuration. */
 export const CONFIG_COMMAND = 'config'
@@ -121,6 +124,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent, l
     `\`/${SCHEDULES_COMMAND}\` — ${describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders')}`,
     `\`/${JOBS_COMMAND}\` — ${describeCommand(JOBS_COMMAND, locale, 'View background jobs')}`,
     `\`/${CONTEXT_COMMAND}\` — ${describeCommand(CONTEXT_COMMAND, locale, 'View context pressure')}`,
+    `\`/${SKILLS_COMMAND}\` — ${describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills')}`,
     `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
     `\`/${CONFIG_COMMAND}\` — ${describeCommand(CONFIG_COMMAND, locale, 'View current configuration')}`,
     `\`/${HELP_COMMAND}\` — ${describeCommand(HELP_COMMAND, locale, 'Show available commands')}`,
@@ -169,6 +173,7 @@ export async function runCommandLine(
   feedback: HostMessageFeedback | undefined = undefined,
   lastAssistantMessageId: string | undefined = undefined,
   tokenMeter: HostTokenMeter | undefined = undefined,
+  skills: HostSkills | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -200,6 +205,9 @@ export async function runCommandLine(
   }
   if (name === AUDIT_COMMAND) {
     return runAuditCommand(agent, audits)
+  }
+  if (name === SKILLS_COMMAND) {
+    return runSkillsCommand(trimmed, skills)
   }
   if (name === CONFIG_COMMAND) {
     return runConfigCommand(config)
@@ -395,6 +403,48 @@ function runJobsCommand(
   const done = snapshots.filter(s => s.status !== 'running' && s.status !== 'stopping')
   const lines = [...active.map(row), ...done.map(row)]
   return { reply: `**后台任务**（${snapshots.length} 个，${active.length} 活动）\n${lines.join('\n')}`, resolved: true }
+}
+
+/**
+ * Handle `/skills [name]`: list the workspace's discoverable skills, or show
+ * one skill's body when named. This is the Feishu surface of the dsh skill
+ * ecosystem — a chat user can see what skills are installed and peek at one
+ * without leaving the conversation.
+ * @param line - the trimmed command line.
+ * @param skills - the host skill registry, when composed.
+ * @returns the reply for the chat.
+ */
+async function runSkillsCommand(
+  line: string,
+  skills: HostSkills | undefined,
+): Promise<CommandOutcome> {
+  if (skills === undefined) {
+    return { reply: `⚠️ 本部署没有组合 skill 注册表，\`/${SKILLS_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const query = line.slice(1 + SKILLS_COMMAND.length).trim()
+  if (query.length > 0) {
+    const skill = await skills.get(query)
+    if (skill === undefined) {
+      return {
+        reply: `⚠️ 找不到 skill \`${query}\`。用 \`/${SKILLS_COMMAND}\` 查看全部可用 skill。`,
+        resolved: true,
+      }
+    }
+    const body = skill.body.trim()
+    const preview = body.length > 800 ? `${body.slice(0, 800)}\n…（截断）` : body
+    return { reply: `**Skill · ${query}**\n\n${preview}`, resolved: true }
+  }
+  const summaries = await skills.list()
+  if (summaries.length === 0) {
+    return {
+      reply: `**可用的 skills**\n当前工作区没有发现 skill。部署方可以注入 skill provider（如 \`@deepseek-ai/dsh-skill-filesystem\`）。`,
+      resolved: true,
+    }
+  }
+  const row = (s: { readonly name: string; readonly description: string; readonly source?: string }): string =>
+    `· \`${s.name}\` — ${s.description}${s.source === undefined ? '' : `（${s.source}）`}`
+  const lines = summaries.map(row)
+  return { reply: `**可用的 skills**（${summaries.length} 个）\n${lines.join('\n')}\n\n查看某个：\`/${SKILLS_COMMAND} <name>\``, resolved: true }
 }
 
 /**

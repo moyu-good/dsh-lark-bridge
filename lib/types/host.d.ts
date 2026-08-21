@@ -799,4 +799,26 @@ export interface HostTokenMeter {
         readonly surfaceTokens: number;
     };
 }
+/** One skill's invocation-neutral summary, as the skill registry lists it. */
+export interface HostSkillSummary {
+    /** Kebab-case identifier used to address the skill. */
+    readonly name: string;
+    /** Short routing description shown by discovery consumers. */
+    readonly description: string;
+    /** Optional extra routing guidance. */
+    readonly whenToUse?: string;
+    /** Discovery source that produced this winning skill. */
+    readonly source: string;
+    /** Provider that owns this skill body. */
+    readonly provider: string;
+}
+/** The `skills` registry (subset of the host `SkillRegistry`). */
+export interface HostSkills {
+    /** List invocation-neutral skill summaries for a workspace. */
+    list(): Promise<HostSkillSummary[]>;
+    /** Load a full skill by name; `undefined` when absent or invalid. */
+    get(name: string): Promise<{
+        readonly body: string;
+    } | undefined>;
+}
 //# sourceMappingURL=host.d.ts.map

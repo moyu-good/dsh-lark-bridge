@@ -8,7 +8,7 @@
  * — and `/help` lists what this chat accepts, which no host command provides.
  * @module dsh-lark-bridge/commands
  */
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostTokenMeter, ScheduleEntry } from './host.ts';
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleEntry } from './host.ts';
 import type { ResolvedConfig } from './config.ts';
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export declare const STOP_COMMAND = "stop";
@@ -30,6 +30,8 @@ export declare const FEEDBACK_COMMAND = "feedback";
 export declare const CONTEXT_COMMAND = "context";
 /** Show the session's operation audit summary. */
 export declare const AUDIT_COMMAND = "audit";
+/** List / inspect the workspace's discoverable skills. */
+export declare const SKILLS_COMMAND = "skills";
 /** Show the chat bridge's live configuration. */
 export declare const CONFIG_COMMAND = "config";
 /** The four shipped preset ids, for the listing and for argument validation. */
@@ -95,5 +97,5 @@ export declare function helpText(commands: HostCommands | undefined, agent: Host
  * @param sessionPresets - per-session preset choices (for `/preset` persistence).
  * @returns what to report to the chat.
  */
-export declare function runCommandLine(line: string, agent: HostAgent, commands: HostCommands | undefined, signal: AbortSignal, presets?: HostAgentPresets | undefined, persistence?: HostSessionPersistence | undefined, chatId?: string | undefined, deniedTools?: ReadonlySet<string> | undefined, schedules?: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined, audits?: ReadonlyMap<string, AuditStats> | undefined, config?: ResolvedConfig | undefined, sessionPresets?: Map<string, string> | undefined, sessionQuery?: HostSessionQuery | undefined, jobs?: HostJobs | undefined, feedback?: HostMessageFeedback | undefined, lastAssistantMessageId?: string | undefined, tokenMeter?: HostTokenMeter | undefined): Promise<CommandOutcome>;
+export declare function runCommandLine(line: string, agent: HostAgent, commands: HostCommands | undefined, signal: AbortSignal, presets?: HostAgentPresets | undefined, persistence?: HostSessionPersistence | undefined, chatId?: string | undefined, deniedTools?: ReadonlySet<string> | undefined, schedules?: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined, audits?: ReadonlyMap<string, AuditStats> | undefined, config?: ResolvedConfig | undefined, sessionPresets?: Map<string, string> | undefined, sessionQuery?: HostSessionQuery | undefined, jobs?: HostJobs | undefined, feedback?: HostMessageFeedback | undefined, lastAssistantMessageId?: string | undefined, tokenMeter?: HostTokenMeter | undefined, skills?: HostSkills | undefined): Promise<CommandOutcome>;
 //# sourceMappingURL=commands.d.ts.map

@@ -40,7 +40,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostMessageFeedback, HostSessionQuery, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostMessageFeedback, HostSessionQuery, HostSkills, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
 import { isAssistantMessageEvent, isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
@@ -982,6 +982,7 @@ export function installBridge(
           ctx.get('messageFeedback') as HostMessageFeedback | undefined,
           lastAssistantIds.get(sessionId),
           ctx.get('tokenMeter') as HostTokenMeter | undefined,
+          ctx.get('skills') as HostSkills | undefined,
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let
