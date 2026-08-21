@@ -11,6 +11,7 @@ import {
   SCHEDULES_COMMAND,
   SESSIONS_COMMAND,
   SHIPPED_PRESET_IDS,
+  SKILLS_COMMAND,
   TOOLS_COMMAND,
 } from '../src/commands.ts'
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostSessionPersistence, ScheduleEntry } from '../src/host.ts'
@@ -734,5 +735,108 @@ describe('/context command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('token 计量')
+  })
+})
+
+describe('/skills command', () => {
+  function fakeSkills(summaries: Array<{ name: string; description: string; source?: string }> = [], bodies: Record<string, string> = {}) {
+    return {
+      list: async () => summaries,
+      get: async (name: string) => (name in bodies ? { body: bodies[name] } : undefined),
+    }
+  }
+
+  it('lists discoverable skills with names and descriptions', async () => {
+    const outcome = await runCommandLine(
+      `/${SKILLS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fakeSkills([
+        { name: 'code-review', description: 'Review a PR before merge', source: 'bundled' },
+        { name: 'research', description: 'Deep research on a topic', source: 'user-dsh' },
+      ]),
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('可用的 skills')
+    expect(outcome.reply).toContain('code-review')
+    expect(outcome.reply).toContain('Review a PR')
+    expect(outcome.reply).toContain('research')
+    expect(outcome.reply).toContain('/skills <name>')
+  })
+
+  it('shows one skill body when named', async () => {
+    const outcome = await runCommandLine(
+      `/${SKILLS_COMMAND} code-review`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fakeSkills([], { 'code-review': 'Check for security issues and quality gates.' }),
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('Skill · code-review')
+    expect(outcome.reply).toContain('security issues')
+  })
+
+  it('reports an unknown skill name', async () => {
+    const outcome = await runCommandLine(
+      `/${SKILLS_COMMAND} nope`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      fakeSkills([]),
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('找不到 skill')
+  })
+
+  it('reports when the skill registry is absent', async () => {
+    const outcome = await runCommandLine(
+      `/${SKILLS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+    )
+    expect(outcome.resolved).toBe(false)
+    expect(outcome.reply).toContain('skill 注册表')
   })
 })
