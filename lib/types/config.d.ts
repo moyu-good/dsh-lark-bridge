@@ -141,6 +141,17 @@ export interface Config {
      * looks like it stopped.
      */
     approvalReminderMs?: number;
+    /**
+     * Local file delivery policy. `send_file` with a filesystem path source
+     * is default-deny at the transport: without `allowedFileDirs`, `@larksuite/channel`
+     * rejects every local file (including generated HTML files) with
+     * "local file source requires `outbound.allowedFileDirs` to be configured".
+     * Each entry is a directory whose descendants may be sent; paths resolve
+     * against the host process cwd.
+     */
+    outbound?: {
+        allowedFileDirs?: string[];
+    };
 }
 /** Configuration after defaults have been resolved; credentials may still be pending onboarding. */
 export interface ResolvedConfig {
@@ -167,6 +178,9 @@ export interface ResolvedConfig {
     approvers: string[];
     autoResumeGoals: boolean;
     approvalReminderMs: number;
+    outbound: {
+        allowedFileDirs?: string[];
+    } | undefined;
 }
 /** Loader-visible configuration schema and defaults. */
 export declare const Config: z<Config>;
