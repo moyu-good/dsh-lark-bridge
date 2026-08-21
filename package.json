@@ -17,6 +17,9 @@
   },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
+  "bin": {
+    "dsh-lark-bridge": "bin/dsh-lark-bridge.mjs"
+  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -36,6 +39,7 @@
   "files": [
     "lib",
     "src",
+    "bin",
     "README.md",
     "README.zh.md",
     "LICENSE",
