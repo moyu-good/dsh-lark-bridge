@@ -1,0 +1,29 @@
+name: Feature request
+description: A capability you want the bridge to have — a command, a card type, a platform integration.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The bridge exists to make DeepSeek Harness feel native inside Feishu/Lark.
+        Tell us what interaction is missing or awkward.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task or workflow that doesn't work well today.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would good look like?
+      description: The interaction you imagine (a slash command, a card, a setting…).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you use today (optional)
+      description: How you cope without this feature.
