@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 
@@ -52,6 +52,9 @@ export const CONFIG_COMMAND = 'config'
 
 /** View or switch the deployment's default model. */
 export const MODEL_COMMAND = 'model'
+
+/** List the registry's workspaces (the chat surfaces of `workspaceRegistry`). */
+export const WS_COMMAND = 'ws'
 
 /** The session id prefix this channel owns. */
 const SESSION_PREFIX = 'feishu-'
@@ -129,6 +132,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent, l
     `\`/${CONTEXT_COMMAND}\` — ${describeCommand(CONTEXT_COMMAND, locale, 'View context pressure')}`,
     `\`/${SKILLS_COMMAND}\` — ${describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills')}`,
     `\`/${MODEL_COMMAND}\` — ${describeCommand(MODEL_COMMAND, locale, 'View or switch the default model')}`,
+    `\`/${WS_COMMAND}\` — ${describeCommand(WS_COMMAND, locale, 'List registered workspaces')}`,
     `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
     `\`/${CONFIG_COMMAND}\` — ${describeCommand(CONFIG_COMMAND, locale, 'View current configuration')}`,
     `\`/${HELP_COMMAND}\` — ${describeCommand(HELP_COMMAND, locale, 'Show available commands')}`,
@@ -180,6 +184,8 @@ export async function runCommandLine(
   skills: HostSkills | undefined = undefined,
   defaultModel: HostDefaultModel | undefined = undefined,
   configModel: { readonly provider?: string; readonly model?: string } | undefined = undefined,
+  workspaces: HostWorkspaceRegistry | undefined = undefined,
+  currentCwd: string | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -217,6 +223,9 @@ export async function runCommandLine(
   }
   if (name === MODEL_COMMAND) {
     return runModelCommand(trimmed, defaultModel, configModel)
+  }
+  if (name === WS_COMMAND) {
+    return runWsCommand(workspaces, currentCwd)
   }
   if (name === CONFIG_COMMAND) {
     return runConfigCommand(config)
@@ -454,6 +463,40 @@ async function runSkillsCommand(
     `· \`${s.name}\` — ${s.description}${s.source === undefined ? '' : `（${s.source}）`}`
   const lines = summaries.map(row)
   return { reply: `**可用的 skills**（${summaries.length} 个）\n${lines.join('\n')}\n\n查看某个：\`/${SKILLS_COMMAND} <name>\``, resolved: true }
+}
+
+/**
+ * Handle `/ws`: list the registry's workspaces with the chat's current
+ * workspace marked. Read-only — the chat drives one configured cwd, so unlike
+ * the PC UI there is nothing to switch here; the listing shows what exists and
+ * where new chats land. The registry is optional: a deployment without it (no
+ * workspace plugin composed) gets a clear refusal instead of a fake answer.
+ * @param workspaces - the host workspace-registry service, when composed.
+ * @param currentCwd - the deployment's chat cwd (the directory new sessions use).
+ * @returns the reply for the chat.
+ */
+function runWsCommand(
+  workspaces: HostWorkspaceRegistry | undefined,
+  currentCwd: string | undefined,
+): CommandOutcome {
+  if (workspaces?.list === undefined) {
+    return { reply: `⚠️ 本部署没有组合 workspace 插件，\`/${WS_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const rows = workspaces.list().map(w => {
+    const mark = currentCwd !== undefined && w.path === currentCwd ? ' ← 当前' : ''
+    const title = w.id === w.path || !w.id ? '' : `（${w.id}）`
+    return `· \`${w.path}\`${title}${mark}`
+  })
+  if (rows.length === 0) {
+    return {
+      reply: `**工作区**：注册表为空。新会话将使用部署目录${currentCwd === undefined ? '' : ` \`${currentCwd}\``}（首次使用时自动注册）。`,
+      resolved: true,
+    }
+  }
+  const tail = currentCwd === undefined
+    ? ''
+    : `\n\n新会话工作目录：\`${currentCwd}\`（由部署配置 \`cwd\` 决定；改目录请编辑 cordis.patch.yml 后重启）。`
+  return { reply: `**已注册的工作区**\n${rows.join('\n')}${tail}`, resolved: true }
 }
 
 /**
