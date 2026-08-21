@@ -983,6 +983,11 @@ export function installBridge(
           lastAssistantIds.get(sessionId),
           ctx.get('tokenMeter') as HostTokenMeter | undefined,
           ctx.get('skills') as HostSkills | undefined,
+          ctx.get('agentDefaultModel') as HostDefaultModel | undefined,
+          {
+            ...config.provider === undefined ? {} : { provider: config.provider },
+            ...config.model === undefined ? {} : { model: config.model },
+          },
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let

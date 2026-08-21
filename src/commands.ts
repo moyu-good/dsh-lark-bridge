@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleEntry } from './host.ts'
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 
@@ -49,6 +49,9 @@ export const SKILLS_COMMAND = 'skills'
 
 /** Show the chat bridge's live configuration. */
 export const CONFIG_COMMAND = 'config'
+
+/** View or switch the deployment's default model. */
+export const MODEL_COMMAND = 'model'
 
 /** The session id prefix this channel owns. */
 const SESSION_PREFIX = 'feishu-'
@@ -125,6 +128,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent, l
     `\`/${JOBS_COMMAND}\` — ${describeCommand(JOBS_COMMAND, locale, 'View background jobs')}`,
     `\`/${CONTEXT_COMMAND}\` — ${describeCommand(CONTEXT_COMMAND, locale, 'View context pressure')}`,
     `\`/${SKILLS_COMMAND}\` — ${describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills')}`,
+    `\`/${MODEL_COMMAND}\` — ${describeCommand(MODEL_COMMAND, locale, 'View or switch the default model')}`,
     `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
     `\`/${CONFIG_COMMAND}\` — ${describeCommand(CONFIG_COMMAND, locale, 'View current configuration')}`,
     `\`/${HELP_COMMAND}\` — ${describeCommand(HELP_COMMAND, locale, 'Show available commands')}`,
@@ -174,6 +178,8 @@ export async function runCommandLine(
   lastAssistantMessageId: string | undefined = undefined,
   tokenMeter: HostTokenMeter | undefined = undefined,
   skills: HostSkills | undefined = undefined,
+  defaultModel: HostDefaultModel | undefined = undefined,
+  configModel: { readonly provider?: string; readonly model?: string } | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -208,6 +214,9 @@ export async function runCommandLine(
   }
   if (name === SKILLS_COMMAND) {
     return runSkillsCommand(trimmed, skills)
+  }
+  if (name === MODEL_COMMAND) {
+    return runModelCommand(trimmed, defaultModel, configModel)
   }
   if (name === CONFIG_COMMAND) {
     return runConfigCommand(config)
@@ -445,6 +454,65 @@ async function runSkillsCommand(
     `· \`${s.name}\` — ${s.description}${s.source === undefined ? '' : `（${s.source}）`}`
   const lines = summaries.map(row)
   return { reply: `**可用的 skills**（${summaries.length} 个）\n${lines.join('\n')}\n\n查看某个：\`/${SKILLS_COMMAND} <name>\``, resolved: true }
+}
+
+/**
+ * Handle `/model [provider/model]`: show the current default model, or switch
+ * it. The switch goes through the host `agentDefaultModel.saveSelection` seam,
+ * so a deployment with a settings provider persists the choice across
+ * restarts; without one, the change is process-local. A deployment that pins
+ * `provider`/`model` in the bridge config overrides everything — switching is
+ * refused there because the config would win on the next agent anyway.
+ * @param line - the trimmed command line.
+ * @param defaultModel - the host agent-default-model service, when composed.
+ * @param configModel - the bridge config's own provider/model override, when set.
+ * @returns the reply for the chat.
+ */
+async function runModelCommand(
+  line: string,
+  defaultModel: HostDefaultModel | undefined,
+  configModel: { readonly provider?: string; readonly model?: string } | undefined,
+): Promise<CommandOutcome> {
+  if (configModel?.provider !== undefined || configModel?.model !== undefined) {
+    return {
+      reply: `⚠️ 本部署在桥配置里固定了模型（\`${configModel.provider ?? ''}/${configModel.model ?? ''}\`），\`/${MODEL_COMMAND}\` 切换不生效。去掉配置里的 provider/model 后再试。`,
+      resolved: false,
+    }
+  }
+  if (defaultModel === undefined) {
+    return { reply: `⚠️ 本部署没有组合 agent-default-model 服务，\`/${MODEL_COMMAND}\` 不可用。`, resolved: false }
+  }
+  const arg = line.slice(1 + MODEL_COMMAND.length).trim()
+  if (arg.length === 0) {
+    const cur = defaultModel.currentSelection()
+    const effort = 'reasoningEffort' in cur && typeof cur.reasoningEffort === 'string' ? `（推理强度 ${cur.reasoningEffort}）` : ''
+    return {
+      reply: `**当前默认模型**：\`${cur.provider}/${cur.model}\`${effort}\n\n切换：\`/${MODEL_COMMAND} <provider>/<model>\`（对之后新建的会话生效；已开始的会话保持原模型）`,
+      resolved: true,
+    }
+  }
+  const slash = arg.indexOf('/')
+  if (slash <= 0 || slash === arg.length - 1) {
+    return { reply: `⚠️ 格式：\`/${MODEL_COMMAND} <provider>/<model>\`，例如 \`/${MODEL_COMMAND} deepseek-official/deepseek-v4\`。`, resolved: false }
+  }
+  const provider = arg.slice(0, slash).trim()
+  const model = arg.slice(slash + 1).trim()
+  if (defaultModel.saveSelection === undefined) {
+    return {
+      reply: `⚠️ 本部署没有 settings 持久化层，切换无法保存。请在部署配置（cordis.patch.yml 的 agent-default-model）里改。`,
+      resolved: false,
+    }
+  }
+  try {
+    await defaultModel.saveSelection({ provider, model })
+    return {
+      reply: `✅ 默认模型已切换为 \`${provider}/${model}\`。对之后**新建**的会话生效；进行中的会话保持原模型（发 \`/new\` 开新会话即用新模型）。`,
+      resolved: true,
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return { reply: `⚠️ 切换失败：${detail}`, resolved: true }
+  }
 }
 
 /**
