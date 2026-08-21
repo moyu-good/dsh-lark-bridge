@@ -152,6 +152,21 @@ export interface Config {
     outbound?: {
         allowedFileDirs?: string[];
     };
+    /**
+     * Proactive context-pressure warning. When enabled, the bridge polls the
+     * host `tokenMeter` for every live session on an interval and posts a
+     * heads-up when a session's total tokens pass {@link tokenPressureThreshold}.
+     * The warning fires at most once per crossing; it re-arms when the session
+     * drops back below the threshold. Defaults: enabled, 10-minute interval,
+     * 120 000 tokens.
+     */
+    tokenPressure?: {
+        enabled?: boolean;
+        /** Poll interval in milliseconds (default 600000 = 10 minutes). */
+        intervalMs?: number;
+        /** Total-token threshold that triggers the warning (default 120000). */
+        threshold?: number;
+    };
 }
 /** Configuration after defaults have been resolved; credentials may still be pending onboarding. */
 export interface ResolvedConfig {
@@ -181,6 +196,11 @@ export interface ResolvedConfig {
     outbound: {
         allowedFileDirs?: string[];
     } | undefined;
+    tokenPressure: {
+        enabled: boolean;
+        intervalMs: number;
+        threshold: number;
+    };
 }
 /** Loader-visible configuration schema and defaults. */
 export declare const Config: z<Config>;

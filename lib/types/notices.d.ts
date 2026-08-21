@@ -63,4 +63,19 @@ export declare function compactionPruneLine(data: {
     readonly shadowedSeqs: readonly number[];
     readonly shadowedTokenCount: number;
 }): string;
+/**
+ * A proactive token-pressure warning: the session's context has climbed past
+ * the compaction advice threshold. Unlike the compaction notices (which fire
+ * after the fact), this is a heads-up the bridge polls for while a long task
+ * is running, so the chat hears about pressure before the model degrades.
+ * @param total - current measured total tokens.
+ * @param surface - the session-surface portion of the total.
+ * @param threshold - the configured warning threshold.
+ * @returns the markdown line for the chat.
+ */
+export declare function tokenPressureLine(data: {
+    readonly total: number;
+    readonly surface: number;
+    readonly threshold: number;
+}): string;
 //# sourceMappingURL=notices.d.ts.map

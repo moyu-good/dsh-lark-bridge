@@ -167,6 +167,21 @@ export interface Config {
   outbound?: {
     allowedFileDirs?: string[]
   }
+  /**
+   * Proactive context-pressure warning. When enabled, the bridge polls the
+   * host `tokenMeter` for every live session on an interval and posts a
+   * heads-up when a session's total tokens pass {@link tokenPressureThreshold}.
+   * The warning fires at most once per crossing; it re-arms when the session
+   * drops back below the threshold. Defaults: enabled, 10-minute interval,
+   * 120 000 tokens.
+   */
+  tokenPressure?: {
+    enabled?: boolean
+    /** Poll interval in milliseconds (default 600000 = 10 minutes). */
+    intervalMs?: number
+    /** Total-token threshold that triggers the warning (default 120000). */
+    threshold?: number
+  }
 }
 
 /** Configuration after defaults have been resolved; credentials may still be pending onboarding. */
@@ -195,6 +210,11 @@ export interface ResolvedConfig {
   autoResumeGoals: boolean
   approvalReminderMs: number
   outbound: { allowedFileDirs?: string[] } | undefined
+  tokenPressure: {
+    enabled: boolean
+    intervalMs: number
+    threshold: number
+  }
 }
 
 /** Loader-visible configuration schema and defaults. */
@@ -224,6 +244,11 @@ export const Config: z<Config> = z.object({
   approvalReminderMs: z.number().min(0).default(0),
   outbound: z.object({
     allowedFileDirs: z.array(String),
+  }),
+  tokenPressure: z.object({
+    enabled: z.boolean(),
+    intervalMs: z.number().min(60_000),
+    threshold: z.number().min(1),
   }),
 })
 
@@ -264,5 +289,10 @@ export function resolveConfig(config: Config): ResolvedConfig {
     autoResumeGoals: config.autoResumeGoals ?? false,
     approvalReminderMs: config.approvalReminderMs ?? 0,
     outbound: config.outbound,
+    tokenPressure: {
+      enabled: config.tokenPressure?.enabled ?? true,
+      intervalMs: config.tokenPressure?.intervalMs ?? 600_000,
+      threshold: config.tokenPressure?.threshold ?? 120_000,
+    },
   }
 }

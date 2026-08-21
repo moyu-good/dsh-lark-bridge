@@ -93,6 +93,7 @@ import {
   scheduleLine,
   subagentEndLine,
   subagentLine,
+  tokenPressureLine,
   webSearchLine,
 } from './notices.ts'
 import { onboardingMessage } from './first-contact.ts'
@@ -551,7 +552,53 @@ export function installBridge(
   const workflowChats = new Map<string, string>()
   /** Most recent assistant message id per session, for `/feedback`. */
   const lastAssistantIds = new Map<string, string>()
+  // Sessions that already received a token-pressure warning since the last
+  // drop below threshold. Re-arms when a later poll finds the session back
+  // under the threshold, so a fresh climb warns again.
+  const pressureWarned = new Set<string>()
   const cwd = resolve(config.cwd ?? process.cwd())
+
+  /**
+   * Proactive context-pressure polling. While a live session is bound, the
+   * host `tokenMeter` reports how many tokens the session's context costs; a
+   * long task that outgrows the advised ceiling degrades quality before any
+   * compaction runs. This heads-up posts at most once per crossing.
+   */
+  const pollTokenPressure = (): void => {
+    if (config.tokenPressure.enabled === false) return
+    const tokenMeter = ctx.get('tokenMeter') as HostTokenMeter | undefined
+    if (tokenMeter === undefined) return
+    const { threshold } = config.tokenPressure
+    for (const [sessionId, binding] of bySession) {
+      let total: number
+      let surface: number
+      try {
+        const measure = tokenMeter.measure({ id: sessionId })
+        total = measure.totalTokens
+        surface = measure.surfaceTokens
+      } catch (error) {
+        // A session without a usable meter is not the chat's problem; log and
+        // move on so one bad session cannot stall the whole sweep.
+        ctx.logger.warn('token pressure measure failed for %s: %s', sessionId, error)
+        continue
+      }
+      if (total >= threshold) {
+        if (pressureWarned.has(sessionId)) continue
+        pressureWarned.add(sessionId)
+        void replay
+          .send(binding.chatId, {
+            markdown: tokenPressureLine({ total, surface, threshold }),
+          })
+          .catch(reportSendFailure)
+      } else {
+        pressureWarned.delete(sessionId)
+      }
+    }
+  }
+
+  const pressureTimer = config.tokenPressure.enabled === false
+    ? undefined
+    : setInterval(pollTokenPressure, config.tokenPressure.intervalMs)
 
   /**
    * The workspace chat sessions are accounted under, resolved once. Workspace
@@ -1378,6 +1425,7 @@ export function installBridge(
   // closed, open streaming cards settled. The session store owns the agents, so
   // it does the disposing — and it leaves an adopted one running for its owner.
   ctx.effect(() => () => {
+    if (pressureTimer !== undefined) clearInterval(pressureTimer)
     for (const [id, pending] of [...pendingApprovals]) {
       pendingApprovals.delete(id)
       pending.settle('cancelled')
