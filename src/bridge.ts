@@ -67,6 +67,7 @@ import {
   WS_COMMAND,
 } from './commands.ts'
 import { collectImages } from './images.ts'
+import type { Locale } from './i18n.ts'
 import type { CollectedImages, ImagePort } from './images.ts'
 import { syncSlashPanel } from './slash-panel.ts'
 import type { SlashPanelPort } from './slash-panel.ts'
@@ -895,6 +896,24 @@ export function installBridge(
    * Fire and forget: discovery is a convenience, and every command works
    * typed by hand.
    */
+  /** The channel-owned commands, independent of any agent's scope — the boot-time panel floor. */
+  const channelCommands = (locale: Locale): Array<{ name: string; description: string }> => [
+    { name: PRESET_COMMAND, description: describeCommand(PRESET_COMMAND, locale, 'View or switch mode') },
+    { name: SESSIONS_COMMAND, description: describeCommand(SESSIONS_COMMAND, locale, 'View session history') },
+    { name: TOOLS_COMMAND, description: describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools') },
+    { name: SCHEDULES_COMMAND, description: describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders') },
+    { name: JOBS_COMMAND, description: describeCommand(JOBS_COMMAND, locale, 'View background jobs') },
+    { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
+    { name: FEEDBACK_COMMAND, description: describeCommand(FEEDBACK_COMMAND, locale, 'Record feedback about this session') },
+    { name: CONTEXT_COMMAND, description: describeCommand(CONTEXT_COMMAND, locale, 'View context pressure') },
+    { name: SKILLS_COMMAND, description: describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills') },
+    { name: MODEL_COMMAND, description: describeCommand(MODEL_COMMAND, locale, 'View or switch the default model') },
+    { name: WS_COMMAND, description: describeCommand(WS_COMMAND, locale, 'List registered workspaces') },
+    { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
+    { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
+    { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
+  ]
+
   const publishSlashPanel = (agent: HostAgent): void => {
     if (!config.syncSlashCommands) return
     const hosted = (ctx.get('commands') as HostCommands | undefined)?.list(agent) ?? []
@@ -910,20 +929,7 @@ export function installBridge(
         name: descriptor.name,
         description: describeCommand(descriptor.name, locale, descriptor.description),
       })),
-      { name: PRESET_COMMAND, description: describeCommand(PRESET_COMMAND, locale, 'View or switch mode') },
-      { name: SESSIONS_COMMAND, description: describeCommand(SESSIONS_COMMAND, locale, 'View session history') },
-      { name: TOOLS_COMMAND, description: describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools') },
-      { name: SCHEDULES_COMMAND, description: describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders') },
-      { name: JOBS_COMMAND, description: describeCommand(JOBS_COMMAND, locale, 'View background jobs') },
-      { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
-      { name: FEEDBACK_COMMAND, description: describeCommand(FEEDBACK_COMMAND, locale, 'Record feedback about this session') },
-      { name: CONTEXT_COMMAND, description: describeCommand(CONTEXT_COMMAND, locale, 'View context pressure') },
-      { name: SKILLS_COMMAND, description: describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills') },
-      { name: MODEL_COMMAND, description: describeCommand(MODEL_COMMAND, locale, 'View or switch the default model') },
-      { name: WS_COMMAND, description: describeCommand(WS_COMMAND, locale, 'List registered workspaces') },
-      { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
-      { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
-      { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
+      ...channelCommands(locale),
     ]
     void syncSlashPanel(port, desired, notify).then(({ added, removed }) => {
       if (added.length > 0) notify(`dsh-lark-bridge: registered /${added.join(', /')} on the bot's slash panel`)
@@ -1248,6 +1254,33 @@ export function installBridge(
     notify('dsh-lark-bridge: connection restored')
     ctx.logger.info('connection restored')
   }), 'dsh-lark-bridge:on(reconnected)')
+
+  // Boot-time panel floor: sync the channel-owned commands as soon as the
+  // bridge installs, before any chat exists. Without this, a restart that
+  // receives no message leaves the panel at the previous boot's list — and an
+  // OLD process (one built before new channel commands existed) that does
+  // receive a message would reconcile the panel DOWN to its own stale list,
+  // deleting commands this channel actually accepts. The agent-scoped full
+  // sync (hosted + channel) still runs on every acquire.
+  //
+  // The transport may not hold credentials yet at install time, so the first
+  // attempt can fail before any notify fires; retry on a backoff until the
+  // panel answers, then stop — this is a floor, not a poller.
+  if (config.syncSlashCommands) {
+    const floor = channelCommands(config.locale)
+    void (async () => {
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const { added } = await syncSlashPanel(port, floor, notify)
+          if (added.length > 0) notify(`dsh-lark-bridge: registered /${added.join(', /')} on the bot's slash panel`)
+          return
+        } catch {
+          if (attempt === 3) return
+          await new Promise(resolve => setTimeout(resolve, attempt * 15_000))
+        }
+      }
+    })()
+  }
 
   // Outbound: the owned chat's renderer decides what reaches the chat. The
   // bridge additionally remembers each call's arguments for the approval card,
