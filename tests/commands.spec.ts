@@ -944,6 +944,27 @@ describe('/model command', () => {
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('agent-default-model')
   })
+
+  it('appends the terminal consequence to a successful /permission switch (E2)', async () => {
+    const hostCommands = {
+      list: () => [],
+      execute: async (_agent: unknown, line: string) => {
+        const preset = line.includes('danger') ? 'danger-full-access' : 'workspace-write'
+        return { result: { kind: 'success' as const, text: `preset ${preset}` } }
+      },
+    }
+    const danger = await runCommandLine('/permission danger-full-access', fakeAgent(), hostCommands as never, new AbortController().signal)
+    expect(danger.reply).toContain('terminal')
+    expect(danger.reply).toContain('preset danger-full-access')
+    const safe = await runCommandLine('/permission workspace-write', fakeAgent(), hostCommands as never, new AbortController().signal)
+    expect(safe.reply).toContain('被拒绝')
+    // Other commands pass through untouched.
+    const plain = await runCommandLine('/goal', fakeAgent(), {
+      list: () => [],
+      execute: async () => ({ result: { kind: 'success' as const, text: 'preset danger-full-access' } }),
+    } as never, new AbortController().signal)
+    expect(plain.reply).not.toContain('💡')
+  })
 })
 
 describe('/ws command', () => {
