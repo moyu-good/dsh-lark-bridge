@@ -81,6 +81,9 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 | `/audit` | 本会话的操作审计摘要 |
 | `/context` | 查看当前上下文 token 压力 |
 | `/config` | 查看桥的当前配置 |
+| `/skills` | 查看可用 skills / 查看某个 skill 详情 |
+| `/model` | 查看/切换默认模型：`/model <provider>/<model>`（对之后新建的会话生效） |
+| `/ws` | 查看已注册的工作区目录，标记新会话落点 |
 | `/goal` | 查看/设置目标（宿主命令） |
 | `/plan` | 进入/退出计划模式（宿主命令） |
 | `/compact` | 压缩较早对话历史（宿主命令） |
@@ -101,6 +104,9 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 | 压缩透明化 | ✅ | — | — | — |
 | 重启后 goal 自动续跑 | ✅ | — | 崩溃安全网 | — |
 | 双语斜杠面板同步 | ✅ | — | — | 面板按钮 |
+| /skills 生态面板 + /model 切换 + /ws 工作区 | ✅ | — | — | — |
+
+**PC 版能力补齐（官方 opt-in 家族）**：在 profile patch 里组合 `@deepseek-ai/dsh-terminal`+`dsh-terminal-bash`+`tool-terminal`（PTY 持久终端）、`@deepseek-ai/dsh-code-runtime-worker-thread`（Code Mode `run_code`）、`@deepseek-ai/dsh-mcp-client`（外部 MCP 服务），桥零改动即得——与桌面版同一套官方包。
 
 ## ⚙️ 配置
 
