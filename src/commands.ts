@@ -242,6 +242,19 @@ export async function runCommandLine(
   }
   const { result } = execution
   if (result.kind === 'error') return { reply: `⚠️ \`/${name}\` 执行失败：${result.text}`, resolved: true }
+  // /permission's bare host reply ("preset <name>") says what changed but not
+  // what it means downstream: the terminal family refuses to spawn under
+  // workspace-write without an approval channel, so the switch is exactly the
+  // difference between terminal tools working and failing in this chat. The
+  // bridge appends that consequence — the one thing a chat user cannot see.
+  if (name === 'permission' && result.kind === 'success' && typeof result.text === 'string') {
+    if (result.text.includes('danger-full-access')) {
+      return { reply: `${result.text}\n\n💡 已放开沙箱：terminal_* 等需要完整执行环境的工具现在可用（审批不再逐次询问）。`, resolved: true }
+    }
+    if (result.text.includes('workspace-write')) {
+      return { reply: `${result.text}\n\n💡 已收紧到工作区写入：terminal_* 工具在此模式下会被拒绝（无审批通道时）。需要持久终端请再切 \`/permission danger-full-access\`。`, resolved: true }
+    }
+  }
   // A command whose own session events carry the story needs no echo.
   return { reply: result.text ?? '', resolved: true }
 }
