@@ -915,6 +915,16 @@ describe('dsh-lark-bridge', () => {
       await harness.dispose()
     })
 
+    it('syncs the channel floor at boot, before any message (E3)', async () => {
+      const harness = await mountChannel({})
+      // No message was emitted: the boot-time sync must still register the
+      // channel-owned commands, so a fresh process restores its panel.
+      await vi.waitFor(() => {
+        expect(harness.fake.panelCreated).toEqual(expect.arrayContaining(['skills', 'model', 'ws', 'help']))
+      })
+      await harness.dispose()
+    })
+
     it('removes an entry the channel no longer offers', async () => {
       const harness = await mountChannel({}, { commands: createFakeCommands().service })
       // A command dropped from the channel used to stay in the menu and answer
