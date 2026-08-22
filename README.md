@@ -52,7 +52,10 @@ Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 | 🔍 **Session history search** | `/sessions <keyword>` full-text searches this chat's stored history with snippets |
 | ⚙️ **Background job notifications** | `run_in_background` jobs and direct subagents announce their terminal outcome in the chat |
 | 🧩 **Skill ecosystem surface** | `/skills` lists the workspace's discoverable dsh skills; `/skills <name>` peeks at one — the dsh plugin ecosystem from inside Feishu |
-| ⚡ **Full slash panel** | `/stop /help /preset /sessions /tools /schedules /jobs /feedback /context /audit /config /skills` plus host commands (`goal`, `plan`, `compact`, `permission`) |
+| 🤖 **Model switching** | `/model` views the deployment default model; `/model <provider>/<model>` switches it through the host `saveSelection` seam (persistent with a settings layer) |
+| 🖥️ **PC-parity tooling** | Compose `dsh-terminal*` / `code-runtime-worker-thread` / `dsh-mcp-client` in your profile patch and the chat agent gains persistent PTY sessions, Code Mode `run_code`, and external MCP servers — the same official opt-in families the desktop UI offers |
+| 🗺️ **Workspace visibility** | `/ws` lists registered workspaces and marks where new sessions land |
+| ⚡ **Full slash panel** | `/stop /help /preset /sessions /tools /schedules /jobs /feedback /context /audit /config /skills /model /ws` plus host commands (`goal`, `plan`, `compact`, `permission`) |
 | 🌐 **Bilingual commands** | Panel and `/help` follow the platform: English on international Lark, Chinese on domestic Feishu; `locale` overrides |
 | 🖼️ **Image input (opt-in)** | `attachImages` downloads chat images into the host attachment store |
 | 📎 **File delivery** | Agent `send_file` delivers files with caption into the chat |
