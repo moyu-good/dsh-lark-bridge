@@ -925,6 +925,24 @@ describe('dsh-lark-bridge', () => {
       await harness.dispose()
     })
 
+    it('lists deployed plugins with live status via /plugins', async () => {
+      const harness = await mountChannel({}, {
+        loader: {
+          await: async () => undefined,
+          entries: () => [
+            { options: { name: 'feishu-channel' }, disabled: false, fiber: { state: 2 } },
+            { options: { name: 'agent-presets' }, disabled: false, fiber: { state: 0 } },
+          ],
+        },
+      })
+      await harness.fake.emitMessage(fakeMessage({ content: '/plugins' }))
+      await vi.waitFor(() => { expect(harness.fake.sent).toHaveLength(1) })
+      const reply = (harness.fake.sent[0]!.input as { markdown: string }).markdown
+      expect(reply).toContain('已部署插件')
+      expect(reply).toContain('feishu-channel')
+      await harness.dispose()
+    })
+
     it('removes an entry the channel no longer offers', async () => {
       const harness = await mountChannel({}, { commands: createFakeCommands().service })
       // A command dropped from the channel used to stay in the menu and answer

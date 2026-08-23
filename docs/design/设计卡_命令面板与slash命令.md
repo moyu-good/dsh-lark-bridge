@@ -72,4 +72,6 @@ bridge.ts handleMessage()            ← 消息主入口
 
 ## 6. 变更记录
 
+- 2026-08-23 测试修复：/plugins 用例缺 loader 注入长期带红（189ab92 起）——测试 harness 新增 `loader` 服务注入点（await + entries），用例显式喂 fake 条目，289/291→289 全绿
+
 - 0de955b /skills（277 tests）→ 3dc7b42 /model（saveSelection seam + pin 检测）→ 1bdf63a /ws（registry.list）→ 9be9317 面板补齐 → 75f3305 /permission 后果说明 → 189ab92 boot 面板重试
