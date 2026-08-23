@@ -454,6 +454,8 @@ export async function mountChannel(
     jobs?: object
     /** The `messageFeedback` service `/feedback` writes through. */
     messageFeedback?: object
+    /** The root `loader` whose entries /plugins lists. Omitted ⇒ command refuses. */
+    loader?: { entries: () => Iterable<unknown> }
     /**
      * The `goals` service stub (the bridge injects it). Defaults to an empty
      * view so autoResume reads no goal; tests with a goal pass a stub whose
@@ -495,6 +497,7 @@ export async function mountChannel(
   if (services.attachments !== undefined) ctx.provide('attachments', services.attachments)
   if (services.jobs !== undefined) ctx.provide('jobs', services.jobs)
   if (services.messageFeedback !== undefined) ctx.provide('messageFeedback', services.messageFeedback)
+  if (services.loader !== undefined) ctx.provide('loader', services.loader)
   const fake = createFakePort()
   const portConfigs: ChannelConfig[] = []
   const notices: string[] = []
