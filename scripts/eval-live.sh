@@ -7,16 +7,18 @@
 #   E1 headless/无审批通道环境里 terminal 被 sandbox 拒绝 → eval 需显式
 #      danger-full-access + defaultPreset；飞书桥有审批卡不受影响。
 #   （后续发现继续追加在这里）
+# 路径约定（2026-08-23）：DSH_HARNESS_CLI 必填；凭证走环境变量，不写死任何机器。
 set -u
-DSH=[HARNESS_DIR]/apps/cli/lib/bin.js
-PATCH=/tmp/dsh-eval-patch.yml
+# 部署层注入路径，脚本本身不持有本机绝对路径（开发行为红线：公私分离）
+DSH="${DSH_HARNESS_CLI:?export DSH_HARNESS_CLI=/path/to/dsh-cli-entry.js first}"
+PATCH="${DSH_EVAL_PATCH:-/tmp/dsh-eval-patch.yml}"
 : "${OPENCODE_GO_API_KEY:?export OPENCODE_GO_API_KEY first}"
 pass=0; fail=0
 
 run_eval() {
   local name="$1" expect="$2" prompt="$3"
   local out
-  out=$(cd [HARNESS_DIR] && timeout 240 node "$DSH" --profile headless --patch "$PATCH" "$prompt" 2>&1 | tail -1)
+  out=$(cd "$(dirname "$DSH")" && timeout 240 node "$DSH" --profile headless --patch "$PATCH" "$prompt" 2>&1 | tail -1)
   if [[ "$out" == *"$expect"* ]]; then
     echo "✅ $name → \"$out\""
     pass=$((pass+1))

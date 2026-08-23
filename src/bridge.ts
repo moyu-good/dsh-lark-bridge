@@ -40,7 +40,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostMessageFeedback, HostSessionQuery, HostSkills, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostLoaderEntry, HostMessageFeedback, HostSessionQuery, HostSkills, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
 import { isAssistantMessageEvent, isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
@@ -57,6 +57,7 @@ import {
   isCommandLine,
   JOBS_COMMAND,
   MODEL_COMMAND,
+  PLUGINS_COMMAND,
   PRESET_COMMAND,
   runCommandLine,
   SCHEDULES_COMMAND,
@@ -896,6 +897,22 @@ export function installBridge(
    * Fire and forget: discovery is a convenience, and every command works
    * typed by hand.
    */
+  /**
+   * The Loader tree as of now, flattened for the chat inventory: the bridge's
+   * scoped context shares the root loader, so its entries ARE the deployment's
+   * plugin tree. Structural group rows (no name) are filtered downstream.
+   */
+  const loaderEntries = (): HostLoaderEntry[] | undefined => {
+    try {
+      // The bridge's scoped context delegates `loader` to the root; the cast is
+      // safe because every dsh deployment mounts the loader plugin.
+      const root = ctx as unknown as { loader?: { entries?: () => Iterable<unknown> } }
+      return [...(root.loader?.entries?.() ?? [])] as unknown as HostLoaderEntry[]
+    } catch {
+      return undefined
+    }
+  }
+
   /** The channel-owned commands, independent of any agent's scope — the boot-time panel floor. */
   const channelCommands = (locale: Locale): Array<{ name: string; description: string }> => [
     { name: PRESET_COMMAND, description: describeCommand(PRESET_COMMAND, locale, 'View or switch mode') },
@@ -909,6 +926,7 @@ export function installBridge(
     { name: SKILLS_COMMAND, description: describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills') },
     { name: MODEL_COMMAND, description: describeCommand(MODEL_COMMAND, locale, 'View or switch the default model') },
     { name: WS_COMMAND, description: describeCommand(WS_COMMAND, locale, 'List registered workspaces') },
+    { name: PLUGINS_COMMAND, description: describeCommand(PLUGINS_COMMAND, locale, 'List deployed plugins and status') },
     { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
     { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
     { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
@@ -1002,6 +1020,7 @@ export function installBridge(
           },
           ctx.get('workspaceRegistry') as HostWorkspaceRegistry | undefined,
           cwd,
+          loaderEntries(),
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let

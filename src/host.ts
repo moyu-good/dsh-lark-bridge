@@ -266,6 +266,18 @@ export interface HostWorkspaceRegistry {
   list?(): readonly HostWorkspace[]
 }
 
+/** One Loader-tree entry as the chat inventory needs it (subset of Cordis's Loader). */
+export interface HostLoaderEntry {
+  /** The loader entry id from the composition (e.g. `feishu-channel`). */
+  options: { readonly name?: string }
+  /** The module specifier that provided this plugin, when resolvable. */
+  specifier?: string
+  /** Whether the entry was disabled by the composition. */
+  disabled?: boolean
+  /** Live root fiber; undefined when not mounted (disabled or failed to load). */
+  fiber?: { readonly state: number } | undefined
+}
+
 /** The `agentDefaultModel` service (subset of `AgentDefaultModelConfig`). */
 export interface HostDefaultModel {
   /** The deployment's current default provider/model selection. */
