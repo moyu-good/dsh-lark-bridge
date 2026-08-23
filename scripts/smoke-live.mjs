@@ -22,16 +22,26 @@ const active = (() => {
 check('dsh-feishu-chat 服务 active', active)
 
 // 2) 组合树含新插件
-const tree = execSync('node [HARNESS_DIR]/apps/cli/lib/bin.js --profile chat --dump-config 2>/dev/null || true',
-  { encoding: 'utf8', timeout: 60_000 })
+const HARNESS_CLI = process.env.DSH_HARNESS_CLI
+const tree = HARNESS_CLI
+  ? execSync(`node ${HARNESS_CLI} --profile chat --dump-config 2>/dev/null || true`,
+      { encoding: 'utf8', timeout: 60_000 })
+  : ''
+if (!HARNESS_CLI) console.log('· DSH_HARNESS_CLI 未设置，跳过组合树检查')
 for (const pkg of ['dsh-terminal', 'dsh-terminal-bash', 'tool-terminal', 'code-runtime-worker-thread']) {
   check(`组合树含 ${pkg}`, tree.includes(pkg))
 }
-check('组合树不含 mcp-client（注释态，符合预期）', !tree.includes('mcp-client'))
+if (process.env.SMOKE_EXPECT_MCP === '1') {
+  check('组合树含 dsh-mcp-client', tree.includes('dsh-mcp-client'))
+} else {
+  check('组合树不含 mcp-client（未声明 SMOKE_EXPECT_MCP=1）', !tree.includes('mcp-client'))
+}
 
 // 3) 飞书面板命令清单
-const env = readFileSync('[DSH_ENV_FILE]', 'utf8')
-const get = k => env.match(new RegExp(`^${k}=(.*)$`, 'm'))?.[1]
+// 凭证来源优先级：环境变量 > DSH_ENV_FILE 指向的 dotenv 文件；都不在则跳过面板检查
+let env = process.env.FEISHU_APP_ID ? '' : undefined
+if (env === undefined && process.env.DSH_ENV_FILE) env = readFileSync(process.env.DSH_ENV_FILE, 'utf8')
+const get = k => (env ? env.match(new RegExp(`^${k}=(.*)$`, 'm'))?.[1] : process.env[k])
 const appId = get('FEISHU_APP_ID'); const appSecret = get('FEISHU_APP_SECRET')
 const token = JSON.parse(execSync(
   `curl -s -X POST https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal -H 'Content-Type: application/json' -d '{"app_id":"${appId}","app_secret":"${appSecret}"}'`,

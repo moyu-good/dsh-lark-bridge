@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# 常驻启动 dsh + dsh-lark-bridge（嘟嘟嘟）
+# 用法: run-dsh-web.sh [profile]  默认 web
+set -e
+# 工作区根 = PROJECT 根（嘟嘟嘟视野覆盖全部项目）
+cd [PROJECT_ROOT]
+PROFILE="${1:-web}"
+ENV_FILE="${DSH_FEISHU_ENV:-[WINDOWS_USER_HOME]/AppData/Roaming/feishu-bot/.env}"
+export FEISHU_APP_ID=$(grep "^FEISHU_APP_ID" "$ENV_FILE" | cut -d= -f2 | tr -d '\r')
+export FEISHU_APP_SECRET=$(grep "^FEISHU_APP_SECRET" "$ENV_FILE" | cut -d= -f2 | tr -d '\r')
+# 斯卡哈专用 key（skyw 邮箱账号）：优先读自己的 env 文件，fallback Hermes 的
+export OPENCODE_GO_API_KEY=$(grep "^OPENCODE_GO_API_KEY" "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '\r')
+[ -z "$OPENCODE_GO_API_KEY" ] && export OPENCODE_GO_API_KEY=$(grep "^OPENCODE_GO_API_KEY" [HERMES_ENV_FILE] | cut -d= -f2 | tr -d '\r')
+export DEEPSEEK_API_KEY=$(grep "^DEEPSEEK_API_KEY" [HERMES_ENV_FILE] | cut -d= -f2 | tr -d '\r')
+# 全自动权限模式：sandbox=danger-full-access + approval=never（不弹审批卡片）
+# 官方开关（dsh-base cordis.patch.yml:175,191）——改回 workspace-write 即恢复弹卡审批
+export DSH_PERMISSION_MODE=danger-full-access
+echo "[boot] profile=$PROFILE appId=$FEISHU_APP_ID"
+if [ "$PROFILE" = "web" ]; then
+  exec node [HARNESS_DIR]/apps/cli/lib/bin.js web
+else
+  exec node [HARNESS_DIR]/apps/cli/lib/bin.js --profile "$PROFILE"
+fi

@@ -8,7 +8,7 @@
  * — and `/help` lists what this chat accepts, which no host command provides.
  * @module dsh-lark-bridge/commands
  */
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry } from './host.ts';
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry } from './host.ts';
 import type { ResolvedConfig } from './config.ts';
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export declare const STOP_COMMAND = "stop";
@@ -38,6 +38,8 @@ export declare const CONFIG_COMMAND = "config";
 export declare const MODEL_COMMAND = "model";
 /** List the registry's workspaces (the chat surfaces of `workspaceRegistry`). */
 export declare const WS_COMMAND = "ws";
+/** List the deployed plugin tree with live status (the chat face of the web inventory). */
+export declare const PLUGINS_COMMAND = "plugins";
 /** The four shipped preset ids, for the listing and for argument validation. */
 export declare const SHIPPED_PRESET_IDS: readonly ["standard", "code", "minimal", "cordis"];
 /** Human names for the shipped presets, matching the deployment's preset.yml. */
@@ -104,5 +106,5 @@ export declare function helpText(commands: HostCommands | undefined, agent: Host
 export declare function runCommandLine(line: string, agent: HostAgent, commands: HostCommands | undefined, signal: AbortSignal, presets?: HostAgentPresets | undefined, persistence?: HostSessionPersistence | undefined, chatId?: string | undefined, deniedTools?: ReadonlySet<string> | undefined, schedules?: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined, audits?: ReadonlyMap<string, AuditStats> | undefined, config?: ResolvedConfig | undefined, sessionPresets?: Map<string, string> | undefined, sessionQuery?: HostSessionQuery | undefined, jobs?: HostJobs | undefined, feedback?: HostMessageFeedback | undefined, lastAssistantMessageId?: string | undefined, tokenMeter?: HostTokenMeter | undefined, skills?: HostSkills | undefined, defaultModel?: HostDefaultModel | undefined, configModel?: {
     readonly provider?: string;
     readonly model?: string;
-} | undefined, workspaces?: HostWorkspaceRegistry | undefined, currentCwd?: string | undefined): Promise<CommandOutcome>;
+} | undefined, workspaces?: HostWorkspaceRegistry | undefined, currentCwd?: string | undefined, loaderEntries?: readonly HostLoaderEntry[] | undefined): Promise<CommandOutcome>;
 //# sourceMappingURL=commands.d.ts.map
