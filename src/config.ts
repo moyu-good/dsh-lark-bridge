@@ -93,6 +93,14 @@ export interface Config {
    * from memory, and a hand-curated panel is left untouched.
    */
   syncSlashCommands?: boolean
+  /**
+   * Fire-and-forget ingest endpoint for an external full-transcript ledger.
+   * When set, every accepted inbound user message is POSTed as JSON
+   * `{source, text, chatId}`; failures are logged and never affect handling.
+   * Empty (default) disables the hook entirely — deployments without a
+   * ledger pay nothing.
+   */
+  chronicleEndpoint?: string
   /** Send a one-time first-contact guide when a brand-new session starts. */
   onboarding?: boolean
   /**
@@ -200,6 +208,8 @@ export interface ResolvedConfig {
   attachImages: boolean
   hideProcessWhenDone: boolean
   syncSlashCommands: boolean
+  /** Ingest endpoint for the external chronicle ledger; '' disables it. */
+  chronicleEndpoint: string
   onboarding: boolean
   denyTools: string[]
   requireMention: boolean
@@ -233,6 +243,7 @@ export const Config: z<Config> = z.object({
   attachImages: z.boolean().default(false),
   hideProcessWhenDone: z.boolean().default(false),
   syncSlashCommands: z.boolean().default(true),
+  chronicleEndpoint: z.string().default(''),
   onboarding: z.boolean().default(true),
   denyTools: z.array(String).default([...DEFAULT_DENY_TOOLS]),
   requireMention: z.boolean().default(true),
@@ -279,6 +290,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     attachImages: config.attachImages ?? false,
     hideProcessWhenDone: config.hideProcessWhenDone ?? false,
     syncSlashCommands: config.syncSlashCommands ?? true,
+    chronicleEndpoint: config.chronicleEndpoint ?? '',
     onboarding: config.onboarding ?? true,
     denyTools: config.denyTools ?? [...DEFAULT_DENY_TOOLS],
     requireMention: config.requireMention ?? true,
