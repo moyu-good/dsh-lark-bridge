@@ -147,6 +147,7 @@ Panel descriptions are bilingual: **English** when the platform domain is
 | `attachImages` | `false` | Pass chat images to the model |
 | `syncSlashCommands` | `true` | Publish commands to bot's `/` panel (reconciles: creates missing, removes stale, refreshes drifted descriptions) |
 | `chronicleEndpoint` | `''` | Fire-and-forget POST `{source,text,chatId}` per accepted inbound message to an external full-transcript ledger; failures logged, never affect handling. Empty disables |
+| `chronicleSource` | `'lark-bridge'` | The `source` value sent to the ledger — name your own channel per deployment |
 | `autoResumeGoals` | `false` | Re-arm an active goal when a session returns after a restart |
 | `approvalReminderMs` | `0` | Nudge the chat when an approval card is unanswered this many ms (0 = off) |
 | `denyTools` | `[]` | Tools chat agents may not call |

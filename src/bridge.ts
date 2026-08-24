@@ -986,7 +986,7 @@ export function installBridge(
     reactions?.ack(msg.messageId)
     // Full-transcript ingest is fire-and-forget: never awaited, never blocks
     // or fails the turn (contract in src/chronicle.ts).
-    postChronicle(config.chronicleEndpoint, { source: 'lark-bridge', text: msg.content, chatId: msg.chatId }, notify)
+    postChronicle(config.chronicleEndpoint, { source: config.chronicleSource, text: msg.content, chatId: msg.chatId }, notify)
     try {
       const opened = await sessions.acquire(msg)
       const binding = await bindingFor(opened.handle.agent.session.id, msg)

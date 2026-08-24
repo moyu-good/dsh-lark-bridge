@@ -78,6 +78,16 @@ export interface Config {
      * from memory, and a hand-curated panel is left untouched.
      */
     syncSlashCommands?: boolean;
+    /**
+     * Fire-and-forget ingest endpoint for an external full-transcript ledger.
+     * When set, every accepted inbound user message is POSTed as JSON
+     * `{source, text, chatId}`; failures are logged and never affect handling.
+     * Empty (default) disables the hook entirely — deployments without a
+     * ledger pay nothing.
+     */
+    chronicleEndpoint?: string;
+    /** `source` value sent to the chronicle ledger; lets one deployment name its own channel. */
+    chronicleSource?: string;
     /** Send a one-time first-contact guide when a brand-new session starts. */
     onboarding?: boolean;
     /**
@@ -184,6 +194,10 @@ export interface ResolvedConfig {
     attachImages: boolean;
     hideProcessWhenDone: boolean;
     syncSlashCommands: boolean;
+    /** Ingest endpoint for the external chronicle ledger; '' disables it. */
+    chronicleEndpoint: string;
+    /** Source name sent to the ledger. */
+    chronicleSource: string;
     onboarding: boolean;
     denyTools: string[];
     requireMention: boolean;
