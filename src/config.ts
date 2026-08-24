@@ -101,6 +101,8 @@ export interface Config {
    * ledger pay nothing.
    */
   chronicleEndpoint?: string
+  /** `source` value sent to the chronicle ledger; lets one deployment name its own channel. */
+  chronicleSource?: string
   /** Send a one-time first-contact guide when a brand-new session starts. */
   onboarding?: boolean
   /**
@@ -210,6 +212,8 @@ export interface ResolvedConfig {
   syncSlashCommands: boolean
   /** Ingest endpoint for the external chronicle ledger; '' disables it. */
   chronicleEndpoint: string
+  /** Source name sent to the ledger. */
+  chronicleSource: string
   onboarding: boolean
   denyTools: string[]
   requireMention: boolean
@@ -244,6 +248,7 @@ export const Config: z<Config> = z.object({
   hideProcessWhenDone: z.boolean().default(false),
   syncSlashCommands: z.boolean().default(true),
   chronicleEndpoint: z.string().default(''),
+  chronicleSource: z.string().default('lark-bridge'),
   onboarding: z.boolean().default(true),
   denyTools: z.array(String).default([...DEFAULT_DENY_TOOLS]),
   requireMention: z.boolean().default(true),
@@ -291,6 +296,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     hideProcessWhenDone: config.hideProcessWhenDone ?? false,
     syncSlashCommands: config.syncSlashCommands ?? true,
     chronicleEndpoint: config.chronicleEndpoint ?? '',
+    chronicleSource: config.chronicleSource ?? 'lark-bridge',
     onboarding: config.onboarding ?? true,
     denyTools: config.denyTools ?? [...DEFAULT_DENY_TOOLS],
     requireMention: config.requireMention ?? true,
