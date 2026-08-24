@@ -48,6 +48,7 @@ import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
 import type { OutboundPort, OutboundRenderer, ReplyTarget, ToolPresentation } from './outbound.ts'
 import { refuseApprovalClick, refuseMessage } from './authorization.ts'
 import type { Authorization } from './authorization.ts'
+import { postChronicle } from './chronicle.ts'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
@@ -983,6 +984,9 @@ export function installBridge(
     // The bot received a real request: acknowledge immediately so the sender
     // sees it landed, before any agent work starts.
     reactions?.ack(msg.messageId)
+    // Full-transcript ingest is fire-and-forget: never awaited, never blocks
+    // or fails the turn (contract in src/chronicle.ts).
+    postChronicle(config.chronicleEndpoint, { source: 'lark-bridge', text: msg.content, chatId: msg.chatId }, notify)
     try {
       const opened = await sessions.acquire(msg)
       const binding = await bindingFor(opened.handle.agent.session.id, msg)
