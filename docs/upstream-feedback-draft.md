@@ -58,4 +58,4 @@ Full session-log analysis available on request.
 
 ## v1 存档（窄口径版本：仅 description 字段）
 
-v1 把问题框成「description 缺失导致校验拒绝」，2026-08-24 应少东家指示升级为平台级契约兼容问题——用户随时换模型，不可能逐个模型对契约；使用面必须从简，深度留给平台。v1 内容已并入上文 Evidence 节。
+v1 把问题框成「description 缺失导致校验拒绝」，2026-08-24 按用户指示升级为平台级契约兼容问题——用户随时换模型，不可能逐个模型对契约；使用面必须从简，深度留给平台。v1 内容已并入上文 Evidence 节。
