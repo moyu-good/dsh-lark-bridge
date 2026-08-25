@@ -614,10 +614,8 @@ async function runModelCommand(
   configModel: { readonly provider?: string; readonly model?: string } | undefined,
 ): Promise<CommandOutcome> {
   if (configModel?.provider !== undefined || configModel?.model !== undefined) {
-    return {
-      reply: `⚠️ 本部署在桥配置里固定了模型（\`${configModel.provider ?? ''}/${configModel.model ?? ''}\`），\`/${MODEL_COMMAND}\` 切换不生效。去掉配置里的 provider/model 后再试。`,
-      resolved: false,
-    }
+    // Config values are initial defaults, not locks — /model can override them.
+    // The new selection persists via agentDefaultModel and wins on next agent.
   }
   if (defaultModel === undefined) {
     return { reply: `⚠️ 本部署没有组合 agent-default-model 服务，\`/${MODEL_COMMAND}\` 不可用。`, resolved: false }
