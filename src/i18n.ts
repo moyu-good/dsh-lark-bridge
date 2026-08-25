@@ -28,6 +28,7 @@ export interface BilingualText {
 export const COMMAND_DESCRIPTIONS: Record<string, BilingualText> = {
   // Bridge-owned commands.
   stop: { zh: '停止当前任务', en: 'Stop the current task' },
+  restart: { zh: '重启服务进程（需部署侧配置）', en: 'Restart the host process (deployment-configured)' },
   preset: { zh: '查看/切换模式（标准/PTC/极简/创造）', en: 'View or switch mode (standard/PTC/minimal/cordis)' },
   sessions: { zh: '查看本聊天的会话历史', en: 'View this chat’s session history' },
   tools: { zh: '查看/禁用/恢复工具', en: 'View, deny, or allow tools' },

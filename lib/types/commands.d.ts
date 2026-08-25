@@ -12,6 +12,23 @@ import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefault
 import type { ResolvedConfig } from './config.ts';
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export declare const STOP_COMMAND = "stop";
+/**
+ * Restart the host process from the chat. Only registered when the deployment
+ * configures {@link Config.restartCommand} — restarting a process is a
+ * deployment concern (systemd unit name, container runtime, process manager),
+ * so the bridge ships the command shape and the deployment supplies the how.
+ * The command runs detached after a short delay: the reply must reach the
+ * chat before the process that would send it goes away.
+ */
+export declare const RESTART_COMMAND = "restart";
+/**
+ * Fires the configured restart shell in a detached child that outlives this
+ * process, after a delay long enough for the command's reply to reach the
+ * chat. Exported for tests to stub; production always spawns `/bin/sh`.
+ */
+export declare let scheduleRestart: (shell: string) => void;
+/** Test seam: replace the restart scheduler. Returns the previous one. */
+export declare function setRestartScheduler(fn: (shell: string) => void): (shell: string) => void;
 /** List what this chat accepts. Not a host command: the list is per surface. */
 export declare const HELP_COMMAND = "help";
 /** Switch the agent's preset (standard / code / minimal / cordis). */
@@ -81,7 +98,7 @@ export interface CommandOutcome {
  * @param locale - the resolved display language.
  * @returns the markdown listing.
  */
-export declare function helpText(commands: HostCommands | undefined, agent: HostAgent, locale?: 'zh' | 'en'): string;
+export declare function helpText(commands: HostCommands | undefined, agent: HostAgent, locale?: 'zh' | 'en', config?: ResolvedConfig): string;
 /**
  * Run one command line for a chat's agent.
  *
