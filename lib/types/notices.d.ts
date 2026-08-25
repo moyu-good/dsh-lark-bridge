@@ -40,7 +40,15 @@ export declare function jobDoneLine(job: {
     readonly status: 'completed' | 'killed' | 'failed';
     readonly detail?: string;
 }): string;
-/** A model-call retry line; only the first retry of a failure is announced. */
+/**
+ * A model-call retry line. Transient upstream failures self-heal through the
+ * retry policy in the vast majority of cases — announcing the first retry
+ * only taught users to expect noise on every hiccup. The chat stays silent
+ * while retries are in flight (the turn either completes or ends with an
+ * error event either way); we speak up only at the LAST attempt, when the
+ * next failure would actually kill the turn — the moment a human may want
+ * to look at the route.
+ */
 export declare function retryLine(retry: {
     readonly retry: number;
     readonly maxRetries?: number;
