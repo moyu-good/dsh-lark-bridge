@@ -54,9 +54,13 @@ describe('notice lines', () => {
   })
 
   it('announces only the first retry', () => {
-    expect(retryLine({ retry: 1, maxRetries: 3 })).toContain('重试')
-    expect(retryLine({ retry: 1, maxRetries: 3 })).toContain('最多 3 次')
+    // Silent while retries are in flight; loud only at the final attempt.
+    expect(retryLine({ retry: 1, maxRetries: 3 })).toBeUndefined()
     expect(retryLine({ retry: 2, maxRetries: 3 })).toBeUndefined()
+    expect(retryLine({ retry: 3, maxRetries: 3 })).toContain('最后一次重试')
+    expect(retryLine({ retry: 3, maxRetries: 3 })).toContain('3/3')
+    // Unknown cap stays silent too — we cannot know it is the last one.
+    expect(retryLine({ retry: 1 })).toBeUndefined()
   })
 
   it('renders a compaction summary with its text and released tokens', () => {

@@ -213,7 +213,10 @@ describe('dsh-lark-bridge', () => {
     emit('web/deepseek-search-llm-request', {})
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('搜索网络'))).toBe(true) })
     emit('llm/retry', { retryId: 'r1', turn: 1, step: 1, provider: 'p', retry: 1, maxRetries: 3 })
-    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('正在重试'))).toBe(true) })
+    await vi.waitFor(() => { expect(harness.fake.sent.every(m => !('markdown' in m.input) || !m.input.markdown.includes('重试'))).toBe(true) })
+    // The final attempt IS announced — the next failure kills the turn.
+    emit('llm/retry', { retryId: 'r2', turn: 1, step: 1, provider: 'p', retry: 3, maxRetries: 3 })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('最后一次重试'))).toBe(true) })
     await harness.dispose()
   })
 
