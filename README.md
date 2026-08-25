@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/dsh--lark--bridge-0.3.1-blueviolet" alt="version">
-  <img src="https://img.shields.io/badge/tests-273-green" alt="tests">
+  <a href="https://github.com/moyu-good/dsh-lark-bridge/actions/workflows/ci.yml"><img src="https://github.com/moyu-good/dsh-lark-bridge/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/tests-293%20passing-brightgreen" alt="tests">
+  <a href="https://dshbase.com/plugins/moyu-good-dsh-lark-bridge/"><img src="https://img.shields.io/badge/dshbase-verified-blue" alt="dshbase verified"></a>
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
 </p>
@@ -9,114 +10,100 @@
 
 <p align="center">
   <b>Run a full DeepSeek Harness coding agent inside Feishu / Lark</b><br/>
-  <i>Native thinking process, approval cards, live goal/todo cards, subagent fan-out,
+  <i>Native thinking process · approval cards · live goal/todo cards · subagent fan-out ·
   bilingual slash panel — no public webhook URL needed.</i>
 </p>
 
 <p align="center">
-  <a href="README.zh.md">中文</a> · <a href="#quick-start">Quick Start</a> · <a href="#features">Features</a> · <a href="#slash-commands">Slash Commands</a> · <a href="#configuration">Configuration</a> · <a href="#architecture">Architecture</a> · <a href="#development">Development</a>
+  <a href="README.zh.md">中文文档</a> ·
+  <a href="#-quick-start-in-60-seconds">Quick Start</a> ·
+  <a href="#-features">Features</a> ·
+  <a href="#-extend-it">Extend It</a> ·
+  <a href="#-faq">FAQ</a>
 </p>
 
 ---
 
-## What is this?
+## 🤔 What is this?
 
 `dsh-lark-bridge` is a **Feishu/Lark IM channel for DeepSeek Harness** — a plugin that makes
 your coding agent work right inside a chat. Each conversation (DM or group) drives its own
-dsh agent with:
+dsh agent, and everything the desktop UI shows lives in the chat:
 
-- **Native thinking process** — model reasoning renders as Feishu's own "thinking" message,
+- 🧠 **Native thinking process** — reasoning renders as Feishu's own "thinking" message;
   tool calls with icons, results as code blocks. No black box.
-- **Interactive approval cards** — operations needing confirmation become clickable
-  cards (Allow once / Deny), with the decider written back.
-- **Live lifecycle reactions** — `OK` → `THINKING` → `DONE` / `ERROR` on every message.
-- **Live goal & todo cards** — goal phase changes and todo snapshots update a card in the
-  chat, so a long-running task is never a silent gap.
-- **WebSocket long connection** — no public callback URL, no reverse proxy.
+- ✅ **Interactive approval cards** — risky operations become Allow-once / Deny cards,
+  decision and decider written back.
+- 🎯 **Live goal & todo cards** — long-running tasks update a card in real time instead of
+  going silent; goals auto-resume after restarts.
+- 🔌 **WebSocket long connection** — no public callback URL, no reverse proxy.
 
 Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 
-## ✨ Features
+## 🚀 Quick Start in 60 Seconds
 
-| | |
-|---|---|
-| 🧠 **Native thinking process** | `cot` renders reasoning as Feishu's native thinking message; older clients fall back to `stream` typewriter card |
-| ✅ **Live reactions** | `OK` → `THINKING` → `DONE`/`ERROR`, states replace each other, configurable |
-| 🗂️ **One agent per conversation** | `sessionScope`: whole chat / topic thread / single sender; sessions persist across restarts |
-| 📋 **Approval cards** | Host approval questions render as Allow-once / Deny cards; decision + decider written back |
-| 🎯 **Goal cards** | Live goal phase (active/paused/blocked/complete) updates a card; `/goal` works, `autoResumeGoals` re-arms after restarts |
-| ✅ **Todo cards** | `todo_write` snapshots update a live card in the chat |
-| 🧑💻 **Subagent fan-out** | Workflow runs stream as text lines: run start, child open, child end, run end |
-| 📦 **Compaction transparency** | "Compacting…" → summary text + released tokens; prunes report trimmed count |
-| ⏰ **Scheduled reminders** | `schedule_create/list/delete` tools + `/schedules` view (compose `@deepseek-ai/dsh-schedule` yourself; the plugin ships the full listener) |
-| 🔍 **Session history search** | `/sessions <keyword>` full-text searches this chat's stored history with snippets |
-| ⚙️ **Background job notifications** | `run_in_background` jobs and direct subagents announce their terminal outcome in the chat |
-| 🧩 **Skill ecosystem surface** | `/skills` lists the workspace's discoverable dsh skills; `/skills <name>` peeks at one — the dsh plugin ecosystem from inside Feishu |
-| 🤖 **Model switching** | `/model` views the deployment default model; `/model <provider>/<model>` switches it through the host `saveSelection` seam (persistent with a settings layer) |
-| 🖥️ **PC-parity tooling** | Compose `dsh-terminal*` / `code-runtime-worker-thread` / `dsh-mcp-client` in your profile patch and the chat agent gains persistent PTY sessions, Code Mode `run_code`, and external MCP servers — the same official opt-in families the desktop UI offers |
-| 🗺️ **Workspace visibility** | `/ws` lists registered workspaces and marks where new sessions land |
-| ⚡ **Full slash panel** | `/stop /help /preset /sessions /tools /schedules /jobs /feedback /context /audit /config /skills /model /ws` plus host commands (`goal`, `plan`, `compact`, `permission`) |
-| 🌐 **Bilingual commands** | Panel and `/help` follow the platform: English on international Lark, Chinese on domestic Feishu; `locale` overrides |
-| 🖼️ **Image input (opt-in)** | `attachImages` downloads chat images into the host attachment store |
-| 📎 **File delivery** | Agent `send_file` delivers files with caption into the chat |
-| 🔑 **QR onboarding** | First boot prints a QR code; scanning creates the Feishu app (event subscription included), credentials persist |
-| 🔒 **Authorization narrowing** | `senderAllowlist` / `groupAllowlist` / `approvers` narrow further than the app's visibility scope |
-| 🧩 **Deep dsh adaptation** | Everything goes through host service contracts: `agents`, `agentPresets`, `agentDefaultModel`, `settings`, `workspaceRegistry`, `loader`, `invariants`, `approval`, `goals` — self-contained, no host source needed |
-
-## 🚀 Quick Start
-
-### One command (recommended)
+**Prerequisites:** Node 18+, a DeepSeek API key, and the Feishu app on your phone.
 
 ```sh
-npm i -g dsh-lark-bridge        # or: npx dsh-lark-bridge@latest start
+# 1. install & boot (installs dsh if missing)
+npm i -g dsh-lark-bridge
 dsh-lark-bridge start
+
+# 2. a QR code prints → scan it with Feishu
+#    (this creates the app + event subscription automatically)
+
+# 3. open the dsh console → Settings → Models → paste your DeepSeek API key
+
+# 4. DM the bot, or @ it in a group. That's it.
 ```
 
-`start` installs dsh if needed, wires the plugin into a profile, patches the
-config, and boots the bridge. The console prints a QR code → scan with Feishu
-to create the app → fill in your DeepSeek API Key in Settings → Models → DM
-the bot or @ it in a group.
-
-Daily loop: `dsh-lark-bridge status` · `logs` · `restart` · `stop`.
-
-### Manual (already using dsh)
+Already running dsh? One line instead:
 
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
   && npx @deepseek-ai/dsh web
 ```
 
-> Already using `dsh`? Drop the `npx @deepseek-ai/` prefix.
+Daily ops: `dsh-lark-bridge status` · `logs` · `restart` · `stop`.
+The package ships **prebuilt** (`lib/` committed) — nothing compiles on install.
 
-The package ships **prebuilt** (`lib/` is committed) — no build step on install.
-A `prepare` hook rebuilds automatically only when the compiled output is missing
-(e.g. a source clone without the committed output).
+## ✨ Features
 
-## 💬 Slash Commands
+Highlights — the ones other bridges don't have:
 
-| Command | Description |
+| | |
 |---|---|
-| `/stop` | Cancel the running turn |
-| `/help` | Show this listing |
-| `/preset` | View / switch agent preset (standard / code / minimal / cordis) |
-| `/sessions` | List this chat's session history |
-| `/tools` | View / deny / allow tools at runtime |
-| `/schedules` | View this chat's scheduled reminders |
-| `/jobs` | View this chat's background jobs |
-| `/audit` | Operation audit summary for the session |
-| `/context` | View current context token pressure |
-| `/config` | View the bridge's live configuration |
-| `/goal` | View / set the goal (host) |
-| `/plan` | Enter / leave plan mode (host) |
-| `/compact` | Compact older history (host) |
-| `/feedback` | Rate the last answer: `positive`/`negative` + optional note |
-| `/permission` | Switch permission preset (host) |
+| 🧠 **Native Feishu CoT** | Reasoning renders as the platform's own thinking message (`cot`), typewriter card fallback (`stream`) |
+| 📋 **Approval cards + decider trail** | Click to decide; who decided is written back |
+| 🎯 **Live goal / todo cards + auto-resume** | Phase changes stream into chat; `autoResumeGoals` re-arms after restarts |
+| 🔍 **Session history search** | `/sessions <keyword>` full-text search over this chat's stored history |
+| 🌐 **Bilingual slash panel** | English on international Lark, Chinese on domestic Feishu — auto |
 
-Panel descriptions are bilingual: **English** when the platform domain is
-`open.larksuite.com` (international Lark), **Chinese** for `open.feishu.cn`
-(domestic Feishu). Set `locale: zh|en` to force one.
+<details>
+<summary><b>All capabilities</b></summary>
 
-## vs. other Feishu/Lark bridges
+| | |
+|---|---|
+| 🗂️ One agent per conversation | `sessionScope`: whole chat / topic thread / single sender; sessions persist across restarts |
+| ✅ Live reactions | `OK` → `THINKING` → `DONE`/`ERROR`, states replace each other, configurable |
+| 📦 Compaction transparency | "Compacting…" → summary + released tokens; prunes report trimmed count |
+| 🧑💻 Subagent fan-out | Workflow runs stream as text lines: run start, child open/end, run end |
+| ⏰ Scheduled reminders | `/schedules` view (compose `@deepseek-ai/dsh-schedule` for the model-side tools) |
+| ⚙️ Background job notifications | `run_in_background` jobs announce their terminal outcome |
+| 🧩 Skill ecosystem surface | `/skills` lists workspace skills, `/skills <name>` peeks at one |
+| 🤖 Model switching | `/model <provider>/<model>` through the host `saveSelection` seam (persistent) |
+| 🖥️ PC-parity tooling | Compose `dsh-terminal*` / `code-runtime-worker-thread` / `dsh-mcp-client` → persistent PTY, Code Mode, external MCP servers |
+| 🗺️ Workspace visibility | `/ws` lists workspaces and marks where new sessions land |
+| 🖼️ Image input (opt-in) | `attachImages` passes chat images to the model |
+| 📎 File delivery | Agent `send_file` delivers artifacts with caption (default-deny local dirs) |
+| 🔑 QR onboarding | First boot prints a QR; scanning creates the app with event subscription |
+| 🔒 Authorization narrowing | `senderAllowlist` / `groupAllowlist` / `approvers` |
+| 🧩 Chronicle hook | `chronicleEndpoint`: fire-and-forget full-transcript POST per inbound message |
+| 🛡️ Deep dsh adaptation | Everything through host service contracts — self-contained, no host source needed |
+
+</details>
+
+### vs. other Feishu/Lark bridges
 
 | Capability | **dsh-lark-bridge** | xmanrui/dsh-im | omdsh-dev/dsh-lark | AX1202/ax-feishu-bridge |
 |---|---|---|---|---|
@@ -128,135 +115,172 @@ Panel descriptions are bilingual: **English** when the platform domain is
 | Compaction transparency | ✅ | — | — | — |
 | Goal auto-resume after restart | ✅ | — | crash-safe | — |
 | Bilingual slash panel sync | ✅ | — | — | panel buttons |
+| Session history search + skills/model/ws panels | ✅ | — | — | — |
+
+## 💬 Slash Commands
+
+| Command | Description |
+|---|---|
+| `/stop` | Cancel the running turn |
+| `/help` | Show this listing |
+| `/preset` | View / switch agent preset (standard / code / minimal / cordis) |
+| `/permission` | View / switch permission mode (host) |
+| `/goal` | View / set the goal (host) |
+| `/plan` | Enter / leave plan mode (host) |
+| `/compact` | Compact older history (host) |
+| `/sessions` | Search this chat's session history |
+| `/tools` | View / deny / allow tools at runtime |
+| `/skills` | List skills, or peek at one |
+| `/model` | View / switch the default model |
+| `/ws` | List registered workspaces |
+| `/jobs` | This chat's background jobs |
+| `/schedules` | This chat's scheduled reminders |
+| `/context` | Current context token pressure |
+| `/audit` | Operation audit summary |
+| `/config` | The bridge's live configuration |
+| `/feedback` | Rate the last answer |
+
+Set `locale: zh|en` to force a language; otherwise it follows the platform domain.
 
 ## ⚙️ Configuration
+
+Essentials:
 
 | Field | Default | Meaning |
 |---|---|---|
 | `appId`, `appSecret` | first-boot QR registration | Feishu/Lark app credentials |
-| `domain` | Feishu | Open-platform domain; Lark: `https://open.larksuite.com` |
-| `locale` | `auto` | Command language: `auto` (Lark→en, Feishu→zh) / `zh` / `en` |
 | `cwd` | host process cwd | Absolute workspace directory for chat agents |
-| `provider`, `model` | host `agentDefaultModel` | Model routing for chat agents |
-| `preset` | roster default | Agent preset chat agents join |
-| `sessionScope` | `chat` | `chat` / `chat-thread` / `chat-sender` |
-| `output` | `cot` | `cot` (native thinking process) or `stream` (typewriter card) |
-| `showProcess` | `true` | Show reasoning and tool calls |
-| `reactionFeedback` | `true` | Live reaction feedback |
-| `hideProcessWhenDone` | `false` | Hide finished process (`cot` only) |
-| `attachImages` | `false` | Pass chat images to the model |
-| `syncSlashCommands` | `true` | Publish commands to bot's `/` panel (reconciles: creates missing, removes stale, refreshes drifted descriptions) |
-| `chronicleEndpoint` | `''` | Fire-and-forget POST `{source,text,chatId}` per accepted inbound message to an external full-transcript ledger; failures logged, never affect handling. Empty disables |
-| `chronicleSource` | `'lark-bridge'` | The `source` value sent to the ledger — name your own channel per deployment |
-| `autoResumeGoals` | `false` | Re-arm an active goal when a session returns after a restart |
-| `approvalReminderMs` | `0` | Nudge the chat when an approval card is unanswered this many ms (0 = off) |
-| `denyTools` | `[]` | Tools chat agents may not call |
-| `requireMention` | `true` | In groups, only respond when @-mentioned |
-| `senderAllowlist` | `[]` | Open ids allowed to DM |
-| `groupAllowlist` | `[]` | Only these `oc_…` group chats when non-empty |
-| `approvers` | `[]` | Open ids allowed to answer approvals |
-| `outbound.allowedFileDirs` | unset → file sending disabled | Directories `send_file` may read **local** paths from. Required for delivering generated artifacts (HTML reports, screenshots, documents). Example: `outbound: { allowedFileDirs: ['/home/user/work'] }` |
+| `provider`, `model` | host default | Model routing for chat agents |
+| `output` | `cot` | Native thinking message vs typewriter card |
+| `requireMention` | `true` | In groups, respond only when @-mentioned |
+| `outbound.allowedFileDirs` | unset → disabled | Local dirs `send_file` may read from |
+| `chronicleEndpoint` | `''` | Optional external full-transcript ledger |
 
-> ⚠️ **File delivery is default-deny.** Without `outbound.allowedFileDirs`,
-> `send_file` with a local path fails with
-> `local file source requires outbound.allowedFileDirs to be configured` —
-> the agent appears to send, nothing arrives. URLs and raw buffers always work.
+Full option reference: [README.zh.md 配置](README.zh.md#️-配置) · credentials resolve in three
+layers (bundle patch config → settings document plugin section → first-boot QR registration).
 
-Credentials resolve in three layers, later wins: bundle patch config → settings
-document plugin section → first-boot QR registration.
-
-## 🔐 Required app permissions
-
-A **newly created** Feishu app needs these scopes published before the panel
-and messaging work. The QR onboarding flow grants them automatically; a
-manually created app must add them in Developer Console → Permissions, then
-**create and publish a version** (scopes added after the last publish are not
-visible to the API until a new version ships):
+<details>
+<summary><b>Required app permissions (manual app creation)</b></summary>
 
 | Scope | Needed for |
 |---|---|
-| `application:app_slash_command` (read + write) | Slash command panel — without it, `syncSlashPanel` fails with `99991672` and the `/` list stays empty |
-| `im:message` | Send and receive messages |
-| `im:message:readonly` | Read message content |
-| `im:message.receive_v1` event | Receive message events (Events & Callbacks → long connection) |
-| `im:resource` | Upload / send images and files |
-| `im:chat:read` | Group chat info (group scenarios) |
-| `im:message.reactions:read` / `write_only` | Live reaction feedback |
+| `application:app_slash_command` (read + write) | Slash panel — without it sync fails with `99991672` |
+| `im:message` / `im:message:readonly` | Send / read messages |
+| `im:message.receive_v1` event | Receive messages (Events → long connection) |
+| `im:resource` | Upload images and files |
+| `im:chat:read` | Group info |
+| `im:message.reactions:read` / `write_only` | Reaction feedback |
 
-Debug with the API directly — the console page shows **granted**, the API shows
-what the **published version** carries:
+QR onboarding grants these automatically; manually created apps must publish a new
+version after adding scopes. Panel sync runs on session create/resume — send the bot
+one message after granting.
 
-```sh
-# 1. token
-curl -s -X POST https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal \
-  -H 'Content-Type: application/json' \
-  -d "{\"app_id\":\"$APP_ID\",\"app_secret\":\"$APP_SECRET\"}" | jq -r .tenant_access_token
-# 2. slash commands (should list your commands after sync)
-curl -s "https://open.feishu.cn/open-apis/application/v7/app_slash_commands?page_size=50" \
-  -H "Authorization: Bearer $TOKEN"
-# 3. published scopes (check application:app_slash_command is present)
-curl -s "https://open.feishu.cn/open-apis/application/v6/applications/$APP_ID/app_versions?lang=zh_cn" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-The slash panel sync runs on session create/resume — after granting the scope,
-send the bot one message to trigger it.
+</details>
 
 ## 🧭 Architecture
 
 ```
-┌─ CLI 引导器 (bin/dsh-lark-bridge) ── npm i -g → dsh-lark-bridge start
-│   安装 dsh / 创建 profile / 写入 cordis.patch.yml / 启动
-└──────────────────────────────────────────┐
-                                           ▼
-Feishu / Lark ── WebSocket 长连接 ──►  dsh-lark-bridge (dsh 进程内的 feishu-channel 插件)
-   (聊天/审批/图片)                        │
-                                          ▼
-                     host 服务契约: agents / sessions / tools / approval /
-                     goal / workspace / settings / commands
-                                          │
-                                          ▼
-                                     DeepSeek Harness 本体
+Feishu / Lark ── WebSocket long connection ──►  dsh-lark-bridge (feishu-channel plugin
+   (chat/approval/images)                        INSIDE the dsh process)
+                                                      │  host service contracts:
+                                                      │  agents / sessions / tools /
+                                                      ▼  approval / goal / settings
+                                              DeepSeek Harness itself
 ```
 
-The bridge runs **inside the dsh process** as the `feishu-channel` plugin — it is
-not a separate server. `dsh-lark-bridge start` (or manually
-`npx @deepseek-ai/dsh web`) boots dsh with this plugin composed; the plugin
-opens the WebSocket long connection and drives everything from there. Any
-launcher (shell script, systemd, supervisor) can host it; it has no dependency
-on any other agent framework.
+Any launcher works (shell, systemd, supervisor) — no dependency on any other agent framework.
 
-## 🛠️ Development
+## 🧩 Extend It
+
+Three invariants keep the bridge maintainable:
+
+1. **Grafted channel, not re-integration** — the bridge only normalizes messages; every
+   capability comes from official opt-in dsh plugin families composed in your profile.
+   Zero bridge code = zero upgrade cost when upstream ships features.
+2. **Everything through host service contracts** — `agents`, `agentPresets`, `approval`,
+   `goals`, `settings`… self-contained against published packages only.
+3. **Every change archives a design card first** — see [`docs/design/`](docs/design/README.md);
+   implementation notes are backfilled, and blocked investigations are archived as assets too.
+
+**Repo map**
+
+```
+src/
+  bridge.ts        message pipeline: normalize → authorize → ack → agent turn → render
+  commands.ts      slash commands (i18n bilingual)
+  cot.ts outbound.ts  thinking-process & answer rendering
+  chronicle.ts     optional external-ledger ingest hook (integration example)
+  config.ts        schema + defaults
+tests/             vitest suites (293) incl. harness-based fakes
+scripts/           verify-dsh-contract.mjs — asserts no drift vs upstream master
+plugin-contract-test.mjs   43 assertions on the host contract surface
+```
+
+**Quality gates**
 
 ```sh
-pnpm install
-pnpm run build    # clean + tsc + tsdown (emits into lib/, committed)
-pnpm test         # vitest (273 tests)
-node plugin-contract-test.mjs   # standalone contract tests
+pnpm test                        # 293 unit/integration tests
+node plugin-contract-test.mjs    # 43 host-contract assertions
+node scripts/verify-dsh-contract.mjs   # drift check against upstream master
+pnpm typecheck && pnpm run build # tsc + tsdown (lib/ is committed)
 ```
 
-The repo is self-contained: only published packages
-(`@deepseek-ai/cordis`, `@deepseek-ai/schemastery`, `@larksuite/channel`) are
-dependencies, no host source needed.
+CI runs all of the above on every push and pull request, with the upstream drift check
+pinned to dsh master — if upstream changes a contract, the build tells you before users do.
 
-**Packaging notes** (why `lib/` is committed):
-- Git-dependency installs (`github:user/repo`) never ran a build, and without a
-  committed `lib/` the plugin failed at boot with `ERR_MODULE_NOT_FOUND` — fixed
-  by committing the compiled output.
-- The `prepare` hook is a safety net for source clones: it exits immediately
-  when `lib/` exists and only rebuilds when it is genuinely missing.
-- `build` cleans `lib/` first (tsdown itself runs `clean: false` because its
-  entry points live inside the output dir).
+**Adding a feature?** Write the design card first (template in `docs/design/`), implement,
+backfill the change record. For an integration that only needs message visibility, prefer
+the `chronicleEndpoint` hook over modifying the pipeline — see `src/chronicle.ts`.
+
+## ❓ FAQ
+
+<details>
+<summary><b>Do I need a public IP or webhook?</b></summary>
+No. The transport is a WebSocket long connection; the app must use long-connection event
+subscription (self-built app).
+</details>
+
+<details>
+<summary><b>Which models work?</b></summary>
+Any model routable by your dsh deployment — the bridge is model-agnostic and `/model`
+switches at runtime.
+</details>
+
+<details>
+<summary><b>The agent says it sent a file but nothing arrives</b></summary>
+File delivery is default-deny: configure <code>outbound.allowedFileDirs</code>. URLs and
+raw buffers always work.
+</details>
+
+<details>
+<summary><b>The slash panel is empty or partial after a restart</b></summary>
+Boot registers constant commands; the full panel sync runs on the first message of a
+session. Send the bot anything. If it stays empty, check the
+<code>application:app_slash_command</code> scope and publish an app version.
+</details>
+
+<details>
+<summary><b>What survives a restart?</b></summary>
+Sessions resume from their logs; active goals re-arm (<code>autoResumeGoals</code>);
+permission and preset choices ride with the session state.
+</details>
+
+## 🌍 Listings & Community
+
+- [dshbase.com](https://dshbase.com/plugins/moyu-good-dsh-lark-bridge/) — listed & **verified**
+  (headless L3: install + load + Q&A) · [中文页](https://dshbase.com/zh/plugins/moyu-good-dsh-lark-bridge/)
+- [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/2160) — merged
+- [dsh-suite catalog](https://github.com/whyihaveyou/dsh-suite/issues/32) — accepted (orchestration)
+
+Issues and PRs welcome — design cards first, please.
 
 ## 📋 Known limitations
 
-- Configuration is read once at startup; changes need a restart
-- Events during a long-connection outage are not replayed (transport has no cursor)
-- The Feishu app must use **long-connection** event subscription (self-built app);
-  webhook mode receives no events
-- `schedule_create/list/delete` tools require composing `@deepseek-ai/dsh-schedule`
-  in your dsh profile (the bridge already listens for `schedule/change` and
-  renders `/schedules`; the tools are the model-side half)
+- Transport-level config (credentials, requireMention, allowlists) is read once at startup;
+  other config edits hot-reload via dsh Config-only HMR (`/config` shows live values)
+- Events during a long-connection outage are not replayed (no cursor); outbound sends are
+  queued by the replay port
+- `schedule_*` model tools need composing `@deepseek-ai/dsh-schedule` in your profile
 
 ## 📄 License
 
