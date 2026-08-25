@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-lark-bridge",
+  "name": "@moyu-good/dsh-lark-bridge",
   "version": "0.3.1",
   "description": "Feishu (Lark) IM bot channel for DeepSeek Harness agents — per-chat sessions, native thinking process, interactive approval cards, WebSocket long connection.",
   "type": "module",
