@@ -39,9 +39,9 @@
 **准备**：Node 18+、一个 DeepSeek API Key、手机上有飞书。
 
 ```sh
-# 1. 安装并启动（缺 dsh 会自动装）
-npm i -g dsh-lark-bridge
-dsh-lark-bridge start
+# 1. 把插件装进 dsh profile 并启动
+npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
+  && npx @deepseek-ai/dsh web
 
 # 2. 控制台打印二维码 → 用飞书扫码
 #    （自动创建应用＋事件订阅，凭据持久化）
@@ -51,14 +51,11 @@ dsh-lark-bridge start
 # 4. 私聊机器人，或群里 @ 它。完成。
 ```
 
-已在用 `dsh`？一行代替：
+> [!WARNING]
+> **不要**执行 `npm i -g dsh-lark-bridge`——npm 上这个名字属于另一个无关项目。
+> 本插件今天就能从 GitHub 源安装；scope 化的 npm 包（`@moyu-good/…`）在计划中。
 
-```sh
-npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
-  && npx @deepseek-ai/dsh web
-```
-
-日常运维：`dsh-lark-bridge status` · `logs` · `restart` · `stop`。
+日常运维：重新运行 `npx @deepseek-ai/dsh web`，或用 systemd/supervisor 托管。
 包已提交编译产物（`lib/` 进仓库），**安装即用无需构建**。
 
 ## ✨ 能力
