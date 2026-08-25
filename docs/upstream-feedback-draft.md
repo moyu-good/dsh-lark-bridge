@@ -68,7 +68,7 @@ writer 仍把中断前缓冲的 `reasoning-chunks` 批次（seq0=20799）追加�
 `corrupt session log: seq gap in committed region at line N (expected 20801, got 20799)`。
 
 复现：飞书桥真实会话（PI_AI_ERROR 重试打断场景），全档仅此一处回踩；
-摘除该行后加载恢复正常。判据与修复脚本：三省六部/scripts/session_doctor.py。
+Removing the line restored loading. (Local triage script; details available on request.)
 
 建议上游：interrupt 收账时丢弃未 flush 的流式批次缓冲（或对 append 前做
 start_seq ≤ watermark 断言）。前向跳号无害已验证，仅回踩致命。
