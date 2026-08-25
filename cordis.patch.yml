@@ -4,7 +4,7 @@
 
 - insert:
     - id: feishu-channel
-      name: '@deepseek-ai/dsh-lark-bridge'
+      name: '@moyu-good/dsh-lark-bridge'
       config:
         # Credentials layer as: these entry values (env via `!!js`, never
         # `!js`) → the user settings document. With neither set, first boot

@@ -109,7 +109,7 @@ function wireProfile() {
     }
   }
   log(`Adding dsh-lark-bridge to profile "${PROFILE}"…`)
-  const s = run('dsh', ['plugin', '--profile', PROFILE, 'add', '@deepseek-ai/dsh-lark-bridge'])
+  const s = run('dsh', ['plugin', '--profile', PROFILE, 'add', '@moyu-good/dsh-lark-bridge'])
   if (s !== 0) {
     fail('`dsh plugin add` failed. Check the profile and retry.')
     process.exit(1)
