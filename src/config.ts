@@ -101,6 +101,13 @@ export interface Config {
    * ledger pay nothing.
    */
   chronicleEndpoint?: string
+  /**
+   * Absolute path to a situation-briefing file. When set, its contents are
+   * prepended (once per session) to the first user message of each session,
+   * giving every agent ambient context without model cooperation. Read
+   * failures are logged and never affect handling. Empty disables.
+   */
+  briefingFile?: string
   /** `source` value sent to the chronicle ledger; lets one deployment name its own channel. */
   chronicleSource?: string
   /** Send a one-time first-contact guide when a brand-new session starts. */
@@ -212,6 +219,8 @@ export interface ResolvedConfig {
   syncSlashCommands: boolean
   /** Ingest endpoint for the external chronicle ledger; '' disables it. */
   chronicleEndpoint: string
+  /** Briefing file prepended to first message per session; '' disables. */
+  briefingFile: string
   /** Source name sent to the ledger. */
   chronicleSource: string
   onboarding: boolean
@@ -248,6 +257,7 @@ export const Config: z<Config> = z.object({
   hideProcessWhenDone: z.boolean().default(false),
   syncSlashCommands: z.boolean().default(true),
   chronicleEndpoint: z.string().default(''),
+  briefingFile: z.string().default(''),
   chronicleSource: z.string().default('lark-bridge'),
   onboarding: z.boolean().default(true),
   denyTools: z.array(String).default([...DEFAULT_DENY_TOOLS]),
@@ -297,6 +307,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     syncSlashCommands: config.syncSlashCommands ?? true,
     chronicleEndpoint: config.chronicleEndpoint ?? '',
     chronicleSource: config.chronicleSource ?? 'lark-bridge',
+    briefingFile: config.briefingFile ?? '',
     onboarding: config.onboarding ?? true,
     denyTools: config.denyTools ?? [...DEFAULT_DENY_TOOLS],
     requireMention: config.requireMention ?? true,
