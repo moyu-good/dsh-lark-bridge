@@ -86,6 +86,13 @@ export interface Config {
      * ledger pay nothing.
      */
     chronicleEndpoint?: string;
+    /**
+     * Absolute path to a situation-briefing file. When set, its contents are
+     * prepended (once per session) to the first user message of each session,
+     * giving every agent ambient context without model cooperation. Read
+     * failures are logged and never affect handling. Empty disables.
+     */
+    briefingFile?: string;
     /** `source` value sent to the chronicle ledger; lets one deployment name its own channel. */
     chronicleSource?: string;
     /** Send a one-time first-contact guide when a brand-new session starts. */
@@ -196,6 +203,8 @@ export interface ResolvedConfig {
     syncSlashCommands: boolean;
     /** Ingest endpoint for the external chronicle ledger; '' disables it. */
     chronicleEndpoint: string;
+    /** Briefing file prepended to first message per session; '' disables. */
+    briefingFile: string;
     /** Source name sent to the ledger. */
     chronicleSource: string;
     onboarding: boolean;

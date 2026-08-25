@@ -49,6 +49,7 @@ import type { OutboundPort, OutboundRenderer, ReplyTarget, ToolPresentation } fr
 import { refuseApprovalClick, refuseMessage } from './authorization.ts'
 import type { Authorization } from './authorization.ts'
 import { postChronicle } from './chronicle.ts'
+import { briefingPrefix } from './briefing.ts'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
@@ -1070,7 +1071,19 @@ export function installBridge(
           ctx.logger.warn('goal auto-resume skipped: %s', error)
         }
       }
-      opened.handle.agent.followup(chatUserMessage(msg, images))
+      {
+      // Ambient situational briefing: once per session, prepended ahead of the
+      // user's own text; failures degrade silently to no-briefing.
+      const prefix = briefingPrefix(config.briefingFile, opened.handle.agent.session.id, notify)
+      const turn = chatUserMessage(msg, images)
+      const content = prefix === ''
+        ? turn.content
+        : Object.freeze([
+            { type: 'text' as const, text: prefix },
+            ...turn.content,
+          ])
+      opened.handle.agent.followup({ ...turn, content })
+    }
     } catch (error) {
       notify(`dsh-lark-bridge: agent creation failed for chat ${msg.chatId}: ${String(error)}`)
       ctx.logger.warn('agent creation failed for chat %s: %s', msg.chatId, error)
