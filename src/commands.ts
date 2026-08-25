@@ -17,6 +17,34 @@ import { describeCommand, helpHeading } from './i18n.ts'
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
 
+/**
+ * Restart the host process from the chat. Only registered when the deployment
+ * configures {@link Config.restartCommand} — restarting a process is a
+ * deployment concern (systemd unit name, container runtime, process manager),
+ * so the bridge ships the command shape and the deployment supplies the how.
+ * The command runs detached after a short delay: the reply must reach the
+ * chat before the process that would send it goes away.
+ */
+export const RESTART_COMMAND = 'restart'
+
+/**
+ * Fires the configured restart shell in a detached child that outlives this
+ * process, after a delay long enough for the command's reply to reach the
+ * chat. Exported for tests to stub; production always spawns `/bin/sh`.
+ */
+export let scheduleRestart = (shell: string): void => {
+  void import('node:child_process').then(({ spawn }) => {
+    spawn('/bin/sh', ['-c', `sleep 2.5 && ${shell}`], { detached: true, stdio: 'ignore' }).unref()
+  })
+}
+
+/** Test seam: replace the restart scheduler. Returns the previous one. */
+export function setRestartScheduler(fn: (shell: string) => void): (shell: string) => void {
+  const prev = scheduleRestart
+  scheduleRestart = fn
+  return prev
+}
+
 /** List what this chat accepts. Not a host command: the list is per surface. */
 export const HELP_COMMAND = 'help'
 
@@ -124,9 +152,11 @@ export interface CommandOutcome {
  * @param locale - the resolved display language.
  * @returns the markdown listing.
  */
-export function helpText(commands: HostCommands | undefined, agent: HostAgent, locale: 'zh' | 'en' = 'zh'): string {
+export function helpText(commands: HostCommands | undefined, agent: HostAgent, locale: 'zh' | 'en' = 'zh', config?: ResolvedConfig): string {
   const own = [
     `\`/${STOP_COMMAND}\` — ${describeCommand(STOP_COMMAND, locale, 'Stop the current task')}`,
+    // Listed only when the deployment wired a restart command, matching the panel.
+    ...(config?.restartCommand ? [`\`/${RESTART_COMMAND}\` — ${describeCommand(RESTART_COMMAND, locale, 'Restart the host process')}`] : []),
     `\`/${PRESET_COMMAND}\` — ${describeCommand(PRESET_COMMAND, locale, 'View or switch mode')}`,
     `\`/${SESSIONS_COMMAND}\` — ${describeCommand(SESSIONS_COMMAND, locale, 'View session history')}`,
     `\`/${TOOLS_COMMAND}\` — ${describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools')}`,
@@ -198,6 +228,16 @@ export async function runCommandLine(
     agent.cancel(CANCEL_CAUSE)
     return { reply: '⏹ 已停止当前任务。', resolved: true }
   }
+  if (name === RESTART_COMMAND) {
+    const shell = config?.restartCommand
+    if (shell === undefined || shell === '') {
+      return { reply: '⚠️ 未配置 restartCommand，/restart 不可用。', resolved: true }
+    }
+    // Detached + delayed: the reply below must reach the chat before this
+    // process dies, so the restart fires from a child that outlives us.
+    scheduleRestart(shell)
+    return { reply: '🔁 重启已排程，服务将在数秒后重启并自动恢复。', resolved: true }
+  }
   if (name === PRESET_COMMAND) {
     return runPresetCommand(trimmed, agent, presets, sessionPresets)
   }
@@ -239,7 +279,7 @@ export async function runCommandLine(
     return runConfigCommand(config)
   }
   if (name === HELP_COMMAND) {
-    return { reply: helpText(commands, agent, config?.locale ?? 'zh'), resolved: true }
+    return { reply: helpText(commands, agent, config?.locale ?? 'zh', config), resolved: true }
   }
   if (commands === undefined) {
     return { reply: `⚠️ 本部署没有组合命令运行时，\`/${name}\` 无法执行。`, resolved: false }

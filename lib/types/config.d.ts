@@ -151,6 +151,15 @@ export interface Config {
      */
     autoResumeGoals?: boolean;
     /**
+     * Shell command the `/restart` slash command runs to restart the host
+     * process, e.g. `systemctl restart my-dsh.service`. Empty (default) keeps
+     * `/restart` unregistered — restarting a process is a deployment concern,
+     * so the deployment that knows its supervisor says how. The command runs
+     * detached after a 2.5 s delay (the reply reaches the chat first); it must
+     * bring this same process back for the chat to keep working.
+     */
+    restartCommand?: string;
+    /**
      * Milliseconds before an unanswered approval card gets a nudge message.
      * `0` (default) disables reminders. Set e.g. 120000 to ping the chat two
      * minutes after a card was published and still unanswered — the agent is
@@ -215,6 +224,8 @@ export interface ResolvedConfig {
     groupAllowlist: string[];
     approvers: string[];
     autoResumeGoals: boolean;
+    /** Shell command behind `/restart`; '' (default) keeps the command off. */
+    restartCommand: string;
     approvalReminderMs: number;
     outbound: {
         allowedFileDirs?: string[];

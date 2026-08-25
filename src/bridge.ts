@@ -61,6 +61,7 @@ import {
   MODEL_COMMAND,
   PLUGINS_COMMAND,
   PRESET_COMMAND,
+  RESTART_COMMAND,
   runCommandLine,
   SCHEDULES_COMMAND,
   SESSIONS_COMMAND,
@@ -930,6 +931,9 @@ export function installBridge(
     { name: WS_COMMAND, description: describeCommand(WS_COMMAND, locale, 'List registered workspaces') },
     { name: PLUGINS_COMMAND, description: describeCommand(PLUGINS_COMMAND, locale, 'List deployed plugins and status') },
     { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
+    // /restart only exists when the deployment wired a restart command; an
+    // unconfigured restart must not sit on the panel answering with an error.
+    ...(config.restartCommand === '' ? [] : [{ name: RESTART_COMMAND, description: describeCommand(RESTART_COMMAND, locale, 'Restart the host process') }]),
     { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
     { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
   ]

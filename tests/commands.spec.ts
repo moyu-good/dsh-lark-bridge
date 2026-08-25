@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   AUDIT_COMMAND,
+  setRestartScheduler,
   CONFIG_COMMAND,
   CONTEXT_COMMAND,
   FEEDBACK_COMMAND,
@@ -1020,4 +1021,72 @@ describe('/ws command', () => {
       currentCwd,
     ) as unknown as { resolved: boolean; reply: string }
   }
+})
+
+
+describe('/restart command', () => {
+  const config = (overrides: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
+    appId: 'cli_secret',
+    appSecret: 'top-secret',
+    sessionScope: 'chat',
+    output: 'cot',
+    showProcess: true,
+    attachImages: false,
+    hideProcessWhenDone: false,
+    syncSlashCommands: true,
+    onboarding: true,
+    denyTools: [],
+    requireMention: true,
+    reactionFeedback: true,
+    senderAllowlist: [],
+    groupAllowlist: [],
+    approvers: [],
+    autoResumeGoals: false,
+    restartCommand: '',
+    approvalReminderMs: 0,
+    ...overrides,
+  })
+
+  it('answers with an error and spawns nothing when unconfigured', async () => {
+    const outcome = await runCommandLine(
+      '/restart',
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      config({ restartCommand: '' }),
+    )
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('未配置')
+  })
+
+  it('schedules a detached restart when configured', async () => {
+    const shells: string[] = []
+    const restore = setRestartScheduler((shell: string) => { shells.push(shell) })
+    try {
+      const outcome = await runCommandLine(
+        '/restart',
+        fakeAgent(),
+        undefined,
+        new AbortController().signal,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        config({ restartCommand: 'systemctl restart my-dsh.service' }),
+      )
+      expect(outcome.resolved).toBe(true)
+      expect(outcome.reply).toContain('重启已排程')
+      expect(shells).toEqual(['systemctl restart my-dsh.service'])
+    } finally {
+      restore()
+    }
+  })
 })
