@@ -903,20 +903,21 @@ describe('/model command', () => {
     expect(outcome.reply).toContain('格式')
   })
 
-  it('refuses when the deployment pins provider/model in bridge config', async () => {
+  it('allows /model switch even when config pins a default (config = initial default, not lock)', async () => {
     const outcome = await runCommandLine(
-      `/${MODEL_COMMAND} opencode-go/deepseek-v4-flash`,
+      `/${MODEL_COMMAND} other-provider/other-model`,
       fakeAgent(),
       undefined,
       new AbortController().signal,
       undefined, undefined, undefined, undefined, undefined, undefined,
       undefined, undefined, undefined, undefined, undefined, undefined,
       undefined, undefined,
-      undefined,
+      { currentSelection: () => ({ provider: 'zen-go', model: 'ox-alpha-free' }),
+       saveSelection: async () => {} },
       { provider: 'opencode-go', model: 'deepseek-v4-flash' },
     )
-    expect(outcome.resolved).toBe(false)
-    expect(outcome.reply).toContain('固定了模型')
+    expect(outcome.resolved).toBe(true)
+    expect(outcome.reply).toContain('已切换')
   })
 
   it('reports when saveSelection is unavailable (no settings layer)', async () => {
