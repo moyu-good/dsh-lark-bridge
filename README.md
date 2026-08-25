@@ -45,9 +45,9 @@ Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 **Prerequisites:** Node 18+, a DeepSeek API key, and the Feishu app on your phone.
 
 ```sh
-# 1. install & boot (installs dsh if missing)
-npm i -g dsh-lark-bridge
-dsh-lark-bridge start
+# 1. install the plugin into a dsh profile & boot
+npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
+  && npx @deepseek-ai/dsh web
 
 # 2. a QR code prints → scan it with Feishu
 #    (this creates the app + event subscription automatically)
@@ -57,14 +57,12 @@ dsh-lark-bridge start
 # 4. DM the bot, or @ it in a group. That's it.
 ```
 
-Already running dsh? One line instead:
+> [!WARNING]
+> **Do NOT** `npm i -g dsh-lark-bridge` — that name on npm belongs to an
+> unrelated project. Our package is installable from this GitHub repo today;
+> a scoped npm release (`@moyu-good/…`) is planned.
 
-```sh
-npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
-  && npx @deepseek-ai/dsh web
-```
-
-Daily ops: `dsh-lark-bridge status` · `logs` · `restart` · `stop`.
+Daily ops: run `npx @deepseek-ai/dsh web` again, or host it under systemd/supervisor.
 The package ships **prebuilt** (`lib/` committed) — nothing compiles on install.
 
 ## ✨ Features
