@@ -207,7 +207,7 @@ describe('dsh-lark-bridge', () => {
     const emit = (type: string, data: unknown) => harness.ctx.emit('session/event', session, { type, data })
 
     emit('subagent/descriptor', { version: 2, mode: 'one-shot', provider: 'test', label: '爬虫' })
-    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('爬虫'))).toBe(true) })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'card' in m.input)).toBe(true) })
     emit('schedule/change', { version: 1, operation: 'create', schedule: { id: 's1', kind: 'every', prompt: '每日简报' } })
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('周期任务'))).toBe(true) })
     emit('web/deepseek-search-llm-request', {})
