@@ -267,7 +267,7 @@ export async function runCommandLine(
     return runSkillsCommand(trimmed, skills)
   }
   if (name === MODEL_COMMAND) {
-    return runModelCommand(trimmed, defaultModel, configModel)
+    return runModelCommand(trimmed, defaultModel, configModel, config?.modelCatalog)
   }
   if (name === WS_COMMAND) {
     return runWsCommand(workspaces, currentCwd)
@@ -612,6 +612,7 @@ async function runModelCommand(
   line: string,
   defaultModel: HostDefaultModel | undefined,
   configModel: { readonly provider?: string; readonly model?: string } | undefined,
+  catalog: ReadonlyArray<string> | undefined,
 ): Promise<CommandOutcome> {
   if (configModel?.provider !== undefined || configModel?.model !== undefined) {
     // Config values are initial defaults, not locks — /model can override them.
@@ -623,11 +624,35 @@ async function runModelCommand(
   const arg = line.slice(1 + MODEL_COMMAND.length).trim()
   if (arg.length === 0) {
     const cur = defaultModel.currentSelection()
+    const current = `${cur.provider}/${cur.model}`
     const effort = 'reasoningEffort' in cur && typeof cur.reasoningEffort === 'string' ? `（推理强度 ${cur.reasoningEffort}）` : ''
+    if (catalog && catalog.length > 0) {
+      const rows = catalog.map((m, i) => {
+        const mark = m === cur.model || `${cur.provider}/${m}` === current ? ' ← 当前' : ''
+        return `${i + 1}. ${m}${mark}`
+      }).join('\n')
+      return { reply: `**可选模型**（当前：${current}${effort}）\n${rows}\n\n回复编号即可切换`, resolved: true }
+    }
     return {
-      reply: `**当前默认模型**：\`${cur.provider}/${cur.model}\`${effort}\n\n切换：\`/${MODEL_COMMAND} <provider>/<model>\`（对之后新建的会话生效；已开始的会话保持原模型）`,
+      reply: `**当前默认模型**：\`${current}\`${effort}\n\n切换：\`/${MODEL_COMMAND} <provider>/<model>\``,
       resolved: true,
     }
+  }
+  // Catalog numeric selection
+  if (catalog && catalog.length > 0 && /^\d+$/.test(arg)) {
+    const idx = parseInt(arg, 10) - 1
+    if (idx < 0 || idx >= catalog.length) {
+      return { reply: `⚠️ 编号超范围（1-${catalog.length}）。`, resolved: false }
+    }
+    const sel: string = catalog[idx] ?? ""
+    const sl = sel.indexOf('/')
+    const sp = sl > 0 ? sel.slice(0, sl).trim() : configModel?.provider ?? ''
+    const sm = sl > 0 ? sel.slice(sl + 1).trim() : sel
+    if (defaultModel.saveSelection === undefined) {
+      return { reply: '⚠️ 无 settings 层。', resolved: false }
+    }
+    await defaultModel.saveSelection({ provider: sp, model: sm })
+    return { reply: `✅ 已切换为 **${sel}**`, resolved: true }
   }
   const slash = arg.indexOf('/')
   if (slash <= 0 || slash === arg.length - 1) {
