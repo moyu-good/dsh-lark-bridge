@@ -71,6 +71,7 @@ import {
   WS_COMMAND,
 } from './commands.ts'
 import { collectImages } from './images.ts'
+import { saveInboundFiles } from './files.ts'
 import type { Locale } from './i18n.ts'
 import type { CollectedImages, ImagePort } from './images.ts'
 import { syncSlashPanel } from './slash-panel.ts'
@@ -1064,6 +1065,18 @@ export function installBridge(
         ctx.get('attachments') as HostAttachments | undefined,
         config.attachImages,
       )
+      // Inbound file saving: non-image resources land in the workspace.
+      let fileNotes: string[] = []
+      if (config.autoSaveFiles && msg.resources?.length) {
+        try {
+          const saved = await saveInboundFiles(
+            msg as never,
+            (mid, fk, type) => port.downloadResourceWithMeta(mid, fk, type),
+            config.cwd ?? process.cwd(),
+          )
+          fileNotes = saved.notes
+        } catch { /* degrade silently */ }
+      }
       // Auto-resume: after a bridge restart an interrupted goal stays durable
       // but its continuation authority resets to disarmed (dsh design). With
       // autoResumeGoals the bridge re-arms an active goal when the chat speaks
@@ -1089,8 +1102,13 @@ export function installBridge(
       // Ambient situational briefing: once per session, prepended ahead of the
       // user's own text; failures degrade silently to no-briefing.
       const prefix = briefingPrefix(config.briefingFile, opened.handle.agent.session.id, notify)
-      const turn = chatUserMessage(msg, images)
-      const content = prefix === ''
+      // Append file notes to the user's text so the agent knows what arrived.
+      const allNotes = [...images.notes, ...fileNotes]
+      const spoken = allNotes.length > 0
+        ? msg.content + '\n' + allNotes.join('\n')
+        : msg.content
+      const turn = chatUserMessage({ ...msg, content: spoken }, images)
+      let content = prefix === ''
         ? turn.content
         : Object.freeze([
             { type: 'text' as const, text: prefix },
