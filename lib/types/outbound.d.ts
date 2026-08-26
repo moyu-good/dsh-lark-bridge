@@ -35,11 +35,6 @@ export interface OutboundRenderer {
      */
     aim(target: ReplyTarget | undefined): void;
 }
-/**
- * Remove off-protocol tool-call markup from model text.
- * @param text - committed assistant text, exactly as the model produced it.
- * @returns the text without markup blocks, plus one notice when any was removed.
- */
 export declare function stripToolCallMarkup(text: string): string;
 /**
  * Describe one pending tool call in a few words — the tool's own presentation

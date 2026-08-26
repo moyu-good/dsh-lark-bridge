@@ -68,6 +68,22 @@ const MARKUP_NOTICE = '\n\n⚠️ 模型输出了未被识别的工具调用标�
  * @param text - committed assistant text, exactly as the model produced it.
  * @returns the text without markup blocks, plus one notice when any was removed.
  */
+
+/** Render a unified-diff block when a tool call edits a file.
+ *  Recognises str_replace_editor's old_str/new_str pattern. */
+function tryRenderDiff(name: string, argsJson: string): string | undefined {
+  if (!name.includes('str_replace') && !name.includes('edit')) return undefined
+  try {
+    const args = JSON.parse(argsJson)
+    const oldStr = args.old_str ?? args.old_string
+    const newStr = args.new_str ?? args.new_string
+    if (typeof oldStr !== 'string' || typeof newStr !== 'string') return undefined
+    const del = oldStr.split('\n').map((l: string) => `- ${l}`)
+    const add = newStr.split('\n').map((l: string) => `+ ${l}`)
+    return ['```diff', ...del, ...add, '```'].join('\n')
+  } catch { return undefined }
+}
+
 export function stripToolCallMarkup(text: string): string {
   if (!TOOL_CALL_MARKUP.test(text)) return text
   TOOL_CALL_MARKUP.lastIndex = 0
@@ -397,6 +413,12 @@ export function createStreamRenderer(
         if (!showProcess) return
         const turn = ensure(event.data.turn)
         turn.produced = true
+        // Diff rendering for file edit operations (P045 #3)
+        const diffBlock = tryRenderDiff(event.data.name, event.data.arguments)
+        if (diffBlock !== undefined) {
+          turn.segments.push(diffBlock)
+          turn.dirty = true
+        }
         const line = activityLine(presentCall(event.data.name, event.data.arguments).title)
         const rewrite = settleReasoning(turn)
         turn.segments.push(line)
