@@ -50,6 +50,7 @@ import { refuseApprovalClick, refuseMessage } from './authorization.ts'
 import type { Authorization } from './authorization.ts'
 import { postChronicle } from './chronicle.ts'
 import { briefingPrefix } from './briefing.ts'
+import * as subCard from './subagent-card.ts'
 import {
   AUDIT_COMMAND,
   CONFIG_COMMAND,
@@ -101,7 +102,6 @@ import {
   retryLine,
   scheduleLine,
   subagentEndLine,
-  subagentLine,
   tokenPressureLine,
   webSearchLine,
 } from './notices.ts'
@@ -535,6 +535,7 @@ export function installBridge(
   // Per-session preset choice made via /preset. Process-local: a restart
   // falls back to the configured default, which the /config command states.
   const sessionPresets = new Map<string, string>()
+  const subagentTrackers = new Map<string, subCard.SubagentCardState>()
   // Per-session operation counters for /audit, accumulated from the session
   // event stream. Process-local like the schedule registry.
   const auditStats = new Map<string, AuditStats>()
@@ -1460,7 +1461,13 @@ export function installBridge(
     // One-shot notices for the remaining low-frequency events. `dispatch`
     // stays silent (a schedule firing is noise), retry announces once.
     if (isSubagentDescriptorEvent(event)) {
-      void replay.send(binding.chatId, { markdown: subagentLine(event.data) }).catch(reportSendFailure)
+      // Multi-agent progress card: one updatable card per chat.
+      let tracker = subagentTrackers.get(binding.chatId)
+      if (tracker === undefined) { tracker = subCard.createTracker(); subagentTrackers.set(binding.chatId, tracker) }
+      const childKey = `child-${tracker.entries.size + 1}-${Date.now()}`
+      subCard.addEntry(tracker, childKey, event.data)
+      const card = subCard.render(tracker)
+      void replay.send(binding.chatId, { card }).catch(reportSendFailure)
     }
     if (isScheduleChangeEvent(event)) {
       const line = scheduleLine({
