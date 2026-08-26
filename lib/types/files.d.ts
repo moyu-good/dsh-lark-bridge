@@ -65,4 +65,22 @@ export declare function createSendFileTool(capability: SendFileCapability): obje
 export declare function deliverFile(port: OutboundPort, chatId: string, cwd: string, args: SendFileArgs): Promise<{
     readonly fileName: string;
 }>;
+export interface SavedFiles {
+    readonly notes: string[];
+    readonly paths: string[];
+}
+/**
+ * Download and save non-image files from one chat message into the agent's
+ * workspace so the agent can read them with its own tools.
+ */
+export declare function saveInboundFiles(msg: {
+    messageId: string;
+    resources: ReadonlyArray<{
+        type: string;
+        fileKey: string;
+        fileName?: string;
+    }>;
+}, download: (messageId: string, fileKey: string, type: 'image' | 'file') => Promise<{
+    buffer: Uint8Array;
+}>, workDir: string): Promise<SavedFiles>;
 //# sourceMappingURL=files.d.ts.map

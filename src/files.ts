@@ -146,3 +146,41 @@ export async function deliverFile(
   await port.send(chatId, { file: { source: absolute, fileName } })
   return { fileName }
 }
+
+// ── Inbound file saving (P045) ──────────────────────────────────────────────
+
+import { writeFileSync as _wf } from 'node:fs'
+import { join as _join } from 'node:path'
+
+export interface SavedFiles {
+  readonly notes: string[]
+  readonly paths: string[]
+}
+
+/**
+ * Download and save non-image files from one chat message into the agent's
+ * workspace so the agent can read them with its own tools.
+ */
+export async function saveInboundFiles(
+  msg: { messageId: string; resources: ReadonlyArray<{ type: string; fileKey: string; fileName?: string }> },
+  download: (messageId: string, fileKey: string, type: 'image' | 'file') => Promise<{ buffer: Uint8Array }>,
+  workDir: string,
+): Promise<SavedFiles> {
+  const files = msg.resources.filter((r) => r.type === 'file')
+  if (files.length === 0) return { notes: [], paths: [] }
+  const notes: string[] = []
+  const paths: string[] = []
+  for (const file of files) {
+    const name = (file.fileName || `file_${file.fileKey.slice(0, 12)}`).replace(/[/\\]/g, '_')
+    try {
+      const { buffer } = await download(msg.messageId, file.fileKey, 'file')
+      const dest = _join(workDir, name)
+      _wf(dest, buffer)
+      paths.push(dest)
+      notes.push(`📎 用户发送了文件「${name}」，已保存到工作区`)
+    } catch (e: unknown) {
+      notes.push(`📎 文件 ${name} 保存失败：${String(e).slice(0, 80)}`)
+    }
+  }
+  return { notes, paths }
+}

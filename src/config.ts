@@ -108,6 +108,8 @@ export interface Config {
    * failures are logged and never affect handling. Empty disables.
    */
   briefingFile?: string
+  /** Auto-save inbound file messages into the agent workspace. Default true. */
+  autoSaveFiles?: boolean
   /**
    * Model catalog for the /model command. When set, /model shows these as a
    * numbered menu and users pick by number — no need to know provider strings.
@@ -236,6 +238,8 @@ export interface ResolvedConfig {
   chronicleEndpoint: string
   /** Briefing file prepended to first message per session; '' disables. */
   briefingFile: string
+  /** Whether inbound files are auto-saved to the workspace. */
+  autoSaveFiles: boolean
   /** Numbered model menu for /model command. */
   modelCatalog: string[]
   /** Source name sent to the ledger. */
@@ -277,6 +281,7 @@ export const Config: z<Config> = z.object({
   syncSlashCommands: z.boolean().default(true),
   chronicleEndpoint: z.string().default(''),
   briefingFile: z.string().default(''),
+  autoSaveFiles: z.boolean().default(true),
   modelCatalog: z.array(z.string()).default([]),
   chronicleSource: z.string().default('lark-bridge'),
   onboarding: z.boolean().default(true),
@@ -329,6 +334,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     chronicleEndpoint: config.chronicleEndpoint ?? '',
     chronicleSource: config.chronicleSource ?? 'lark-bridge',
     briefingFile: config.briefingFile ?? '',
+    autoSaveFiles: config.autoSaveFiles ?? true,
     modelCatalog: config.modelCatalog ?? [],
     onboarding: config.onboarding ?? true,
     denyTools: config.denyTools ?? [...DEFAULT_DENY_TOOLS],
