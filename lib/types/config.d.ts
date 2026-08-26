@@ -93,6 +93,12 @@ export interface Config {
      * failures are logged and never affect handling. Empty disables.
      */
     briefingFile?: string;
+    /**
+     * Model catalog for the /model command. When set, /model shows these as a
+     * numbered menu and users pick by number — no need to know provider strings.
+     * Each entry is "provider/model" or just "model" (uses the default provider).
+     */
+    modelCatalog?: string[];
     /** `source` value sent to the chronicle ledger; lets one deployment name its own channel. */
     chronicleSource?: string;
     /** Send a one-time first-contact guide when a brand-new session starts. */
@@ -214,6 +220,8 @@ export interface ResolvedConfig {
     chronicleEndpoint: string;
     /** Briefing file prepended to first message per session; '' disables. */
     briefingFile: string;
+    /** Numbered model menu for /model command. */
+    modelCatalog: string[];
     /** Source name sent to the ledger. */
     chronicleSource: string;
     onboarding: boolean;
