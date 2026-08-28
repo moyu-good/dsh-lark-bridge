@@ -1000,7 +1000,7 @@ export function installBridge(
       // The reaction lifecycle follows this session's current trigger.
       binding.currentMessageId = msg.messageId
 
-      // ── Preemptive commands (少东家 08-25): these bypass the normal
+      // ── Preemptive commands (owner request 08-25): these bypass the normal
       // pipeline and act IMMEDIATELY on the agent, even mid-turn.
       const preemptive = msg.content.trim()
       if (preemptive === '/stop') {
