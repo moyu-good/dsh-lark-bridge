@@ -119,6 +119,8 @@ import { createSendFileTool, deliverFile } from './files.ts'
  */
 const ACQUIRE_TIMEOUT_MS = 45_000
 
+const TURN_START_TIMEOUT_MS = 45_000
+
 /** Marker error raised when the acquire guard fires. */
 const ACQUIRE_HUNG_MARKER = 'acquire-hung: session schedule did not release'
 
@@ -848,6 +850,35 @@ export function installBridge(
 
   const sessions = new ConversationSessions(config.sessionScope, ladder)
 
+  // Watchdog for "followup handed to the host, but the host never starts the
+  // turn". The host's per-session scheduler occasionally stops accepting new
+  // followups after a finished turn (observed 2026-08-29: ack reaction sent,
+  // chronicle fired, acquire/binding both resolve — later a /stop proves the
+  // pipeline is live — yet zero session events are ever written). No event
+  // within the window means the turn never began; tell the chat and recycle
+  // the service so the host re-arms. Any session event clears the watchdog.
+  const turnWatchdog = new Map<string, NodeJS.Timeout>()
+  const clearTurnWatchdog = (sessionId: string): void => {
+    const timer = turnWatchdog.get(sessionId)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      turnWatchdog.delete(sessionId)
+    }
+  }
+  const armTurnWatchdog = (sessionId: string, chatId: string): void => {
+    clearTurnWatchdog(sessionId)
+    const timer = setTimeout(() => {
+      turnWatchdog.delete(sessionId)
+      notify(`dsh-lark-bridge: no turn events for session ${sessionId} after followup; auto-restarting`)
+      ctx.logger.warn('no turn events for session %s after followup; auto-restarting', sessionId)
+      void port
+        .send(chatId, { text: '⚠️ 模型会话没有产生回应（上一任务未正常结束），正在自动重启服务，本条消息稍后会自动重试…' })
+        .catch(reportSendFailure)
+      if (config.restartCommand !== '') scheduleRestart(config.restartCommand)
+    }, TURN_START_TIMEOUT_MS)
+    turnWatchdog.set(sessionId, timer)
+  }
+
   /**
    * The renderer for one session, opened on first use and kept until the fiber
    * unwinds: it holds the turn's streaming card, which outlives any one message.
@@ -1168,6 +1199,9 @@ export function installBridge(
             ...turn.content,
           ])
       opened.handle.agent.followup({ ...turn, content })
+      // The host must start producing turn events within the watchdog window;
+      // if it never does, the turn was dropped by the host scheduler.
+      armTurnWatchdog(opened.handle.agent.session.id, msg.chatId)
     }
     } catch (error) {
       if (String(error).includes(ACQUIRE_HUNG_MARKER)) {
@@ -1432,6 +1466,9 @@ export function installBridge(
   ctx.on('session/event', (session, event: HostSessionEvent) => {
     const binding = bySession.get(session.id)
     if (binding === undefined) return
+    // Any event from this session proves the host scheduler is alive — the
+    // "followup handed over but no turn started" watchdog can stand down.
+    clearTurnWatchdog(session.id)
     // Audit counters: one lightweight pass over the same stream the renderers
     // consume, so /audit needs no file access or extra host seam.
     {
