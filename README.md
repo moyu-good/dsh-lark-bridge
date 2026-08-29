@@ -230,6 +230,29 @@ pinned to dsh master — if upstream changes a contract, the build tells you bef
 backfill the change record. For an integration that only needs message visibility, prefer
 the `chronicleEndpoint` hook over modifying the pipeline — see `src/chronicle.ts`.
 
+## 📦 Version & Release Policy
+
+Two tracks, written down so nobody guesses:
+
+- **preview track** — development/experimentation. Pull the latest upstream (GitHub releases including alpha/rc, or `master`) and the newest bridge features; breakage is expected here.
+- **stable track** — production deployments. Pin the npm `latest` / release-candidate line. **Production never runs an `alpha`.**
+
+Promoting preview → stable requires the full quality gate to pass:
+`pnpm test` → `node plugin-contract-test.mjs` → `node scripts/verify-dsh-contract.mjs` → `pnpm typecheck && pnpm run build` → live smoke.
+
+## 🧱 Development & MR Flow
+
+`main` is the stable baseline and only receives **reviewed merge requests**. All development happens on feature branches (`feat/<name>`), never directly on `main`.
+
+Per-MR checklist:
+1. Branch from `main`; keep the change small and single-purpose.
+2. Full quality gate green (tests, contract, drift, build).
+3. Repo hygiene scan — `scripts/check_repo_leak.py <repo> --lib` — must exit 0.
+4. Reviewer approves → merge to `main` → deploy from `main`.
+5. Production incidents revert on the spot (history stays in git); the reverted branch is rebased and re-MR'd with a fix.
+
+This is enforced because past direct-to-`main` experiments had to be rolled back as a multi-commit revert in one batch — feature branches keep `main` shippable at all times.
+
 ## ❓ FAQ
 
 <details>
