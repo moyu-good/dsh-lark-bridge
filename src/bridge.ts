@@ -64,6 +64,7 @@ import {
   PRESET_COMMAND,
   RESTART_COMMAND,
   runCommandLine,
+  scheduleRestart,
   SCHEDULES_COMMAND,
   SESSIONS_COMMAND,
   SKILLS_COMMAND,
@@ -108,6 +109,18 @@ import {
 import { onboardingMessage } from './first-contact.ts'
 import { createReplayPort } from './replay.ts'
 import { createSendFileTool, deliverFile } from './files.ts'
+
+/**
+ * How long {@link sessions.acquire} may take before the bridge treats it as a
+ * hung per-session schedule (a finished turn that never released the host's
+ * serial queue — see the guard at the acquire site). Normal acquires settle in
+ * well under a second; 45s is an order-of-magnitude cushion for slow boot
+ * compositions, not a licence to sit on a dead queue forever.
+ */
+const ACQUIRE_TIMEOUT_MS = 45_000
+
+/** Marker error raised when the acquire guard fires. */
+const ACQUIRE_HUNG_MARKER = 'acquire-hung: session schedule did not release'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -995,7 +1008,31 @@ export function installBridge(
     // or fails the turn (contract in src/chronicle.ts).
     postChronicle(config.chronicleEndpoint, { source: config.chronicleSource, text: msg.content, chatId: msg.chatId }, notify)
     try {
-      const opened = await sessions.acquire(msg)
+      // Guard the host acquire. A finished turn can leave the per-session
+      // schedule un-released, and the very next acquire then never settles —
+      // the chat sees only the ack reaction, nothing is ever written to the
+      // session (observed 2026-08-29 twice: 12:52 and 14:27, both right after
+      // a completed turn; a service restart always "fixed" it until the next
+      // turn). Wait a bounded time, tell the chat, and recycle the service so
+      // the host re-arms instead of leaving the bridge hung on a forever
+      // promise.
+      const acquireFor = sessions.acquire(msg)
+      const opened = await Promise.race([
+        acquireFor,
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error(ACQUIRE_HUNG_MARKER)),
+            ACQUIRE_TIMEOUT_MS,
+          )
+          // The race reports the acquire outcome; these branches only clear
+          // the timer. The rejection branch must swallow — a late reject after
+          // the guard already fired would otherwise be an unhandled rejection.
+          acquireFor.then(
+            () => clearTimeout(timer),
+            () => clearTimeout(timer),
+          )
+        }),
+      ])
       const binding = await bindingFor(opened.handle.agent.session.id, msg)
       // The reaction lifecycle follows this session's current trigger.
       binding.currentMessageId = msg.messageId
@@ -1133,6 +1170,15 @@ export function installBridge(
       opened.handle.agent.followup({ ...turn, content })
     }
     } catch (error) {
+      if (String(error).includes(ACQUIRE_HUNG_MARKER)) {
+        notify(`dsh-lark-bridge: session acquire hung for chat ${msg.chatId}; auto-restarting`)
+        ctx.logger.warn('session acquire hung for chat %s; auto-restarting', msg.chatId)
+        await port
+          .send(msg.chatId, { text: '⚠️ 会话调度挂起（上一轮未正常结束），正在自动重启服务，本条消息稍后会自动重试…' })
+          .catch(reportSendFailure)
+        if (config.restartCommand !== '') scheduleRestart(config.restartCommand)
+        return
+      }
       notify(`dsh-lark-bridge: agent creation failed for chat ${msg.chatId}: ${String(error)}`)
       ctx.logger.warn('agent creation failed for chat %s: %s', msg.chatId, error)
       await port
