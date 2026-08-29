@@ -1060,11 +1060,26 @@ export function installBridge(
         messageId: msg.messageId,
         ...msg.threadId === undefined ? {} : { threadId: msg.threadId },
       } satisfies ReplyTarget)
+      // Attach images only when the deployment opted in AND the current model
+      // accepts them. With visionModelPrefixes set, a text-only model keeps the
+      // note instead of a request its API would reject; empty means "the
+      // deployment's only route is vision" and keeps the plain switch behavior.
+      let imagesEnabled = config.attachImages
+      let imagesNote: string | undefined
+      const visionPrefixes = config.visionModelPrefixes
+      if (imagesEnabled && visionPrefixes !== undefined && visionPrefixes.length > 0) {
+        const currentModel = modelSelection().model ?? ''
+        if (!visionPrefixes.some((prefix: string) => currentModel.startsWith(prefix))) {
+          imagesEnabled = false
+          imagesNote = '当前模型不接受图片（visionModelPrefixes 未命中），用 /model 切到视觉模型后可发图'
+        }
+      }
       const images = await collectImages(
         msg,
         port,
         ctx.get('attachments') as HostAttachments | undefined,
-        config.attachImages,
+        imagesEnabled,
+        imagesNote,
       )
       // Inbound file saving: non-image resources land in the workspace.
       let fileNotes: string[] = []

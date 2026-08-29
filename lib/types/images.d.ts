@@ -34,5 +34,5 @@ export interface CollectedImages {
  * @param enabled - whether this deployment's route accepts images at all.
  * @returns the blocks to attach and the notes to append to the text.
  */
-export declare function collectImages(msg: NormalizedMessage, port: ImagePort, attachments: HostAttachments | undefined, enabled: boolean): Promise<CollectedImages>;
+export declare function collectImages(msg: NormalizedMessage, port: ImagePort, attachments: HostAttachments | undefined, enabled: boolean, reason?: string): Promise<CollectedImages>;
 //# sourceMappingURL=images.d.ts.map

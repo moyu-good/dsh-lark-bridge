@@ -81,6 +81,12 @@ export interface Config {
    */
   attachImages?: boolean
   /**
+   * Model-id prefixes whose input can carry images. When set, attachImages
+   * only really attaches when the current model's id starts with one of these —
+   * a text-only model keeps the note instead of a request its API would reject.
+   */
+  visionModelPrefixes?: string[]
+  /**
    * Let the platform drop the process once its run finishes, leaving only the
    * answer in the conversation. `cot` output only.
    */
@@ -232,6 +238,12 @@ export interface ResolvedConfig {
   output: 'cot' | 'stream'
   showProcess: boolean
   attachImages: boolean
+  /** Model-id prefixes whose input can carry images. When set, attachImages
+   * only really attaches when the current model's id starts with one of these —
+   * a text-only model keeps the note instead of a request its API would reject.
+   * Empty keeps attachImages a plain switch (deployments behind a single
+   * known-vision route). */
+  visionModelPrefixes: string[]
   hideProcessWhenDone: boolean
   syncSlashCommands: boolean
   /** Ingest endpoint for the external chronicle ledger; '' disables it. */
@@ -277,6 +289,7 @@ export const Config: z<Config> = z.object({
   output: z.union(['cot', 'stream'] as const).default('cot'),
   showProcess: z.boolean().default(true),
   attachImages: z.boolean().default(false),
+  visionModelPrefixes: z.array(z.string()).default([]),
   hideProcessWhenDone: z.boolean().default(false),
   syncSlashCommands: z.boolean().default(true),
   chronicleEndpoint: z.string().default(''),
@@ -329,6 +342,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     output: config.output ?? 'cot',
     showProcess: config.showProcess ?? true,
     attachImages: config.attachImages ?? false,
+    visionModelPrefixes: config.visionModelPrefixes ?? [],
     hideProcessWhenDone: config.hideProcessWhenDone ?? false,
     syncSlashCommands: config.syncSlashCommands ?? true,
     chronicleEndpoint: config.chronicleEndpoint ?? '',
