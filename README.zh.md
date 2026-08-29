@@ -214,6 +214,27 @@ CI 每次 push / PR 都跑全套，其中漂移检查钉在上游 dsh master—�
 **想加功能？** 先写设计卡（模板在 `docs/design/`），再实现、再回填。如果需求只是「看到消息」，
 优先用 `chronicleEndpoint` 钩子而不是改管线——参考 `src/chronicle.ts`。
 
+## 📦 版本与升级策略
+
+双轨道，刻意为之：
+
+| 轨道 | 跟随 | 用途 |
+|---|---|---|
+| **preview** | 上游最新——含预发布（`alpha` / `rc`，GitHub releases 或 `master`） | 开发、实验、验证新能力 |
+| **stable** | 钉住稳定线（npm dist-tag `latest`、正式 `rc`） | 面向真实用户的生产部署 |
+
+**规则**
+
+1. 上游新能力先在 **preview** 轨道评估：拉进开发副本 → 对目标版本跑
+   `node scripts/verify-dsh-contract.mjs` → 实测该能力 → 质量门禁全绿后才允许晋升 **stable**。
+2. 生产部署**永不搭载 `alpha` 发布**。稳定部署钉住稳定线，每次按操作手册有意识升级。
+3. 本仓库同策：`main` 跟踪上游 `master` 做契约兼容（CI 的漂移检查钉在上游 master）；
+   打 tag 的发布版本（`@moyu-good/dsh-lark-bridge@<version>`）才是 stable 工件。
+4. 上游改动 host 契约 → 漂移检查会在**用户看到之前**变红。把红灯当升级信号，别当噪音。
+
+**晋升前质量门禁**：`pnpm test` → `node plugin-contract-test.mjs` → `node scripts/verify-dsh-contract.mjs` →
+`pnpm typecheck && pnpm run build` → 目标部署真链路冒烟。
+
 ## ❓ FAQ
 
 <details>
