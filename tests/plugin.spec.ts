@@ -766,57 +766,6 @@ describe('dsh-lark-bridge', () => {
       await harness.dispose()
     })
 
-    it('gates images by the vision-model whitelist when one is configured', async () => {
-      const attachments = createFakeAttachments()
-      // attachImages on + visionModelPrefixes set, but the current model is not
-      // a vision one → the image must become a note, not a doomed request.
-      const harness = await mountChannel(
-        { attachImages: true, visionModelPrefixes: ['Qwen/'] },
-        { attachments: attachments.service },
-      )
-      await harness.fake.emitMessage(withImage(
-        harness,
-        [{ fileKey: 'img_1', fileName: 'shot.png' }],
-        { buffer: new Uint8Array([1, 2, 3]), contentType: 'image/png' },
-      ))
-      await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
-      const followup = harness.agents.created[0]!.agent.followup
-      await vi.waitFor(() => { expect(followup).toHaveBeenCalledTimes(1) })
-
-      const content = followup.mock.calls[0]![0].content
-      expect(content).toHaveLength(1)
-      const first = content[0]!
-      expect(first.type === 'text' && first.text).toContain('当前模型不接受图片')
-      expect(attachments.saved).toEqual([])
-      await harness.dispose()
-    })
-
-    it('attaches when the current model matches the vision whitelist', async () => {
-      const attachments = createFakeAttachments()
-      const harness = await mountChannel(
-        {
-          attachImages: true,
-          visionModelPrefixes: ['Qwen/'],
-          model: 'Qwen/Qwen3-VL-30B-A3B-Instruct',
-        },
-        { attachments: attachments.service },
-      )
-      await harness.fake.emitMessage(withImage(
-        harness,
-        [{ fileKey: 'img_1', fileName: 'shot.png' }],
-        { buffer: new Uint8Array([1, 2, 3]), contentType: 'image/png' },
-      ))
-      await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
-      const followup = harness.agents.created[0]!.agent.followup
-      await vi.waitFor(() => { expect(followup).toHaveBeenCalledTimes(1) })
-
-      const content = followup.mock.calls[0]![0].content
-      expect(content).toHaveLength(2)
-      expect(content[1]).toEqual(expect.objectContaining({ type: 'image' }))
-      expect(attachments.saved).toHaveLength(1)
-      await harness.dispose()
-    })
-
     it('tells the chat when a failure will repeat forever', async () => {
       const harness = await mountChannel({ showProcess: false })
       await harness.fake.emitMessage(fakeMessage())

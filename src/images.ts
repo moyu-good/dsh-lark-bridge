@@ -66,7 +66,6 @@ export async function collectImages(
   port: ImagePort,
   attachments: HostAttachments | undefined,
   enabled: boolean,
-  reason = 'attachImages 未开启',
 ): Promise<CollectedImages> {
   const images = msg.resources.filter((resource: ResourceDescriptor) => resource.type === 'image')
   if (images.length === 0) return { blocks: [], notes: [] }
@@ -75,7 +74,7 @@ export async function collectImages(
     // about it — and answering as though it were visible is the worst outcome.
     return {
       blocks: [],
-      notes: [`（用户发送了 ${images.length} 张图片，本渠道未向模型传递图片：${reason}）`],
+      notes: [`（用户发送了 ${images.length} 张图片，本渠道未向模型传递图片：attachImages 未开启）`],
     }
   }
   if (attachments === undefined) {
