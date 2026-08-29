@@ -230,33 +230,6 @@ pinned to dsh master — if upstream changes a contract, the build tells you bef
 backfill the change record. For an integration that only needs message visibility, prefer
 the `chronicleEndpoint` hook over modifying the pipeline — see `src/chronicle.ts`.
 
-## 📦 Release & Upgrade Policy
-
-Two tracks, deliberately:
-
-| Track | Follows | Used for |
-|---|---|---|
-| **preview** | the latest upstream — incl. prereleases (`alpha` / `rc`) from GitHub releases or `master` | development, experiments, validating new capabilities |
-| **stable** | the pinned stable line (npm dist-tag `latest`, final `rc`s) | production deployments facing real users |
-
-**Rules**
-
-1. New upstream capability is assessed on the **preview** track first: bring it
-   into the development copy, run `node scripts/verify-dsh-contract.mjs` against
-   the target version, exercise the feature, and only promote to **stable** after
-   the quality gates below are green.
-2. A production deployment never rides an `alpha` release. Stable deployments pin
-   the stable line and upgrade deliberately, by the runbook, each time.
-3. This repo follows the same policy: `main` tracks upstream `master` for contract
-   compatibility (CI pins the drift check to upstream master); tagged releases
-   (`@moyu-good/dsh-lark-bridge@<version>`) are the stable artifacts.
-4. Upstream changed a host contract → the drift check turns red **before** users
-   see it. Treat that red build as the upgrade signal, not as noise.
-
-**Quality gates before promotion**: `pnpm test` → `node plugin-contract-test.mjs` →
-`node scripts/verify-dsh-contract.mjs` → `pnpm typecheck && pnpm run build` →
-real-loop smoke on the target deployment.
-
 ## ❓ FAQ
 
 <details>
