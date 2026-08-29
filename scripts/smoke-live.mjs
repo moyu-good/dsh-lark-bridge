@@ -24,7 +24,7 @@ check('dsh-feishu-chat 服务 active', active)
 // 2) 组合树含新插件
 const HARNESS_CLI = process.env.DSH_HARNESS_CLI
 const tree = HARNESS_CLI
-  ? execSync(`node ${HARNESS_CLI} --profile web --dump-config 2>/dev/null || true`,
+  ? execSync(`node ${HARNESS_CLI} --profile chat --dump-config 2>/dev/null || true`,
       { encoding: 'utf8', timeout: 60_000 })
   : ''
 if (!HARNESS_CLI) console.log('· DSH_HARNESS_CLI 未设置，跳过组合树检查')
