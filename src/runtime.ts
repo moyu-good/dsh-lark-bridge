@@ -4,6 +4,8 @@
  */
 
 import os from 'node:os'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { createLarkChannel, registerApp } from '@larksuite/channel'
 import type { LarkChannelOptions, PolicyConfig } from '@larksuite/channel'
 import type { Context } from '@deepseek-ai/cordis'
@@ -221,6 +223,12 @@ export function apply(ctx: Context, config: Config): void {
     if (!active) return
     const form = process.env.DSH_FORM === 'desktop' ? 'desktop' as const : 'web' as const
     const profile = process.env.DSH_PROFILE ?? 'web'
+    // Under systemd the process is launched bare (`node .../bin.js`), so
+    // npm_package_version is unset there — read the bridge's own manifest
+    // instead, which is true in both npm-script and bare-process launches.
+    const bridgeVersion = process.env.npm_package_version
+      ?? (JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version?: string }).version
+      ?? 'dev'
     const harnessHome = process.env.DSH_HOME
       ?? (process.env.HOME === undefined ? undefined : `${process.env.HOME}/.dsh`)
     const token = `sync-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
@@ -229,7 +237,7 @@ export function apply(ctx: Context, config: Config): void {
       {
         profile,
         form,
-        bridgeVersion: process.env.npm_package_version ?? 'dev',
+        bridgeVersion,
         manifest: () => import('./sync/profile-manifest.ts').then((m) =>
           m.readProfileManifest(harnessHome ?? `${os.homedir()}/.dsh`, profile)),
       },
@@ -246,7 +254,7 @@ export function apply(ctx: Context, config: Config): void {
       const publish = (): void => {
         void manifestSnapshot().then((manifest) =>
           heartbeat(
-            selfEntry(form, profile, process.env.npm_package_version ?? 'dev', server.port, token, manifest),
+            selfEntry(form, profile, bridgeVersion, server.port, token, manifest),
             harnessHome,
           )).catch(() => {})
       }
@@ -257,7 +265,7 @@ export function apply(ctx: Context, config: Config): void {
         home: harnessHome,
         form,
         profile,
-        bridgeVersion: process.env.npm_package_version ?? 'dev',
+        bridgeVersion,
         controlPort: server.port,
         controlToken: token,
         harnessHome,
