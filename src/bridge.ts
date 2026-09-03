@@ -71,6 +71,7 @@ import {
   TOOLS_COMMAND,
   WS_COMMAND,
 } from './commands.ts'
+import { getSyncContext } from './sync/bot-command.ts'
 import { collectImages } from './images.ts'
 import { saveInboundFiles } from './files.ts'
 import type { Locale } from './i18n.ts'
@@ -1042,6 +1043,7 @@ export function installBridge(
           ctx.get('workspaceRegistry') as HostWorkspaceRegistry | undefined,
           cwd,
           loaderEntries(),
+          getSyncContext(),
         )
         // A /preset switch changed this session's composition contract; the
         // cached composition would resume the OLD preset, so drop it and let

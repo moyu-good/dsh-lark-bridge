@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Dual-end sync (web ⇄ desktop)**: bot settings live in a single source under
+  `~/.dsh/dsh-lark-bridge/settings.json` (atomic write + lock + backups), a
+  localhost-only control API (one-time boot token) serves each end's profile
+  manifest, and `/bot sync-plugins` diffs the two profiles and installs missing
+  plugins through the upstream `dsh plugin` CLI — the chat-side fix for
+  dsh-desktop#93, without ever sharing a live plugin tree (#1485).
+- `/bot` command: dual-end status (peers heartbeat), shared settings
+  view/set/unset with masked secrets, and dry-run → apply plugin sync.
 - One-command CLI bootstrap: `dsh-lark-bridge start` installs dsh if needed,
   wires the plugin into a profile, patches config, and boots the bridge
   (`status` / `logs` / `stop` / `restart` too). (#cli)

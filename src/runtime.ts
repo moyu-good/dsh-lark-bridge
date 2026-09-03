@@ -3,6 +3,7 @@
  * @module dsh-lark-bridge/runtime
  */
 
+import os from 'node:os'
 import { createLarkChannel, registerApp } from '@larksuite/channel'
 import type { LarkChannelOptions, PolicyConfig } from '@larksuite/channel'
 import type { Context } from '@deepseek-ai/cordis'
@@ -14,6 +15,10 @@ import type { PanelCommand } from './slash-panel.ts'
 import { beginOnboarding } from './onboarding.ts'
 import type { LarkCredentials, OnboardedApp, RegisterAppPort } from './onboarding.ts'
 import { describeAuthorization, resolveAuthorization } from './authorization.ts'
+import { setSyncContext } from './sync/bot-command.ts'
+import { readSettings } from './sync/settings-store.ts'
+import { startControlApi } from './sync/control-api.ts'
+import { heartbeat, selfEntry } from './sync/peers.ts'
 import type { Authorization } from './authorization.ts'
 import type { HostLoader, HostSettings } from './host.ts'
 
@@ -208,6 +213,67 @@ export function apply(ctx: Context, config: Config): void {
     installBridge(ctx, resolved, internals.createPort(resolved, authorization), internals.notify, authorization)
   }
 
+  /**
+   * Dual-end sync layer: control API + peer heartbeat. Failures degrade to a
+   * log line — a dead sync layer must never take the Feishu channel down.
+   */
+  const startSyncLayer = (resolved: ResolvedConfig): void => {
+    if (!active) return
+    const form = process.env.DSH_FORM === 'desktop' ? 'desktop' as const : 'web' as const
+    const profile = process.env.DSH_PROFILE ?? 'web'
+    const harnessHome = process.env.DSH_HOME
+      ?? (process.env.HOME === undefined ? undefined : `${process.env.HOME}/.dsh`)
+    const token = `sync-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    let started = false
+    void startControlApi(
+      {
+        profile,
+        form,
+        bridgeVersion: process.env.npm_package_version ?? 'dev',
+        manifest: () => import('./sync/profile-manifest.ts').then((m) =>
+          m.readProfileManifest(harnessHome ?? `${os.homedir()}/.dsh`, profile)),
+      },
+      token,
+      resolved.controlPort,
+    ).then((server) => {
+      if (!active) { void server.close(); return }
+      started = true
+      const manifestSnapshot = (): Promise<import('./sync/peers.ts').ProfileManifestLite | undefined> =>
+        import('./sync/profile-manifest.ts').then(async (m) => {
+          const read = await m.readProfileManifest(harnessHome ?? `${os.homedir()}/.dsh`, profile)
+          return read === null ? undefined : { profile: read.profile, dependencies: read.dependencies, bundles: read.bundles }
+        }).catch(() => undefined)
+      const publish = (): void => {
+        void manifestSnapshot().then((manifest) =>
+          heartbeat(
+            selfEntry(form, profile, process.env.npm_package_version ?? 'dev', server.port, token, manifest),
+            harnessHome,
+          )).catch(() => {})
+      }
+      publish()
+      const timer = setInterval(publish, 15_000)
+      timer.unref?.()
+      setSyncContext({
+        home: harnessHome,
+        form,
+        profile,
+        bridgeVersion: process.env.npm_package_version ?? 'dev',
+        controlPort: server.port,
+        controlToken: token,
+        harnessHome,
+      })
+      ctx.logger.info('dual-end sync layer up: profile=%s form=%s control=127.0.0.1:%s', profile, form, server.port)
+      ctx.effect(() => () => {
+        clearInterval(timer)
+        void server.close()
+      }, 'dsh-lark-bridge:sync-lifetime')
+    }).catch((error: unknown) => {
+      ctx.logger.error('dual-end sync layer failed to start (channel unaffected): %s',
+        error instanceof Error ? error.message : error)
+    })
+    if (!started) return
+  }
+
   const bootstrap = async (): Promise<void> => {
     // Loader siblings mount concurrently; whether the optional settings
     // service exists is only decided once the application settles.
@@ -233,6 +299,24 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
 
+    // Cross-profile overlay (dual-end sync): the shared settings file is what
+    // the operator last touched from EITHER form, so it wins per key over the
+    // profile injection and the host settings scope. Credentials are honored
+    // too - an operator who sets them via /bot set intends both ends to adopt
+    // them; running two bridges on ONE Feishu app double-delivers events,
+    // which is the operator's explicit choice, not ours.
+    try {
+      const shared = await readSettings()
+      const touched = Object.keys(shared).length
+      if (touched > 0) {
+        resolved = resolveConfig({ ...resolved, ...shared } as Config)
+        ctx.logger.info('dual-end sync: %d shared key(s) overlaid onto the boot config', touched)
+      }
+    } catch (error) {
+      ctx.logger.error('dual-end sync: shared settings overlay failed: %s',
+        error instanceof Error ? error.message : error)
+    }
+    startSyncLayer(resolved)
     if (hasCredentials(resolved)) {
       start(resolved)
       return
