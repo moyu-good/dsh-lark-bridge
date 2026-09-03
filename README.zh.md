@@ -41,7 +41,7 @@
 
 ```sh
 # 1. 把插件装进 dsh profile 并启动（pnpm —— 并行安装，实测约 20 秒）
-pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
+pnpm dlx @deepseek-ai/dsh plugin --profile web add @moyu-good/dsh-lark-bridge \
   && pnpm dlx @deepseek-ai/dsh web
 
 # 2. 控制台打印二维码 → 用飞书扫码
@@ -52,6 +52,13 @@ pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bri
 # 4. 私聊机器人，或群里 @ 它。完成。
 ```
 
+> [!NOTE]
+> **首次 `plugin add` 会失败一次**，报
+> `ERR_PNPM_IGNORED_BUILDS ... protobufjs`——pnpm 11 默认拦截 `protobufjs`
+> （飞书 SDK 的依赖）的 postinstall，而该脚本只是无害提示。打开
+> `<你的home>/.dsh/profiles/web/pnpm-workspace.yaml`，把占位行改成
+> `protobufjs: true`，再重跑同一条命令即可。每个 profile 仅需一次。
+
 > [!WARNING]
 > **运行上游 dsh CLI 请用 pnpm，不要裸用 npx/npm。** 同机实测：`pnpm dlx`
 > 安装 dsh 依赖树（197 个包、约 250 MB）**约 20 秒**（含下载）；而
@@ -61,7 +68,9 @@ pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bri
 > `NODE_OPTIONS=--max-old-space-size=2048`。
 >
 > **不要**执行 `npm i -g dsh-lark-bridge`——npm 上这个名字属于另一个无关项目。
-> 本插件今天就能从 GitHub 源安装；scope 化的 npm 包（`@moyu-good/…`）在计划中。
+> 本插件已发布为 **`@moyu-good/dsh-lark-bridge`**（GitHub 源也能装，但 git
+> 源插件会让 pnpm 拦下它的 `prepare` 脚本，需要手动在 profile 的
+> `pnpm-workspace.yaml` 的 `allowBuilds` 里放行——registry 包零构建无此坑）。
 
 日常运维：重新运行 `pnpm dlx @deepseek-ai/dsh web`（后续运行命中 pnpm
 store，速度很快），或用 systemd/supervisor 托管。
