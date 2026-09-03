@@ -17,7 +17,7 @@ import type { PeerEntry } from './peers.ts'
 import { readProfileManifest } from './profile-manifest.ts'
 import { buildSyncPlan, applySyncPlan } from './plugin-sync.ts'
 import { fetchPeerManifest } from './control-api.ts'
-import { buildMigration, buildImportPlan, crossHostWarning, readMigration, resolveMigrationFile, SECRET_KEYS } from './migrate.ts'
+import { buildMigration, buildImportPlan, crossHostWarning, readDeviceState, readMigration, resolveMigrationFile, SECRET_KEYS, writeDeviceState } from './migrate.ts'
 import type { MigrationFile, TraveledProfile } from './migrate.ts'
 import fsp from 'node:fs/promises'
 
@@ -57,7 +57,7 @@ export function getSyncContext(): SyncCommandContext | undefined {
 }
 
 /** The subcommands `/bot` accepts. */
-const SUBCOMMANDS = new Set(['set', 'unset', 'peers', 'sync-plugins', 'export', 'import'])
+const SUBCOMMANDS = new Set(['set', 'unset', 'peers', 'sync-plugins', 'export', 'import', 'devices', 'retire', 'activate'])
 
 /**
  * Handle `/bot [subcommand …]`. Returns the reply for the chat; every secret
@@ -78,6 +78,9 @@ export async function runBotCommand(
   if (subcommand === 'sync-plugins') return syncPluginsReply(ctx, rest)
   if (subcommand === 'export') return exportReply(ctx, rest)
   if (subcommand === 'import') return importReply(ctx, rest)
+  if (subcommand === 'devices') return devicesReply(ctx)
+  if (subcommand === 'retire') return retireReply(ctx)
+  if (subcommand === 'activate') return activateReply(ctx)
   return {
     reply: `⚠️ 未知子命令 \`${subcommand}\`。可用：${[...SUBCOMMANDS].map((s) => `\`${s}\``).join(' / ')}（无参数 = 状态面板）`,
     resolved: false,
@@ -334,6 +337,65 @@ async function importReply(ctx: SyncCommandContext, rest: string[]): Promise<Com
   }
   if (warning !== null) lines.push('', warning)
   return { reply: lines.join('\n'), resolved: true }
+}
+
+/**
+ * `/bot devices` — the device roster: this machine (with its lifecycle state),
+ * whoever the heartbeat currently sees, and any machine a migration file came
+ * from. The roster is informational; the Feishu app itself stays single-active.
+ */
+async function devicesReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
+  const state = await readDeviceState(ctx.home)
+  const peers = await listPeers(ctx.home)
+  const lines = [`**设备台账**（飞书 app 单活跃——同一时刻只有一台回复消息）：`]
+  lines.push(`- **本机** \`${os.hostname()}\`：profile \`${ctx.profile}\`（${ctx.form}）v${ctx.bridgeVersion}${state.retired ? ' —— **已退位**，发 `/bot activate` 重新启用' : ' —— ✅ 活跃'}`)
+  if (peers.length === 0) {
+    lines.push('- 在线对端：无')
+  } else {
+    for (const peer of peers) {
+      lines.push(`- 在线：\`${peer.host}\` profile \`${peer.profile}\`（${peer.form}）v${peer.bridgeVersion}`)
+    }
+  }
+  try {
+    const file = await readMigration(undefined, ctx.home)
+    lines.push(`- 迁移档案：来自 \`${file.from.host}\`（${file.exportedAt}）`)
+  } catch {
+    // No migration file yet — nothing historical to show.
+  }
+  lines.push('', '转移动作：本机 `/bot export include-secrets` → 新机导入后本机 `/bot retire`。')
+  return { reply: lines.join('\n'), resolved: true }
+}
+
+/**
+ * `/bot retire` — take THIS machine out of the reply path (e.g. after
+ * exporting to a successor). The flag is per-machine local state; inbound
+ * messages get a one-line notice instead of an agent turn until
+ * `/bot activate` clears it.
+ */
+async function retireReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
+  const state = await readDeviceState(ctx.home)
+  if (state.retired) {
+    return { reply: '本机已是退位状态。重新启用：`/bot activate`。', resolved: true }
+  }
+  await writeDeviceState({ retired: true, retiredAt: new Date().toISOString(), note: `retired on ${os.hostname()}` }, ctx.home)
+  return {
+    reply: [
+      `✅ 本机 \`${os.hostname()}\` 已退位——后续消息不再驱动 agent，只回本提示。`,
+      '重新启用：`/bot activate`。',
+      '提醒：若迁移到新机，确认新机 `/bot import apply` 完成后再退位，避免飞书端无人应答。',
+    ].join('\n'),
+    resolved: true,
+  }
+}
+
+/** `/bot activate` — clear this machine's retired flag. */
+async function activateReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
+  const state = await readDeviceState(ctx.home)
+  if (!state.retired) {
+    return { reply: '本机本就处于活跃状态，无需激活。', resolved: true }
+  }
+  await writeDeviceState({ retired: false, activatedAt: new Date().toISOString() }, ctx.home)
+  return { reply: `✅ 本机 \`${os.hostname()}\` 已重新激活，恢复正常应答。`, resolved: true }
 }
 
 function isSharedKey(key: string): boolean {

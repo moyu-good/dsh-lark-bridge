@@ -4,6 +4,19 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-09-03
+
+### Added
+- **Device manager** (`/bot devices` / `/bot retire` / `/bot activate`): a
+  machine can step out of the reply path without stopping the service —
+  retired ends answer with a one-line notice instead of an agent turn. The
+  flag is per-machine local state, never synced. The roster shows this
+  machine, heartbeat-live peers, and migration provenance.
+
+### Fixed
+- Heartbeats reported `dev` as the bridge version under bare-process
+  launches (systemd); the bridge now reads its own package.json.
+
 ## [0.4.0] — 2026-09-03
 
 ### Added

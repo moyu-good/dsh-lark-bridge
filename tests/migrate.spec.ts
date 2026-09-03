@@ -3,15 +3,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import {
-  buildImportPlan,
-  buildMigration,
-  crossHostWarning,
-  readMigration,
-  resolveMigrationFile,
-  validateMigration,
-  MIGRATION_KIND,
-} from '../src/sync/migrate.ts'
+import { buildImportPlan, buildMigration, crossHostWarning, readDeviceState, readMigration, resolveMigrationFile, validateMigration, writeDeviceState, MIGRATION_KIND } from '../src/sync/migrate.ts'
 import { runBotCommand } from '../src/sync/bot-command.ts'
 import type { SyncCommandContext } from '../src/sync/bot-command.ts'
 import { readSettings, writeSettings } from '../src/sync/settings-store.ts'
@@ -126,6 +118,43 @@ describe('import planning', () => {
     expect(crossHostWarning(doc as never)).toMatch(/双投递/)
     const same = { ...doc, from: { ...doc.from, host: os.hostname() } }
     expect(crossHostWarning(same as never)).toBeNull()
+  })
+})
+
+describe('device lifecycle (retire/activate/devices)', () => {
+  it('retire marks local state and activate clears it — never in shared settings', async () => {
+    const { home, harnessHome } = track()
+    const ctx = makeCtx(home, harnessHome)
+    const down = await runBotCommand('/bot retire', ctx)
+    expect(down.reply).toMatch(/已退位/)
+    expect((await readDeviceState(home)).retired).toBe(true)
+    // The flag must stay out of the shared store: syncing it would retire the successor too.
+    expect(await readSettings(home)).toEqual({})
+    const up = await runBotCommand('/bot activate', ctx)
+    expect(up.reply).toMatch(/重新激活/)
+    expect((await readDeviceState(home)).retired).toBe(false)
+  })
+
+  it('devices reply shows this machine, online peers, and migration provenance', async () => {
+    const { home, harnessHome } = track()
+    const file = await buildMigration(home, harnessHome, 'web', 'web')
+    file.from.host = 'old-box'
+    const dir = path.join(home, 'dsh-lark-bridge')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'migrate.json'), JSON.stringify(file))
+    const out = await runBotCommand('/bot devices', makeCtx(home, harnessHome))
+    expect(out.reply).toMatch(/设备台账/)
+    expect(out.reply).toMatch(/活跃/)
+    expect(out.reply).toMatch(/old-box/)
+  })
+
+  it('retiring twice is idempotent and activate on an active device is a no-op', async () => {
+    const { home, harnessHome } = track()
+    const ctx = makeCtx(home, harnessHome)
+    await runBotCommand('/bot retire', ctx)
+    expect((await runBotCommand('/bot retire', ctx)).reply).toMatch(/已是退位状态/)
+    await runBotCommand('/bot activate', ctx)
+    expect((await runBotCommand('/bot activate', ctx)).reply).toMatch(/本就处于活跃/)
   })
 })
 

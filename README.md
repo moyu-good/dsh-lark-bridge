@@ -111,6 +111,13 @@ the file came from another host, the import reply reminds you to stop the old
 machine's bridge first — one Feishu app on two live machines means doubled
 replies.
 
+**Device lifecycle**: instead of stopping the old service by hand, retire it —
+`/bot retire` on the old machine puts it out of the reply path (messages get a
+one-line notice, not an agent turn; the flag is per-machine local state and is
+never synced), and `/bot activate` brings it back. `/bot devices` shows the
+roster: this machine, whoever the heartbeat sees, and where the migration file
+came from.
+
 ## ✨ Features
 
 Highlights — the ones other bridges don't have:

@@ -72,4 +72,17 @@ export declare function buildImportPlan(local: ProfileManifest | null, profile: 
  * immediately and confusingly, so the import reply always carries it.
  */
 export declare function crossHostWarning(file: MigrationFile): string | null;
+/** Local device lifecycle state. */
+export interface DeviceState {
+    retired?: boolean;
+    retiredAt?: string;
+    activatedAt?: string;
+    note?: string;
+}
+/** Absolute path of this machine's device-state file. */
+export declare function deviceStateFile(home?: string): string;
+/** Read this machine's device state, or `{}` when absent/corrupt. */
+export declare function readDeviceState(home?: string): Promise<DeviceState>;
+/** Persist this machine's device state. */
+export declare function writeDeviceState(state: DeviceState, home?: string): Promise<void>;
 //# sourceMappingURL=migrate.d.ts.map

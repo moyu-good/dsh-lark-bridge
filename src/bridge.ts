@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
+import { readDeviceState } from './sync/migrate.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   CardActionEvent,
@@ -992,6 +993,18 @@ export function installBridge(
     // The bot received a real request: acknowledge immediately so the sender
     // sees it landed, before any agent work starts.
     reactions?.ack(msg.messageId)
+    // A retired device answers with a one-line notice instead of an agent
+    // turn — the successor machine owns the Feishu app's reply path now.
+    // `/bot activate` passes through so this end can be re-enabled in chat.
+    if (msg.content.trim() !== '/bot activate') {
+      const deviceState = await readDeviceState()
+      if (deviceState.retired === true) {
+        await port.send(msg.chatId, {
+          markdown: '↪️ 本端已退位（设备已迁移）。如需在本机重新启用，请发 `/bot activate`。',
+        }).catch(reportSendFailure)
+        return
+      }
+    }
     // Full-transcript ingest is fire-and-forget: never awaited, never blocks
     // or fails the turn (contract in src/chronicle.ts).
     postChronicle(config.chronicleEndpoint, { source: config.chronicleSource, text: msg.content, chatId: msg.chatId }, notify)
