@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { readDeviceState, ensureDeviceId } from './sync/migrate.ts'
-import { arbitrationForInbound } from './sync/bot-command.ts'
+import { arbitrationForInbound, claimIfActiveStale } from './sync/bot-command.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   CardActionEvent,
@@ -1007,15 +1007,21 @@ export function installBridge(
       }
       // Cloud arbitration (when present): only the active endpoint replies.
       // Absence of arbitration — no credentials, carrier down, never written
-      // — keeps every end replying as before.
+      // — keeps every end replying as before. When the active machine has
+      // gone silent, election lets the smallest fresh deviceId take over.
       const arbitration = await arbitrationForInbound()
       if (arbitration !== null) {
         const myIdentity = await ensureDeviceId()
         if (arbitration.activeDeviceId !== myIdentity.deviceId) {
-          await port.send(msg.chatId, {
-            markdown: `↪️ 活跃设备是 **${arbitration.activeName}**，本端已退避。如需在本机接管，请发 \`/bot activate\`。`,
-          }).catch(reportSendFailure)
-          return
+          const syncCtx = getSyncContext()
+          const claimed = syncCtx !== undefined && await claimIfActiveStale(syncCtx, arbitration)
+          if (!claimed) {
+            await port.send(msg.chatId, {
+              markdown: `↪️ 活跃设备是 **${arbitration.activeName}**，本端已退避。如需在本机接管，请发 \`/bot activate\`。`,
+            }).catch(reportSendFailure)
+            return
+          }
+          notify(`dsh-lark-bridge: elected active device ${myIdentity.deviceId} (previous active went silent)`)
         }
       }
     }

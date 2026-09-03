@@ -4,6 +4,18 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-09-04
+
+### Added
+- **Presence ledger + automatic election** (M3 completion): every live
+  machine renews its presence line in the cloud arbitration file each
+  minute; `/bot devices` renders the full roster with online/offline state.
+  When the active machine goes silent past the timeout, the freshest
+  machine with the smallest deviceId is elected automatically on the next
+  inbound message (re-read before claiming; absence of the carrier never
+  blocks replying).
+- `/bot name [readable-name]` — set the roster name for this machine.
+
 ## [0.5.0] — 2026-09-03
 
 ### Added

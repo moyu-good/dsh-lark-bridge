@@ -233,7 +233,7 @@ export async function ensureDeviceId(home?: string): Promise<{ deviceId: string;
     return { deviceId: state.deviceId, deviceName: state.deviceName ?? os.hostname() }
   }
   const deviceId = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const deviceName = os.hostname()
+  const deviceName = state.deviceName ?? os.hostname()
   await writeDeviceState({ ...state, deviceId, deviceName }, home)
   return { deviceId, deviceName }
 }
