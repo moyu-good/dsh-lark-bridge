@@ -4,8 +4,8 @@ import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { FeishuCloud } from '../src/sync/feishu-cloud.ts'
-import { runBotCommand } from '../src/sync/bot-command.ts'
-import type { SyncCommandContext } from '../src/sync/bot-command.ts'
+import { runBotCommand, claimIfActiveStale } from '../src/sync/bot-command.ts'
+import type { SyncCommandContext, Arbitration } from '../src/sync/bot-command.ts'
 import { writeSettings } from '../src/sync/settings-store.ts'
 import { writeProfileManifest } from './helpers/profile-manifest.ts'
 import type { MigrationFile } from '../src/sync/migrate.ts'
@@ -158,5 +158,55 @@ describe('cloud migration flow via /bot', () => {
     const doc = JSON.parse(fs.readFileSync(local, 'utf8')) as MigrationFile
     expect(doc.deviceId).toBeUndefined()
     expect(Object.keys(doc)).not.toContain('deviceState')
+  })
+})
+
+describe('device naming and election', () => {
+  it('/bot name sets the roster name shown by /bot devices', async () => {
+    const { home, harnessHome } = track()
+    const ctx = cloudCtx(home, harnessHome, fakeCloud(new Map()).cloud)
+    const named = await runBotCommand('/bot name 办公室台式机', ctx)
+    expect(named.reply).toMatch(/办公室台式机/)
+    const roster = await runBotCommand('/bot devices', ctx)
+    expect(roster.reply).toMatch(/办公室台式机/)
+  })
+
+  it('election: stale active lets the smallest fresh deviceId claim the slot', async () => {
+    const { home, harnessHome } = track()
+    const files = new Map<string, string>()
+    const stale: Arbitration = {
+      activeDeviceId: 'dev-old',
+      activeName: 'old-box',
+      form: 'web',
+      profile: 'web',
+      updatedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      devices: {
+        // Active machine silent for 10 minutes — past the 3-minute timeout.
+        'dev-old': { name: 'old-box', form: 'web', profile: 'web', version: '0.5.0', lastSeen: Date.now() - 10 * 60_000 },
+        // A rival with a SMALLER deviceId, also fresh — it must win instead.
+        'dev-aaa': { name: 'rival', form: 'desktop', profile: 'web', version: '0.5.0', lastSeen: Date.now() },
+      },
+    }
+    files.set('dsh-lark-bridge-arbitration.json', JSON.stringify(stale))
+    const ctx = cloudCtx(home, harnessHome, fakeCloud(files).cloud)
+    // This machine's id sorts after dev-aaa (time-based prefix), so the rival wins.
+    expect(await claimIfActiveStale(ctx, stale)).toBe(false)
+  })
+
+  it('election: fresh active machine blocks any takeover', async () => {
+    const { home, harnessHome } = track()
+    const files = new Map<string, string>()
+    const fresh: Arbitration = {
+      activeDeviceId: 'dev-old',
+      activeName: 'old-box',
+      form: 'web',
+      profile: 'web',
+      updatedAt: new Date().toISOString(),
+      devices: {
+        'dev-old': { name: 'old-box', form: 'web', profile: 'web', version: '0.5.0', lastSeen: Date.now() },
+      },
+    }
+    files.set('dsh-lark-bridge-arbitration.json', JSON.stringify(fresh))
+    expect(await claimIfActiveStale(cloudCtx(home, harnessHome, fakeCloud(files).cloud), fresh)).toBe(false)
   })
 })

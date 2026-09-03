@@ -261,7 +261,7 @@ export function apply(ctx: Context, config: Config): void {
       publish()
       const timer = setInterval(publish, 15_000)
       timer.unref?.()
-      setSyncContext({
+      const syncContext = {
         home: harnessHome,
         form,
         profile,
@@ -272,10 +272,20 @@ export function apply(ctx: Context, config: Config): void {
         credentials: resolved.appId !== undefined && resolved.appSecret !== undefined
           ? { appId: resolved.appId, appSecret: resolved.appSecret, ...(resolved.domain !== undefined ? { domain: resolved.domain } : {}) }
           : undefined,
-      })
+      }
+      setSyncContext(syncContext)
+      // Presence renewal: keep this machine's line fresh in the cloud
+      // arbitration ledger so the fleet knows who is online (advisory).
+      const renewPresenceTimer = setInterval(
+        () => void import('./sync/bot-command.ts').then((m) => m.renewPresence(syncContext)).catch(() => {}),
+        60_000,
+      )
+      renewPresenceTimer.unref?.()
+      void import('./sync/bot-command.ts').then((m) => m.renewPresence(syncContext)).catch(() => {})
       ctx.logger.info('dual-end sync layer up: profile=%s form=%s control=127.0.0.1:%s', profile, form, server.port)
       ctx.effect(() => () => {
         clearInterval(timer)
+        clearInterval(renewPresenceTimer)
         void server.close()
       }, 'dsh-lark-bridge:sync-lifetime')
     }).catch((error: unknown) => {

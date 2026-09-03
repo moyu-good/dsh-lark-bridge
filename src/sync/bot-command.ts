@@ -26,14 +26,31 @@ import fsp from 'node:fs/promises'
 export const CLOUD_MIGRATION_NAME = 'dsh-lark-bridge-migrate.json'
 export const CLOUD_ARBITRATION_NAME = 'dsh-lark-bridge-arbitration.json'
 
-/** Cloud arbitration document: which endpoint currently owns the reply path. */
+/** One machine's registration in the arbitration file. */
+export interface PresenceEntry {
+  name: string
+  form: string
+  profile: string
+  version: string
+  /** Epoch ms of the machine's last renewal. */
+  lastSeen: number
+}
+
+/** Cloud arbitration document: the active endpoint plus a presence registry. */
 export interface Arbitration {
   activeDeviceId: string
   activeName: string
   form: string
   profile: string
   updatedAt: string
+  /** Every machine seen recently — the presence ledger. */
+  devices?: Record<string, PresenceEntry>
 }
+
+/** A machine counts as offline after this much silence (2 renewal periods + slack). */
+export const PRESENCE_TIMEOUT_MS = 180_000
+/** How often a live machine renews its presence line. */
+export const PRESENCE_INTERVAL_MS = 60_000
 
 /** Helper: a cloud client when credentials exist. */
 function cloudOf(ctx: SyncCommandContext): FeishuCloud | null {
@@ -53,12 +70,21 @@ async function publishArbitration(ctx: SyncCommandContext): Promise<string> {
   if (cloud === null) return '（未绑定飞书凭证——云端仲裁未写入，仅本机生效）'
   try {
     const identity = await ensureDeviceId(ctx.home)
+    const previous = await readCloudArbitration(ctx)
+    const entry: PresenceEntry = {
+      name: identity.deviceName,
+      form: ctx.form,
+      profile: ctx.profile,
+      version: ctx.bridgeVersion,
+      lastSeen: Date.now(),
+    }
     const arbitration: Arbitration = {
       activeDeviceId: identity.deviceId,
       activeName: identity.deviceName,
       form: ctx.form,
       profile: ctx.profile,
       updatedAt: new Date().toISOString(),
+      devices: { ...previous?.devices, [identity.deviceId]: entry },
     }
     await cloud.putJson(CLOUD_ARBITRATION_NAME, JSON.stringify(arbitration, null, 2))
     return '（云端仲裁已更新：其它设备将退避）'
@@ -139,7 +165,7 @@ export function getSyncContext(): SyncCommandContext | undefined {
 }
 
 /** The subcommands `/bot` accepts. */
-const SUBCOMMANDS = new Set(['set', 'unset', 'peers', 'sync-plugins', 'export', 'import', 'devices', 'retire', 'activate'])
+const SUBCOMMANDS = new Set(['set', 'unset', 'peers', 'sync-plugins', 'export', 'import', 'devices', 'retire', 'activate', 'name'])
 
 /**
  * Handle `/bot [subcommand …]`. Returns the reply for the chat; every secret
@@ -163,6 +189,7 @@ export async function runBotCommand(
   if (subcommand === 'devices') return devicesReply(ctx)
   if (subcommand === 'retire') return retireReply(ctx)
   if (subcommand === 'activate') return activateReply(ctx)
+  if (subcommand === 'name') return nameReply(ctx, rest)
   return {
     reply: `⚠️ 未知子命令 \`${subcommand}\`。可用：${[...SUBCOMMANDS].map((s) => `\`${s}\``).join(' / ')}（无参数 = 状态面板）`,
     resolved: false,
@@ -465,6 +492,83 @@ async function importFromFile(
 }
 
 /**
+ * Renew this machine's presence line in the cloud arbitration file — the
+ * "login heartbeat" of the three-state model. Read-merge-write on a single
+ * cloud slot: concurrent writers may clobber each other's lastSeen, which
+ * only blurs presence precision (minutes) and never corrupts the active
+ * slot. Failures are swallowed; presence is advisory.
+ */
+export async function renewPresence(ctx: SyncCommandContext): Promise<void> {
+  const cloud = cloudOf(ctx)
+  if (cloud === null) return
+  try {
+    const identity = await ensureDeviceId(ctx.home)
+    const previous = await readCloudArbitration(ctx)
+    const entry: PresenceEntry = {
+      name: identity.deviceName,
+      form: ctx.form,
+      profile: ctx.profile,
+      version: ctx.bridgeVersion,
+      lastSeen: Date.now(),
+    }
+    const base: Arbitration = previous ?? {
+      // No file yet: this machine is implicitly active (first mover).
+      activeDeviceId: identity.deviceId,
+      activeName: identity.deviceName,
+      form: ctx.form,
+      profile: ctx.profile,
+      updatedAt: new Date().toISOString(),
+      devices: {},
+    }
+    await cloud.putJson(CLOUD_ARBITRATION_NAME, JSON.stringify({
+      ...base,
+      devices: { ...base.devices, [identity.deviceId]: entry },
+    }, null, 2))
+  } catch {
+    // Presence is advisory; the local fleet keeps working without it.
+  }
+}
+
+/**
+ * Election: when the arbitration's active machine has gone silent past the
+ * presence timeout, the online machine with the lexicographically smallest
+ * deviceId claims the slot — deterministic, so concurrent electors converge
+ * on one winner even without an atomic test-and-set on the drive. `known`
+ * is the caller's (possibly cached) arbitration; a fresh read happens only
+ * when an election looks possible, keeping the quiet path API-free.
+ */
+export async function claimIfActiveStale(ctx: SyncCommandContext, known: Arbitration): Promise<boolean> {
+  const identity = await ensureDeviceId(ctx.home)
+  if (known.activeDeviceId === identity.deviceId) return false
+  const activeSeen = known.devices?.[known.activeDeviceId]?.lastSeen ?? Date.parse(known.updatedAt)
+  if (Number.isNaN(activeSeen) || Date.now() - activeSeen < PRESENCE_TIMEOUT_MS) return false
+  const cloud = cloudOf(ctx)
+  if (cloud === null) return false
+  // Re-read to decide on the latest ledger; a lost race lands the same verdict.
+  const latest = await readCloudArbitration(ctx)
+  if (latest === null) return false
+  const latestSeen = latest.devices?.[latest.activeDeviceId]?.lastSeen ?? Date.parse(latest.updatedAt)
+  if (!Number.isNaN(latestSeen) && Date.now() - latestSeen < PRESENCE_TIMEOUT_MS) return false
+  const rivals = Object.entries(latest.devices ?? {})
+    .filter(([id, entry]) => id !== latest.activeDeviceId && Date.now() - entry.lastSeen < PRESENCE_TIMEOUT_MS)
+    .map(([id]) => id)
+  if (rivals.some((id) => id < identity.deviceId)) return false
+  await publishArbitration(ctx)
+  return true
+}
+
+/** `/bot name [readable-name]` — show or set this machine's roster name. */
+async function nameReply(ctx: SyncCommandContext, rest: string[]): Promise<CommandOutcome> {
+  const name = rest.join(' ').trim()
+  if (name === '') {
+    const identity = await ensureDeviceId(ctx.home)
+    return { reply: `当前设备名：**${identity.deviceName}**（\`${identity.deviceId}\`）。改名：\`/bot name <新名字>\``, resolved: true }
+  }
+  const next = await patchDeviceState({ deviceName: name }, ctx.home)
+  return { reply: `✅ 设备名已改为 **${next.deviceName}**（\`${next.deviceId}\`）。`, resolved: true }
+}
+
+/**
  * `/bot devices` — the device roster: this machine (with its lifecycle state),
  * whoever the heartbeat currently sees, and any machine a migration file came
  * from. The roster is informational; the Feishu app itself stays single-active.
@@ -485,7 +589,13 @@ async function devicesReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
   const arbitration = await readCloudArbitration(ctx)
   if (arbitration !== null) {
     const mine = arbitration.activeDeviceId === identity.deviceId
-    lines.push(`- 云端仲裁：**${arbitration.activeName}**（\`${arbitration.activeDeviceId}\`）${mine ? ' = 本机' : ''} · 更新于 ${arbitration.updatedAt}`)
+    lines.push(`- 云端仲裁活跃：**${arbitration.activeName}**（\`${arbitration.activeDeviceId}\`）${mine ? ' = 本机' : ''} · 更新于 ${arbitration.updatedAt}`)
+    for (const [id, entry] of Object.entries(arbitration.devices ?? {})) {
+      const age = Date.now() - entry.lastSeen
+      const online = age < PRESENCE_TIMEOUT_MS
+      const activeTag = id === arbitration.activeDeviceId ? ' · 🎖 活跃' : ''
+      lines.push(`  - \`${entry.name}\`（${id}）${entry.form} v${entry.version} —— ${online ? `在线（${Math.round(age / 1000)}s 前）` : `离线（${Math.round(age / 60000)}min 前）`}${activeTag}`)
+    }
   }
   try {
     const file = await readMigration(undefined, ctx.home)
@@ -493,7 +603,7 @@ async function devicesReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
   } catch {
     // No migration file yet — nothing historical to show.
   }
-  lines.push('', '转移动作：本机 `/bot export include-secrets --to-feishu` → 新机 `/bot import --from-feishu apply` → 本机 `/bot retire`。')
+  lines.push('', '转移动作：本机 `/bot export include-secrets --to-feishu` → 新机 `/bot import --from-feishu apply` → 本机 `/bot retire`。改设备名：`/bot name <名字>`。')
   return { reply: lines.join('\n'), resolved: true }
 }
 

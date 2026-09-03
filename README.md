@@ -117,7 +117,11 @@ service by hand, retire it — `/bot retire` on the old machine puts it out of
 the reply path (messages get a one-line notice, not an agent turn; the flag
 is per-machine local state and is never synced), and `/bot activate` brings
 it back — and when the cloud carrier is available it also claims the active
-slot, so other machines stand down on their next message.
+slot, so other machines stand down on their next message. Every live machine
+renews its presence in the cloud ledger each minute; if the active machine
+goessilent, the freshest machine with the smallest deviceId is elected
+automatically on the next inbound message. `/bot name <readable-name>` names
+a device for the roster.
 
 ## ✨ Features
 
