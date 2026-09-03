@@ -4,6 +4,14 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] — 2026-09-04
+
+### Fixed
+- `/bot activate` on a machine that had never retired was a no-op — it now
+  always claims the active slot (activation IS the takeover gesture for a
+  fresh machine joining the fleet). Found by the end-to-end fleet
+  simulation (18/18 after fix), not by unit tests.
+
 ## [0.6.0] — 2026-09-04
 
 ### Added

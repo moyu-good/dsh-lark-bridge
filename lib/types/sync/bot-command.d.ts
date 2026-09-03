@@ -91,5 +91,5 @@ export declare function renewPresence(ctx: SyncCommandContext): Promise<void>;
  * is the caller's (possibly cached) arbitration; a fresh read happens only
  * when an election looks possible, keeping the quiet path API-free.
  */
-export declare function claimIfActiveStale(ctx: SyncCommandContext, known: Arbitration): Promise<boolean>;
+export declare function claimIfActiveStale(ctx: SyncCommandContext, known: Arbitration | null): Promise<boolean>;
 //# sourceMappingURL=bot-command.d.ts.map
