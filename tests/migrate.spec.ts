@@ -148,13 +148,14 @@ describe('device lifecycle (retire/activate/devices)', () => {
     expect(out.reply).toMatch(/old-box/)
   })
 
-  it('retiring twice is idempotent and activate on an active device is a no-op', async () => {
+  it('retiring twice is idempotent; activating an active device re-claims the slot', async () => {
     const { home, harnessHome } = track()
     const ctx = makeCtx(home, harnessHome)
     await runBotCommand('/bot retire', ctx)
     expect((await runBotCommand('/bot retire', ctx)).reply).toMatch(/已是退位状态/)
     await runBotCommand('/bot activate', ctx)
-    expect((await runBotCommand('/bot activate', ctx)).reply).toMatch(/本就处于活跃/)
+    // New semantics: activate on an active device still claims the cloud slot.
+    expect((await runBotCommand('/bot activate', ctx)).reply).toMatch(/认领活跃槽位|已重新激活/)
   })
 })
 

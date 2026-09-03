@@ -537,7 +537,8 @@ export async function renewPresence(ctx: SyncCommandContext): Promise<void> {
  * is the caller's (possibly cached) arbitration; a fresh read happens only
  * when an election looks possible, keeping the quiet path API-free.
  */
-export async function claimIfActiveStale(ctx: SyncCommandContext, known: Arbitration): Promise<boolean> {
+export async function claimIfActiveStale(ctx: SyncCommandContext, known: Arbitration | null): Promise<boolean> {
+  if (known === null) return false
   const identity = await ensureDeviceId(ctx.home)
   if (known.activeDeviceId === identity.deviceId) return false
   const activeSeen = known.devices?.[known.activeDeviceId]?.lastSeen ?? Date.parse(known.updatedAt)
@@ -630,15 +631,20 @@ async function retireReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
 }
 
 /** `/bot activate` — clear this machine's retired flag, and when the cloud
- * carrier is available, claim the active slot so other machines stand down. */
+ * carrier is available, claim the active slot so other machines stand down.
+ * Claiming happens even when the machine was never retired: activation IS
+ * the takeover gesture for a fresh machine joining the fleet. */
 async function activateReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
   const state = await readDeviceState(ctx.home)
-  if (!state.retired) {
-    return { reply: '本机本就处于活跃状态，无需激活。', resolved: true }
+  const wasRetired = state.retired === true
+  if (wasRetired) {
+    await patchDeviceState({ retired: false, activatedAt: new Date().toISOString() }, ctx.home)
   }
-  await patchDeviceState({ retired: false, activatedAt: new Date().toISOString() }, ctx.home)
   const cloudLine = await publishArbitration(ctx)
-  return { reply: `✅ 本机 \`${os.hostname()}\` 已重新激活，恢复正常应答。${cloudLine}`, resolved: true }
+  const head = wasRetired
+    ? `✅ 本机 \`${os.hostname()}\` 已重新激活，恢复正常应答。`
+    : `✅ 本机 \`${os.hostname()}\` 已认领活跃槽位，后续消息由本机应答。`
+  return { reply: `${head}${cloudLine}`, resolved: true }
 }
 
 function isSharedKey(key: string): boolean {
