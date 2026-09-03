@@ -85,6 +85,32 @@ Daily ops: run `pnpm dlx @deepseek-ai/dsh web` again (subsequent runs hit the
 pnpm store, so they're fast), or host it under systemd/supervisor.
 The package ships **prebuilt** (`lib/` committed) — nothing compiles on install.
 
+## 📦 Moving to a new machine
+
+The bridge carries its own migration path — on the old machine:
+
+```text
+/bot export                  # settings masked (safe to store anywhere)
+/bot export include-secrets  # credentials verbatim — trusted channels only
+```
+
+Copy the printed file (in the sync directory, e.g.
+`~/.dsh/dsh-lark-bridge/migrate.json`) to the new machine's same path, install
+the plugin there (Quick Start above), then:
+
+```text
+/bot import          # preview: settings to write + plugin plan + warnings
+/bot import apply    # execute
+```
+
+What travels: shared settings and per-profile plugin lists (installed through
+the upstream CLI, so cross-platform moves just work). What never travels:
+peer heartbeats, control tokens, `node_modules`, session history — sessions
+live under `~/.dsh` (upstream-owned); copy that directory to carry them. If
+the file came from another host, the import reply reminds you to stop the old
+machine's bridge first — one Feishu app on two live machines means doubled
+replies.
+
 ## ✨ Features
 
 Highlights — the ones other bridges don't have:

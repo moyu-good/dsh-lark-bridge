@@ -76,6 +76,28 @@ pnpm dlx @deepseek-ai/dsh plugin --profile web add @moyu-good/dsh-lark-bridge \
 store，速度很快），或用 systemd/supervisor 托管。
 包已提交编译产物（`lib/` 进仓库），**安装即用无需构建**。
 
+## 📦 换机迁移
+
+桥自带迁移路径——旧机上：
+
+```text
+/bot export                  # 凭证掩码（文件可随意存放）
+/bot export include-secrets  # 凭证明文——只走可信渠道
+```
+
+把打印出的文件（在 sync 目录，如 `~/.dsh/dsh-lark-bridge/migrate.json`）拷到
+新机同路径，按上面的 Quick Start 装好插件，然后：
+
+```text
+/bot import          # 预览：将写入的设置 + 装包计划 + 提醒
+/bot import apply    # 执行
+```
+
+带得走的：共享设置与各 profile 插件清单（经上游 CLI 重装，跨平台直接可用）。
+永不带走的：peer 心跳、control token、`node_modules`、会话历史——会话在
+`~/.dsh`（上游管理），整目录拷贝即可带走。文件若来自别的机器，导入回复会
+提醒先停旧机桥——同一飞书 appId 两机同连会双回复。
+
 ## ✨ 能力
 
 亮点——别的桥没有的：
