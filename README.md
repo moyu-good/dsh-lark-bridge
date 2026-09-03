@@ -47,7 +47,7 @@ Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 
 ```sh
 # 1. install the plugin into a dsh profile & boot (pnpm — ~20s, parallel install)
-pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
+pnpm dlx @deepseek-ai/dsh plugin --profile web add @moyu-good/dsh-lark-bridge \
   && pnpm dlx @deepseek-ai/dsh web
 
 # 2. a QR code prints → scan it with Feishu
@@ -57,6 +57,14 @@ pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bri
 
 # 4. DM the bot, or @ it in a group. That's it.
 ```
+
+> [!NOTE]
+> **First-time `plugin add` fails once** with
+> `ERR_PNPM_IGNORED_BUILDS ... protobufjs` — pnpm 11 blocks the postinstall
+> of `protobufjs` (a Feishu SDK dependency; its script is a harmless no-op).
+> Open `<your-home>/.dsh/profiles/web/pnpm-workspace.yaml` and change the
+> placeholder line to `protobufjs: true`, then re-run the same command. This
+> is a one-time step per profile.
 
 > [!WARNING]
 > **Use pnpm, not bare npx/npm, to run the upstream dsh CLI.** Measured on the
@@ -68,8 +76,10 @@ pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bri
 > `NODE_OPTIONS=--max-old-space-size=2048`.
 >
 > **Do NOT** `npm i -g dsh-lark-bridge` — that name on npm belongs to an
-> unrelated project. Our package is installable from this GitHub repo today;
-> a scoped npm release (`@moyu-good/…`) is planned.
+> unrelated project. This plugin is published as **`@moyu-good/dsh-lark-bridge`**
+> (the GitHub source also works, but installing a git-hosted plugin makes pnpm
+> block its `prepare` script until you whitelist it under `allowBuilds` in the
+> profile's `pnpm-workspace.yaml` — the registry package needs no build at all).
 
 Daily ops: run `pnpm dlx @deepseek-ai/dsh web` again (subsequent runs hit the
 pnpm store, so they're fast), or host it under systemd/supervisor.

@@ -92,7 +92,7 @@ async function waitUntil(predicate, { timeoutMs = 120_000, intervalMs = 1000, la
 }
 
 function summary() {
-  const failed = report.steps.filter((step) => step.status !== 'ok')
+  const failed = report.steps.filter((step) => step.status !== 'ok' && !step.expectedFailure)
   const totalMs = report.steps.reduce((sum, step) => sum + (step.ms ?? 0), 0)
   report.summary = {
     totalSeconds: Math.round(totalMs / 100) / 10,
@@ -121,18 +121,38 @@ if (!SKIP.has('S1')) {
   if (res.status !== 0) { writeReport(); process.exit(1) }
 }
 
-// ── S2: 桥插件经 GitHub 装进全新 profile ──
+// ── S2: bridge plugin from npm registry. pnpm 11 blocks the protobufjs
+//    (Feishu SDK dep) postinstall — a no-op script — so the FIRST attempt
+//    fails with ERR_PNPM_IGNORED_BUILDS. The dsh profile template ships an
+//    `allowBuilds: protobufjs: set this to true or false` placeholder; the
+//    documented newcomer fix is to flip it to `true` and re-run. S2 records
+//    both the first failure and the retry, so the funnel shows the real cost. ──
 if (!SKIP.has('S2')) {
-  const res = run('S2 bridge plugin via github source', runner[0], [
-    ...runner.slice(1), '@deepseek-ai/dsh', 'plugin', '--profile', 'newbie', 'add', 'github:moyu-good/dsh-lark-bridge',
+  const first = run('S2 bridge plugin from npm registry (first attempt)', runner[0], [
+    ...runner.slice(1), '@deepseek-ai/dsh', 'plugin', '--profile', 'web', 'add', '@moyu-good/dsh-lark-bridge',
   ], { timeoutMs: 600_000 })
-  if (res.status !== 0) { writeReport(); process.exit(1) }
+  if (first.status !== 0 && /IGNORED_BUILDS|Ignored build scripts/i.test(`${first.stderr ?? ''}${first.stdout ?? ''}`)) {
+    report.steps.at(-1).expectedFailure = true // the documented pnpm-11 wall, not a funnel break
+    const wsFile = path.join(HOME, '.dsh', 'profiles', 'web', 'pnpm-workspace.yaml')
+    const ws = fs.readFileSync(wsFile, 'utf8')
+    if (ws.includes('protobufjs: set this to true or false')) {
+      fs.writeFileSync(wsFile, ws.replace('protobufjs: set this to true or false', 'protobufjs: true'))
+      report.notes = { ...(report.notes ?? {}), s2_allowBuilds_intervention: 'flipped template placeholder to protobufjs: true (documented newcomer fix)' }
+      console.log('  ↺ applied documented allowBuilds fix, retrying')
+      const retry = run('S2b retry after allowBuilds flip', runner[0], [
+        ...runner.slice(1), '@deepseek-ai/dsh', 'plugin', '--profile', 'web', 'add', '@moyu-good/dsh-lark-bridge',
+      ], { timeoutMs: 600_000 })
+      if (retry.status !== 0) { writeReport(); process.exit(1) }
+    } else {
+      writeReport(); process.exit(1)
+    }
+  } else if (first.status !== 0) { writeReport(); process.exit(1) }
 }
 
 // ── S3: profile 组装验证 ──
 if (!SKIP.has('S3')) {
   const res = run('S3 verify profile composition', runner[0], [
-    ...runner.slice(1), '@deepseek-ai/dsh', '--profile', 'newbie', '--dump-config',
+    ...runner.slice(1), '@deepseek-ai/dsh', '--profile', 'web', '--dump-config',
   ], { timeoutMs: 120_000 })
   const text = `${res.stdout ?? ''}${res.stderr ?? ''}`
   step3_note(text)
@@ -149,7 +169,7 @@ function step3_note(text) {
 // ── S4: `dsh web` 启动 + 监听测量（无飞书凭证，预期走 onboarding） ──
 if (!SKIP.has('S4')) {
   const port = 18999
-  const child = spawn(runner[0], [...runner.slice(1), '@deepseek-ai/dsh', 'web', '--profile', 'newbie', '--port', String(port)], {
+  const child = spawn(runner[0], [...runner.slice(1), '@deepseek-ai/dsh', 'web', '--port', String(port)], {
     cwd: REPO,
     env: {
       ...process.env,
@@ -159,7 +179,7 @@ if (!SKIP.has('S4')) {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  const step = { name: 'S4 boot dsh web (fresh profile)', command: 'dsh web --profile newbie', startedAt: new Date().toISOString() }
+  const step = { name: 'S4 boot dsh web (fresh profile)', command: 'dsh web --port <port>', startedAt: new Date().toISOString() }
   report.steps.push(step)
   const t0 = Date.now()
   let out = ''
