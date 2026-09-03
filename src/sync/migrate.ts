@@ -179,3 +179,40 @@ export function crossHostWarning(file: MigrationFile): string | null {
   if (file.from.host === os.hostname()) return null
   return `⚠️ 此文件来自 **${file.from.host}**。若旧机的桥仍在运行，请先停掉它——同一个飞书 appId 两台机器同时连接会导致消息双投递、双回复。`
 }
+
+// ── Device state: per-machine, deliberately NOT in the shared settings ──
+// A retired flag synced to the other end would retire the new machine too;
+// only the retiring machine may mark itself down.
+
+/** Local device lifecycle state. */
+export interface DeviceState {
+  retired?: boolean
+  retiredAt?: string
+  activatedAt?: string
+  note?: string
+}
+
+const DEVICE_STATE_NAME = 'device-state.json'
+
+/** Absolute path of this machine's device-state file. */
+export function deviceStateFile(home?: string): string {
+  return path.join(syncDir(home), DEVICE_STATE_NAME)
+}
+
+/** Read this machine's device state, or `{}` when absent/corrupt. */
+export async function readDeviceState(home?: string): Promise<DeviceState> {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(deviceStateFile(home), 'utf8')) as unknown
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as DeviceState
+  } catch {
+    return {}
+  }
+}
+
+/** Persist this machine's device state. */
+export async function writeDeviceState(state: DeviceState, home?: string): Promise<void> {
+  const file = deviceStateFile(home)
+  await fsp.mkdir(path.dirname(file), { recursive: true })
+  await fsp.writeFile(file, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+}
