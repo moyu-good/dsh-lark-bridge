@@ -4,6 +4,19 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-09-03
+
+### Added
+- **Feishu drive as the cross-machine carrier** (M2): `/bot export
+  --to-feishu` uploads the migration file to the app's own drive (app-scoped,
+  zero copying); `/bot import --from-feishu` pulls it on the new machine.
+  Real-credentials round-trip verified (upload → read-back → cleanup).
+- **Device identity + cloud arbitration** (M3 groundwork): every machine
+  mints a stable `deviceId` on first boot; `/bot activate` claims the active
+  slot in a cloud arbitration file, and inbound messages on other machines
+  stand down with a one-line notice (60s-cached lookup, absence never blocks
+  replying — prefer double replies over a silent fleet).
+
 ## [0.4.1] — 2026-09-03
 
 ### Added

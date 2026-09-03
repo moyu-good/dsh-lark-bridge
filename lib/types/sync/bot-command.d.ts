@@ -6,6 +6,21 @@
  * @module dsh-lark-bridge/sync/bot-command
  */
 import type { CommandOutcome } from '../commands.ts';
+import { FeishuCloud } from './feishu-cloud.ts';
+/** Fixed cloud-slot names (one slot, refreshed on every write). */
+export declare const CLOUD_MIGRATION_NAME = "dsh-lark-bridge-migrate.json";
+export declare const CLOUD_ARBITRATION_NAME = "dsh-lark-bridge-arbitration.json";
+/** Cloud arbitration document: which endpoint currently owns the reply path. */
+export interface Arbitration {
+    activeDeviceId: string;
+    activeName: string;
+    form: string;
+    profile: string;
+    updatedAt: string;
+}
+/** Read the cloud arbitration file, null when absent/unavailable. */
+export declare function readCloudArbitration(ctx: SyncCommandContext): Promise<Arbitration | null>;
+export declare function arbitrationForInbound(): Promise<Arbitration | null>;
 /** Everything `/bot` needs from the runtime to operate. */
 export interface SyncCommandContext {
     /** Shared-home override; defaults to `$DSH_HOME` or `~/.dsh`. */
@@ -21,6 +36,14 @@ export interface SyncCommandContext {
     controlToken?: string | undefined;
     /** Harness home for reading local profile manifests. */
     harnessHome?: string | undefined;
+    /** Feishu app credentials, when onboarded — enables the cloud carrier. */
+    credentials?: {
+        appId: string;
+        appSecret: string;
+        domain?: string;
+    } | undefined;
+    /** Pre-built cloud client (tests inject a fake; production builds on demand). */
+    cloud?: FeishuCloud | undefined;
     /** Production command runner for plugin installs; injectable for tests. */
     runCommand?: (command: string) => Promise<void>;
 }
