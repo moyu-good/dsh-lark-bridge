@@ -20,6 +20,11 @@ export interface Config {
     locale?: 'auto' | 'zh' | 'en';
     /** Absolute workspace directory for chat-driven agents; defaults to the host process cwd. */
     cwd?: string;
+    /**
+     * Port for the dual-end sync control API (127.0.0.1 only). Absent binds an
+     * ephemeral port; the resolved port travels to peers via heartbeat.
+     */
+    controlPort?: number;
     /** Provider route override for chat agents; defaults to the host `agentDefaultModel` selection. */
     provider?: string;
     /** Model id override for chat agents; defaults to the host `agentDefaultModel` selection. */
@@ -238,6 +243,8 @@ export interface ResolvedConfig {
     autoResumeGoals: boolean;
     /** Shell command behind `/restart`; '' (default) keeps the command off. */
     restartCommand: string;
+    /** Control API port for dual-end sync (0 = ephemeral/disabled surface). */
+    controlPort: number;
     approvalReminderMs: number;
     outbound: {
         allowedFileDirs?: string[];

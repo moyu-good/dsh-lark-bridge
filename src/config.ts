@@ -35,6 +35,11 @@ export interface Config {
   locale?: 'auto' | 'zh' | 'en'
   /** Absolute workspace directory for chat-driven agents; defaults to the host process cwd. */
   cwd?: string
+  /**
+   * Port for the dual-end sync control API (127.0.0.1 only). Absent binds an
+   * ephemeral port; the resolved port travels to peers via heartbeat.
+   */
+  controlPort?: number
   /** Provider route override for chat agents; defaults to the host `agentDefaultModel` selection. */
   provider?: string
   /** Model id override for chat agents; defaults to the host `agentDefaultModel` selection. */
@@ -254,6 +259,8 @@ export interface ResolvedConfig {
   autoResumeGoals: boolean
   /** Shell command behind `/restart`; '' (default) keeps the command off. */
   restartCommand: string
+  /** Control API port for dual-end sync (0 = ephemeral/disabled surface). */
+  controlPort: number
   approvalReminderMs: number
   outbound: { allowedFileDirs?: string[] } | undefined
   tokenPressure: {
@@ -294,6 +301,7 @@ export const Config: z<Config> = z.object({
   autoResumeGoals: z.boolean().default(false),
   restartCommand: z.string().default(''),
   approvalReminderMs: z.number().min(0).default(0),
+  controlPort: z.number().min(0).default(0),
   outbound: z.object({
     allowedFileDirs: z.array(String),
   }),
@@ -332,6 +340,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     hideProcessWhenDone: config.hideProcessWhenDone ?? false,
     syncSlashCommands: config.syncSlashCommands ?? true,
     chronicleEndpoint: config.chronicleEndpoint ?? '',
+    controlPort: config.controlPort ?? 0,
     chronicleSource: config.chronicleSource ?? 'lark-bridge',
     briefingFile: config.briefingFile ?? '',
     autoSaveFiles: config.autoSaveFiles ?? true,

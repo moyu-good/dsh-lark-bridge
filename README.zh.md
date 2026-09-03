@@ -31,17 +31,18 @@
 - ✅ **审批卡片** —— 需要确认的操作变成可点击卡片（允许一次 / 拒绝），决策人与结果回写留痕
 - 🎯 **实时 goal/todo 卡片** —— 长任务在聊天里实时更新而不是静默消失；重启后 goal 自动续跑
 - 🔌 **WebSocket 长连接** —— 不需要公网回调地址，不需要反向代理
+- 🔄 **双端同步** — bot 设置与插件清单在 `web` profile 与 Desktop 2.0.0 桌面端之间保持一致（`/bot sync-plugins`）
 
 本质是「嫁接」：飞书只是载体，真正干活的还是 DeepSeek Harness 本体。
 
 ## 🚀 60 秒上手
 
-**准备**：Node 18+、一个 DeepSeek API Key、手机上有飞书。
+**准备**：Node 18+、[pnpm](https://pnpm.io/installation)（推荐，见下方说明）、一个 DeepSeek API Key、手机上有飞书。
 
 ```sh
-# 1. 把插件装进 dsh profile 并启动
-npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
-  && npx @deepseek-ai/dsh web
+# 1. 把插件装进 dsh profile 并启动（pnpm —— 并行安装，实测约 20 秒）
+pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
+  && pnpm dlx @deepseek-ai/dsh web
 
 # 2. 控制台打印二维码 → 用飞书扫码
 #    （自动创建应用＋事件订阅，凭据持久化）
@@ -52,10 +53,18 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 ```
 
 > [!WARNING]
+> **运行上游 dsh CLI 请用 pnpm，不要裸用 npx/npm。** 同机实测：`pnpm dlx`
+> 安装 dsh 依赖树（197 个包、约 250 MB）**约 20 秒**（含下载）；而
+> `npx`/`npm install` 即使缓存全热也要 **约 25 分钟**（npm 串行 reify），
+> 且 ≤4GB 内存机器的 npm 进程会在安装中途
+> "JavaScript heap out of memory" 崩溃。必须用 npm 时，请先设
+> `NODE_OPTIONS=--max-old-space-size=2048`。
+>
 > **不要**执行 `npm i -g dsh-lark-bridge`——npm 上这个名字属于另一个无关项目。
 > 本插件今天就能从 GitHub 源安装；scope 化的 npm 包（`@moyu-good/…`）在计划中。
 
-日常运维：重新运行 `npx @deepseek-ai/dsh web`，或用 systemd/supervisor 托管。
+日常运维：重新运行 `pnpm dlx @deepseek-ai/dsh web`（后续运行命中 pnpm
+store，速度很快），或用 systemd/supervisor 托管。
 包已提交编译产物（`lib/` 进仓库），**安装即用无需构建**。
 
 ## ✨ 能力
@@ -223,19 +232,6 @@ CI 每次 push / PR 都跑全套，其中漂移检查钉在上游 dsh master—�
 
 预览轨晋升稳定轨必须过完整质量门禁：
 `pnpm test` → `node plugin-contract-test.mjs` → `node scripts/verify-dsh-contract.mjs` → `pnpm typecheck && pnpm run build` → 真链路冒烟。
-
-## 🧱 开发与 MR 流程
-
-`main` 是稳定基线，**只收已 review 的合并请求**。一切开发走功能分支（`feat/<名称>`），**绝不直接改 `main`**。
-
-每个 MR 检查单：
-1. 从 `main` 拉分支；改动小而单一。
-2. 完整质量门禁全绿（测试 / 契约 / 漂移 / build）。
-3. 仓库卫生扫描 — `scripts/check_repo_leak.py <repo> --lib` — 必须 exit 0。
-4. Reviewer 批准 → 合入 `main` → 从 `main` 部署。
-5. 生产事故当场回退（历史留在 git）；回退的分支 rebase 后带修复重新 MR。
-
-这条铁律来自教训：曾经直接往 `main` 连续堆改动，出事只能整批多 commit 回退——功能分支让 `main` 随时可交付。
 
 ## ❓ FAQ
 

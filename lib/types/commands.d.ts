@@ -10,6 +10,7 @@
  */
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry } from './host.ts';
 import type { ResolvedConfig } from './config.ts';
+import type { SyncCommandContext } from './sync/bot-command.ts';
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export declare const STOP_COMMAND = "stop";
 /**
@@ -35,6 +36,8 @@ export declare const HELP_COMMAND = "help";
 export declare const PRESET_COMMAND = "preset";
 /** List this chat's stored sessions. */
 export declare const SESSIONS_COMMAND = "sessions";
+/** Bridge dual-end status, settings, and plugin sync. */
+export declare const BOT_COMMAND = "bot";
 /** View or toggle the chat's denied tools at runtime. */
 export declare const TOOLS_COMMAND = "tools";
 /** List the chat's active schedules (reminders). */
@@ -123,5 +126,5 @@ export declare function helpText(commands: HostCommands | undefined, agent: Host
 export declare function runCommandLine(line: string, agent: HostAgent, commands: HostCommands | undefined, signal: AbortSignal, presets?: HostAgentPresets | undefined, persistence?: HostSessionPersistence | undefined, chatId?: string | undefined, deniedTools?: ReadonlySet<string> | undefined, schedules?: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined, audits?: ReadonlyMap<string, AuditStats> | undefined, config?: ResolvedConfig | undefined, sessionPresets?: Map<string, string> | undefined, sessionQuery?: HostSessionQuery | undefined, jobs?: HostJobs | undefined, feedback?: HostMessageFeedback | undefined, lastAssistantMessageId?: string | undefined, tokenMeter?: HostTokenMeter | undefined, skills?: HostSkills | undefined, defaultModel?: HostDefaultModel | undefined, configModel?: {
     readonly provider?: string;
     readonly model?: string;
-} | undefined, workspaces?: HostWorkspaceRegistry | undefined, currentCwd?: string | undefined, loaderEntries?: readonly HostLoaderEntry[] | undefined): Promise<CommandOutcome>;
+} | undefined, workspaces?: HostWorkspaceRegistry | undefined, currentCwd?: string | undefined, loaderEntries?: readonly HostLoaderEntry[] | undefined, sync?: SyncCommandContext | undefined): Promise<CommandOutcome>;
 //# sourceMappingURL=commands.d.ts.map

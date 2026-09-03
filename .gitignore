@@ -11,3 +11,8 @@ node-compile-cache/
 
 # 本地备份误入版本库防线（run-*.sh 不匹配带时间戳的 .bak 变体）
 run-*.sh.bak-*
+
+# journey 私有产物（含本机路径/实测报告，不入公仓）
+journey/report-*.json
+journey/基线审计*.md
+journey/s1-probe.sh

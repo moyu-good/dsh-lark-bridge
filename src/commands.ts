@@ -13,6 +13,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry } from './host.ts'
 import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
+import type { SyncCommandContext } from './sync/bot-command.ts'
+import { runBotCommand } from './sync/bot-command.ts'
 
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
@@ -53,6 +55,9 @@ export const PRESET_COMMAND = 'preset'
 
 /** List this chat's stored sessions. */
 export const SESSIONS_COMMAND = 'sessions'
+
+/** Bridge dual-end status, settings, and plugin sync. */
+export const BOT_COMMAND = 'bot'
 
 /** View or toggle the chat's denied tools at runtime. */
 export const TOOLS_COMMAND = 'tools'
@@ -165,6 +170,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent, l
     `\`/${CONTEXT_COMMAND}\` — ${describeCommand(CONTEXT_COMMAND, locale, 'View context pressure')}`,
     `\`/${SKILLS_COMMAND}\` — ${describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills')}`,
     `\`/${MODEL_COMMAND}\` — ${describeCommand(MODEL_COMMAND, locale, 'View or switch the default model')}`,
+    `\`/${BOT_COMMAND}\` — ${describeCommand(BOT_COMMAND, locale, 'Bridge dual-end status, settings, plugin sync')}`,
     `\`/${WS_COMMAND}\` — ${describeCommand(WS_COMMAND, locale, 'List registered workspaces')}`,
     `\`/${PLUGINS_COMMAND}\` — ${describeCommand(PLUGINS_COMMAND, locale, 'List deployed plugins and status')}`,
     `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
@@ -221,6 +227,7 @@ export async function runCommandLine(
   workspaces: HostWorkspaceRegistry | undefined = undefined,
   currentCwd: string | undefined = undefined,
   loaderEntries: readonly HostLoaderEntry[] | undefined = undefined,
+  sync: SyncCommandContext | undefined = undefined,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -265,6 +272,12 @@ export async function runCommandLine(
   }
   if (name === SKILLS_COMMAND) {
     return runSkillsCommand(trimmed, skills)
+  }
+  if (name === BOT_COMMAND) {
+    if (sync === undefined) {
+      return { reply: '⚠️ 本部署未启用双端同步（缺少 sync 上下文）。', resolved: false }
+    }
+    return runBotCommand(trimmed, sync)
   }
   if (name === MODEL_COMMAND) {
     return runModelCommand(trimmed, defaultModel, configModel, config?.modelCatalog)

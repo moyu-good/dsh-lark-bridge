@@ -37,17 +37,18 @@ dsh agent, and everything the desktop UI shows lives in the chat:
 - 🎯 **Live goal & todo cards** — long-running tasks update a card in real time instead of
   going silent; goals auto-resume after restarts.
 - 🔌 **WebSocket long connection** — no public callback URL, no reverse proxy.
+- 🔄 **Dual-end sync** — bot settings and plugin lists stay in step between the `web` profile and the Desktop 2.0.0 app (`/bot sync-plugins`).
 
 Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 
 ## 🚀 Quick Start in 60 Seconds
 
-**Prerequisites:** Node 18+, a DeepSeek API key, and the Feishu app on your phone.
+**Prerequisites:** Node 18+, [pnpm](https://pnpm.io/installation) (recommended, see note), a DeepSeek API key, and the Feishu app on your phone.
 
 ```sh
-# 1. install the plugin into a dsh profile & boot
-npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
-  && npx @deepseek-ai/dsh web
+# 1. install the plugin into a dsh profile & boot (pnpm — ~20s, parallel install)
+pnpm dlx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
+  && pnpm dlx @deepseek-ai/dsh web
 
 # 2. a QR code prints → scan it with Feishu
 #    (this creates the app + event subscription automatically)
@@ -58,11 +59,20 @@ npx @deepseek-ai/dsh plugin --profile web add github:moyu-good/dsh-lark-bridge \
 ```
 
 > [!WARNING]
+> **Use pnpm, not bare npx/npm, to run the upstream dsh CLI.** Measured on the
+> same machine: `pnpm dlx` installs dsh's dependency tree (197 packages,
+> ~250 MB) in **~20 s** including downloads, while `npx`/`npm install` takes
+> **~25 minutes** (npm's serial reify) even with a warm cache — and on
+> machines with ≤4 GB RAM the npm process itself dies with
+> "JavaScript heap out of memory" mid-install. If you must use npm, pre-set
+> `NODE_OPTIONS=--max-old-space-size=2048`.
+>
 > **Do NOT** `npm i -g dsh-lark-bridge` — that name on npm belongs to an
 > unrelated project. Our package is installable from this GitHub repo today;
 > a scoped npm release (`@moyu-good/…`) is planned.
 
-Daily ops: run `npx @deepseek-ai/dsh web` again, or host it under systemd/supervisor.
+Daily ops: run `pnpm dlx @deepseek-ai/dsh web` again (subsequent runs hit the
+pnpm store, so they're fast), or host it under systemd/supervisor.
 The package ships **prebuilt** (`lib/` committed) — nothing compiles on install.
 
 ## ✨ Features
@@ -239,19 +249,6 @@ Two tracks, written down so nobody guesses:
 
 Promoting preview → stable requires the full quality gate to pass:
 `pnpm test` → `node plugin-contract-test.mjs` → `node scripts/verify-dsh-contract.mjs` → `pnpm typecheck && pnpm run build` → live smoke.
-
-## 🧱 Development & MR Flow
-
-`main` is the stable baseline and only receives **reviewed merge requests**. All development happens on feature branches (`feat/<name>`), never directly on `main`.
-
-Per-MR checklist:
-1. Branch from `main`; keep the change small and single-purpose.
-2. Full quality gate green (tests, contract, drift, build).
-3. Repo hygiene scan — `scripts/check_repo_leak.py <repo> --lib` — must exit 0.
-4. Reviewer approves → merge to `main` → deploy from `main`.
-5. Production incidents revert on the spot (history stays in git); the reverted branch is rebased and re-MR'd with a fix.
-
-This is enforced because past direct-to-`main` experiments had to be rolled back as a multi-commit revert in one batch — feature branches keep `main` shippable at all times.
 
 ## ❓ FAQ
 
