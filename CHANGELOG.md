@@ -4,9 +4,16 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] — 2026-09-03
 
 ### Added
+- **Device migration** (`/bot export` / `/bot import`): one JSON file carries
+  shared settings and per-profile plugin lists to a new machine. Credentials
+  are masked by default (`include-secrets` to embed); masked values are never
+  written back on import — the reply lists what to re-enter. Live state
+  (peer heartbeats, control tokens, node_modules, sessions) never travels by
+  construction; imports from another host always remind you to retire the old
+  bridge first (one Feishu app on two live machines = doubled replies).
 - **Dual-end sync (web ⇄ desktop)**: bot settings live in a single source under
   `~/.dsh/dsh-lark-bridge/settings.json` (atomic write + lock + backups), a
   localhost-only control API (one-time boot token) serves each end's profile
