@@ -78,6 +78,10 @@ export interface DeviceState {
     retiredAt?: string;
     activatedAt?: string;
     note?: string;
+    /** Stable per-machine identity, minted on first use. */
+    deviceId?: string;
+    /** Human-readable name (defaults to hostname, settable via `/bot name`). */
+    deviceName?: string;
 }
 /** Absolute path of this machine's device-state file. */
 export declare function deviceStateFile(home?: string): string;
@@ -85,4 +89,16 @@ export declare function deviceStateFile(home?: string): string;
 export declare function readDeviceState(home?: string): Promise<DeviceState>;
 /** Persist this machine's device state. */
 export declare function writeDeviceState(state: DeviceState, home?: string): Promise<void>;
+/**
+ * This machine's stable identity, minted into device-state.json on first
+ * use. Hostname and pid are NOT identity (both drift); a device keeps its id
+ * across restarts and form switches, and a NEW machine mints its own — the
+ * file never travels with a migration (only per-machine state lives there).
+ */
+export declare function ensureDeviceId(home?: string): Promise<{
+    deviceId: string;
+    deviceName: string;
+}>;
+/** Patch device state in place, preserving unknown/identity fields. */
+export declare function patchDeviceState(patch: DeviceState, home?: string): Promise<DeviceState>;
 //# sourceMappingURL=migrate.d.ts.map

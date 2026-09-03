@@ -269,6 +269,9 @@ export function apply(ctx: Context, config: Config): void {
         controlPort: server.port,
         controlToken: token,
         harnessHome,
+        credentials: resolved.appId !== undefined && resolved.appSecret !== undefined
+          ? { appId: resolved.appId, appSecret: resolved.appSecret, ...(resolved.domain !== undefined ? { domain: resolved.domain } : {}) }
+          : undefined,
       })
       ctx.logger.info('dual-end sync layer up: profile=%s form=%s control=127.0.0.1:%s', profile, form, server.port)
       ctx.effect(() => () => {

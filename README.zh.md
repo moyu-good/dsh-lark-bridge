@@ -81,27 +81,29 @@ store，速度很快），或用 systemd/supervisor 托管。
 桥自带迁移路径——旧机上：
 
 ```text
-/bot export                  # 凭证掩码（文件可随意存放）
-/bot export include-secrets  # 凭证明文——只走可信渠道
+/bot export include-secrets --to-feishu   # 直传应用自己的飞书云空间
+/bot export include-secrets               # 或本地文件，凭证掩码
 ```
 
-把打印出的文件（在 sync 目录，如 `~/.dsh/dsh-lark-bridge/migrate.json`）拷到
-新机同路径，按上面的 Quick Start 装好插件，然后：
+飞书路线零拷贝：文件落在应用自己的云空间（仅本应用可见），新机直接
+`/bot import --from-feishu` 拉取。本地文件路线则把打印出的文件（sync 目录，
+如 `~/.dsh/dsh-lark-bridge/migrate.json`）拷到新机同路径，按 Quick Start 装
+好插件后：
 
 ```text
-/bot import          # 预览：将写入的设置 + 装包计划 + 提醒
-/bot import apply    # 执行
+/bot import                       # 预览：将写入的设置 + 装包计划 + 提醒
+/bot import apply                 # 执行（云端槽位加 --from-feishu）
 ```
 
 带得走的：共享设置与各 profile 插件清单（经上游 CLI 重装，跨平台直接可用）。
 永不带走的：peer 心跳、control token、`node_modules`、会话历史——会话在
-`~/.dsh`（上游管理），整目录拷贝即可带走。文件若来自别的机器，导入回复会
-提醒先停旧机桥——同一飞书 appId 两机同连会双回复。
+`~/.dsh`（上游管理），整目录拷贝即可带走。
 
-**设备生命周期**：不用手动停旧服务——旧机发 `/bot retire` 即退位（后续消息
-只回一行提示、不再驱动 agent；该标记是本机私有状态，永不同步），`/bot
-activate` 重新启用。`/bot devices` 查看台账：本机状态、心跳在线端、迁移
-文件来源机。
+**设备生命周期**：每台机器首启生成稳定 `deviceId`（`/bot devices` 查看台账：
+本机、心跳在线端、云端活跃端、迁移档案）。旧机不用手动停——`/bot retire`
+即退位（后续消息只回一行提示、不再驱动 agent；该标记是本机私有状态，永不
+同步），`/bot activate` 重新启用——云端通道可用时同时认领活跃槽位，其它
+设备在下一条消息自动退避。
 
 ## ✨ 能力
 

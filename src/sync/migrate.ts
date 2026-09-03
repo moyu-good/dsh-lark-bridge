@@ -190,6 +190,10 @@ export interface DeviceState {
   retiredAt?: string
   activatedAt?: string
   note?: string
+  /** Stable per-machine identity, minted on first use. */
+  deviceId?: string
+  /** Human-readable name (defaults to hostname, settable via `/bot name`). */
+  deviceName?: string
 }
 
 const DEVICE_STATE_NAME = 'device-state.json'
@@ -215,4 +219,28 @@ export async function writeDeviceState(state: DeviceState, home?: string): Promi
   const file = deviceStateFile(home)
   await fsp.mkdir(path.dirname(file), { recursive: true })
   await fsp.writeFile(file, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+}
+
+/**
+ * This machine's stable identity, minted into device-state.json on first
+ * use. Hostname and pid are NOT identity (both drift); a device keeps its id
+ * across restarts and form switches, and a NEW machine mints its own — the
+ * file never travels with a migration (only per-machine state lives there).
+ */
+export async function ensureDeviceId(home?: string): Promise<{ deviceId: string; deviceName: string }> {
+  const state = await readDeviceState(home)
+  if (state.deviceId !== undefined) {
+    return { deviceId: state.deviceId, deviceName: state.deviceName ?? os.hostname() }
+  }
+  const deviceId = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const deviceName = os.hostname()
+  await writeDeviceState({ ...state, deviceId, deviceName }, home)
+  return { deviceId, deviceName }
+}
+
+/** Patch device state in place, preserving unknown/identity fields. */
+export async function patchDeviceState(patch: DeviceState, home?: string): Promise<DeviceState> {
+  const next = { ...(await readDeviceState(home)), ...patch }
+  await writeDeviceState(next, home)
+  return next
 }

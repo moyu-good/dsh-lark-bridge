@@ -90,33 +90,34 @@ The package ships **prebuilt** (`lib/` committed) — nothing compiles on instal
 The bridge carries its own migration path — on the old machine:
 
 ```text
-/bot export                  # settings masked (safe to store anywhere)
-/bot export include-secrets  # credentials verbatim — trusted channels only
+/bot export include-secrets --to-feishu   # uploads to the app's own Feishu drive
+/bot export include-secrets               # or a local file, credentials masked
 ```
 
-Copy the printed file (in the sync directory, e.g.
-`~/.dsh/dsh-lark-bridge/migrate.json`) to the new machine's same path, install
-the plugin there (Quick Start above), then:
+The Feishu route needs no copying at all: the file lands in the app's own
+cloud space (visible only to this app), and the new machine pulls it with
+`/bot import --from-feishu`. For the local-file route, copy the printed file
+(the sync directory, e.g. `~/.dsh/dsh-lark-bridge/migrate.json`) to the same
+path on the new machine, install the plugin there (Quick Start above), then:
 
 ```text
-/bot import          # preview: settings to write + plugin plan + warnings
-/bot import apply    # execute
+/bot import                       # preview: settings + plugin plan + warnings
+/bot import apply                 # execute (add --from-feishu for the cloud slot)
 ```
 
 What travels: shared settings and per-profile plugin lists (installed through
 the upstream CLI, so cross-platform moves just work). What never travels:
 peer heartbeats, control tokens, `node_modules`, session history — sessions
-live under `~/.dsh` (upstream-owned); copy that directory to carry them. If
-the file came from another host, the import reply reminds you to stop the old
-machine's bridge first — one Feishu app on two live machines means doubled
-replies.
+live under `~/.dsh` (upstream-owned); copy that directory to carry them.
 
-**Device lifecycle**: instead of stopping the old service by hand, retire it —
-`/bot retire` on the old machine puts it out of the reply path (messages get a
-one-line notice, not an agent turn; the flag is per-machine local state and is
-never synced), and `/bot activate` brings it back. `/bot devices` shows the
-roster: this machine, whoever the heartbeat sees, and where the migration file
-came from.
+**Device lifecycle**: every machine mints a stable `deviceId` on first boot
+(`/bot devices` shows the roster: this machine, heartbeat-live peers, the
+cloud-active endpoint, and migration provenance). Instead of stopping the old
+service by hand, retire it — `/bot retire` on the old machine puts it out of
+the reply path (messages get a one-line notice, not an agent turn; the flag
+is per-machine local state and is never synced), and `/bot activate` brings
+it back — and when the cloud carrier is available it also claims the active
+slot, so other machines stand down on their next message.
 
 ## ✨ Features
 
