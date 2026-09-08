@@ -4,6 +4,34 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-09-09
+
+### Added
+- **Desktop form auto-detection**: the Desktop 2.0.0 app hosts the harness
+  inside its Electron main process and sets no `DSH_*` environment, so the
+  form/profile were wrong (or needed manual env wiring). `detectRuntimeForm()`
+  keys on the Electron runtime marker; `DSH_FORM` keeps override priority, and
+  the profile defaults to `desktop` on the desktop form. The desktop side can
+  now join the fleet with zero environment setup.
+- **Endpoint-scoped fleet arbitration**: the cloud arbitration active slot and
+  the presence ledger are keyed by `deviceId:form:profile` instead of the bare
+  deviceId. One machine running web AND desktop holds two Feishu connections;
+  a machine-only check let both answer every message twice. Pre-0.7 documents
+  fall back to machine + recorded form, so an old arbitration file upgrades
+  in place without a silent double-reply window. Election, `/bot activate`,
+  `/bot devices`, and the inbound backoff notice are all endpoint-aware.
+- **`/bot account save|use|forget`** — named Feishu-app credential sets in the
+  shared sync directory (`accounts.json`, secrets at rest, masked in every
+  reply). Switching accounts is one command instead of two `/bot set` calls
+  with a pasted secret; the transport keys land in the shared settings so the
+  normal restart path picks them up on both forms.
+- **Native Feishu agent tools** (registered per chat agent next to
+  `send_file`, with a prompt section): `feishu_notify` (proactive message
+  into the current chat or an explicit `chat_id`, riding the replay-wrapped
+  transport), `feishu_drive_write` / `feishu_drive_read` /
+  `feishu_drive_list` (the app cloud-drive space as a durable cross-device
+  scratchpad). Drive tools refuse cleanly without credentials.
+
 ## [0.6.1] — 2026-09-04
 
 ### Fixed

@@ -21,6 +21,7 @@ import { setSyncContext } from './sync/bot-command.ts'
 import { readSettings } from './sync/settings-store.ts'
 import { startControlApi } from './sync/control-api.ts'
 import { heartbeat, selfEntry } from './sync/peers.ts'
+import { detectRuntimeForm, defaultProfileFor } from './form.ts'
 import type { Authorization } from './authorization.ts'
 import type { HostLoader, HostSettings } from './host.ts'
 
@@ -221,8 +222,8 @@ export function apply(ctx: Context, config: Config): void {
    */
   const startSyncLayer = (resolved: ResolvedConfig): void => {
     if (!active) return
-    const form = process.env.DSH_FORM === 'desktop' ? 'desktop' as const : 'web' as const
-    const profile = process.env.DSH_PROFILE ?? 'web'
+    const form = detectRuntimeForm()
+    const profile = process.env.DSH_PROFILE ?? defaultProfileFor(form)
     // Under systemd the process is launched bare (`node .../bin.js`), so
     // npm_package_version is unset there — read the bridge's own manifest
     // instead, which is true in both npm-script and bare-process launches.

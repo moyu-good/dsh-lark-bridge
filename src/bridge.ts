@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { readDeviceState, ensureDeviceId } from './sync/migrate.ts'
-import { arbitrationForInbound, claimIfActiveStale } from './sync/bot-command.ts'
+import { arbitrationForInbound, claimIfActiveStale, isActiveEndpoint } from './sync/bot-command.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   CardActionEvent,
@@ -111,6 +111,7 @@ import {
 import { onboardingMessage } from './first-contact.ts'
 import { createReplayPort } from './replay.ts'
 import { createSendFileTool, deliverFile } from './files.ts'
+import { createFeishuTools, feishuToolsPromptSection, FEISHU_NOTIFY_TOOL } from './feishu-tools.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -466,6 +467,9 @@ function composeChatAgent(
         ? `These tools are unavailable here: ${[...new Set(config.denyTools)].join(', ')}.`
         : ''),
   })
+  if (extraTools.some((tool) => (tool as { name?: string }).name === FEISHU_NOTIFY_TOOL)) {
+    prompt?.section({ name: 'dsh-lark-bridge:feishu-tools', order: 121, text: feishuToolsPromptSection() })
+  }
 }
 
 /**
@@ -526,6 +530,18 @@ export function installBridge(
       if (binding === undefined) throw new Error(`会话 ${sessionId} 不在当前聊天`)
       return deliverFile(replay, binding.chatId, cwd, args)
     },
+  })
+  // Native Feishu tools (2026-09-09): the agent can act on Feishu itself —
+  // proactive messages through the same replay-wrapped transport, and the
+  // app's cloud-drive space as a durable cross-device scratchpad. Registered
+  // per chat agent next to `send_file`; a failure here must not touch the
+  // channel, matching every other composition step.
+  const feishuTools = createFeishuTools({
+    port: replay,
+    chatOfSession: (sessionId) => bySession.get(sessionId)?.chatId,
+    credentials: config.appId !== undefined && config.appSecret !== undefined
+      ? { appId: config.appId, appSecret: config.appSecret, ...(config.domain !== undefined ? { domain: config.domain } : {}) }
+      : undefined,
   })
   // The live denied-tool set: seeded from config, then toggled at runtime via
   // /tools. Every chat agent's guard reads this same object, so a switch takes
@@ -724,7 +740,7 @@ export function installBridge(
       presentCall: createCallPresenter(ctx.get('tools') as HostTools | undefined, toolScope),
       setup: async (agentCtx: Context) => {
         if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
-        composeChatAgent(agentCtx, config, [sendFileTool], runtimeDeniedTools)
+        composeChatAgent(agentCtx, config, [sendFileTool, ...feishuTools], runtimeDeniedTools)
         // Background jobs: a registered under this agent scope sees exactly the
         // jobs its owner starts. Announce terminals so a long-running task's
         // completion is visible in the chat instead of silent until asked.
@@ -1005,23 +1021,29 @@ export function installBridge(
         }).catch(reportSendFailure)
         return
       }
-      // Cloud arbitration (when present): only the active endpoint replies.
-      // Absence of arbitration — no credentials, carrier down, never written
-      // — keeps every end replying as before. When the active machine has
-      // gone silent, election lets the smallest fresh deviceId take over.
+      // Cloud arbitration (when present): only the active ENDPOINT replies —
+      // device + form + profile, since one machine running web and desktop
+      // holds two Feishu connections and a machine-only check would let both
+      // answer every message twice. Absence of arbitration — no credentials,
+      // carrier down, never written — keeps every end replying as before.
+      // When the active endpoint has gone silent, election lets the smallest
+      // fresh endpoint key take over.
       const arbitration = await arbitrationForInbound()
       if (arbitration !== null) {
+        const syncCtx = getSyncContext()
         const myIdentity = await ensureDeviceId()
-        if (arbitration.activeDeviceId !== myIdentity.deviceId) {
-          const syncCtx = getSyncContext()
+        const myForm = syncCtx?.form ?? 'web'
+        const myProfile = syncCtx?.profile ?? 'web'
+        if (!isActiveEndpoint(arbitration, myIdentity.deviceId, myForm, myProfile)) {
           const claimed = syncCtx !== undefined && await claimIfActiveStale(syncCtx, arbitration)
           if (!claimed) {
+            const where = arbitration.form === undefined ? '' : `（${arbitration.form}${arbitration.profile === undefined ? '' : `/${arbitration.profile}`}）`
             await port.send(msg.chatId, {
-              markdown: `↪️ 活跃设备是 **${arbitration.activeName}**，本端已退避。如需在本机接管，请发 \`/bot activate\`。`,
+              markdown: `↪️ 活跃端是 **${arbitration.activeName}**${where}，本端已退避。如需在本端接管，请发 \`/bot activate\`。`,
             }).catch(reportSendFailure)
             return
           }
-          notify(`dsh-lark-bridge: elected active device ${myIdentity.deviceId} (previous active went silent)`)
+          notify(`dsh-lark-bridge: elected active endpoint ${myIdentity.deviceId} (${myForm}/${myProfile}; previous went silent)`)
         }
       }
     }

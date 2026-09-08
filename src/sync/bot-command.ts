@@ -19,6 +19,7 @@ import { buildSyncPlan, applySyncPlan } from './plugin-sync.ts'
 import { fetchPeerManifest } from './control-api.ts'
 import { buildMigration, buildImportPlan, crossHostWarning, ensureDeviceId, patchDeviceState, readDeviceState, readMigration, resolveMigrationFile, SECRET_KEYS, validateMigration } from './migrate.ts'
 import type { MigrationFile, TraveledProfile } from './migrate.ts'
+import { readAccounts, writeAccounts } from './accounts-store.ts'
 import { FeishuCloud } from './feishu-cloud.ts'
 import fsp from 'node:fs/promises'
 
@@ -43,8 +44,47 @@ export interface Arbitration {
   form: string
   profile: string
   updatedAt: string
-  /** Every machine seen recently — the presence ledger. */
+  /**
+   * Endpoint-scoped active slot (`deviceId:form:profile`), present on
+   * documents written by 0.7.0+. One machine running web AND desktop holds
+   * two Feishu connections and both would pass a machine-only check, double
+   * replying every message — the active slot answers per ENDPOINT, and this
+   * field is what makes the old machine-only field a display fact.
+   */
+  activeEndpoint?: string | undefined
+  /** Every endpoint seen recently — the presence ledger (keyed by endpoint). */
   devices?: Record<string, PresenceEntry>
+}
+
+/**
+ * The presence-ledger key for one endpoint: device + form + profile. Same
+ * machine, two forms, two keys — that distinction is the whole point.
+ */
+export function endpointKey(deviceId: string, form: string, profile: string): string {
+  return `${deviceId}:${form}:${profile}`
+}
+
+/**
+ * Which ledger key the active slot answers as. Current documents carry it
+ * verbatim; pre-0.7 documents only record the machine and its form, so the
+ * derived key reconstructs the endpoint that wrote them.
+ */
+export function arbitrationActiveKey(arbitration: Arbitration): string {
+  if (typeof arbitration.activeEndpoint === 'string') return arbitration.activeEndpoint
+  return endpointKey(arbitration.activeDeviceId, arbitration.form ?? 'web', arbitration.profile ?? 'web')
+}
+
+/**
+ * True when THIS endpoint (device + form + profile) owns the active slot.
+ * Pre-0.7 documents fall back to machine + recorded form: their writer was
+ * one endpoint, so the endpoint matching that form inherits the slot and the
+ * same machine's other form correctly stands down instead of double replying.
+ */
+export function isActiveEndpoint(arbitration: Arbitration, deviceId: string, form: string, profile: string): boolean {
+  if (typeof arbitration.activeEndpoint === 'string') {
+    return arbitration.activeEndpoint === endpointKey(deviceId, form, profile)
+  }
+  return arbitration.activeDeviceId === deviceId && (arbitration.form ?? form) === form
 }
 
 /** A machine counts as offline after this much silence (2 renewal periods + slack). */
@@ -71,6 +111,7 @@ async function publishArbitration(ctx: SyncCommandContext): Promise<string> {
   try {
     const identity = await ensureDeviceId(ctx.home)
     const previous = await readCloudArbitration(ctx)
+    const key = endpointKey(identity.deviceId, ctx.form, ctx.profile)
     const entry: PresenceEntry = {
       name: identity.deviceName,
       form: ctx.form,
@@ -83,11 +124,12 @@ async function publishArbitration(ctx: SyncCommandContext): Promise<string> {
       activeName: identity.deviceName,
       form: ctx.form,
       profile: ctx.profile,
+      activeEndpoint: key,
       updatedAt: new Date().toISOString(),
-      devices: { ...previous?.devices, [identity.deviceId]: entry },
+      devices: { ...previous?.devices, [key]: entry },
     }
     await cloud.putJson(CLOUD_ARBITRATION_NAME, JSON.stringify(arbitration, null, 2))
-    return '（云端仲裁已更新：其它设备将退避）'
+    return '（云端仲裁已更新：其它端将退避）'
   } catch (error) {
     return `（云端仲裁写入失败：${error instanceof Error ? error.message : String(error)}——仅本机生效）`
   }
@@ -165,7 +207,7 @@ export function getSyncContext(): SyncCommandContext | undefined {
 }
 
 /** The subcommands `/bot` accepts. */
-const SUBCOMMANDS = new Set(['set', 'unset', 'peers', 'sync-plugins', 'export', 'import', 'devices', 'retire', 'activate', 'name'])
+const SUBCOMMANDS = new Set(['set', 'unset', 'peers', 'sync-plugins', 'export', 'import', 'devices', 'retire', 'activate', 'name', 'account'])
 
 /**
  * Handle `/bot [subcommand …]`. Returns the reply for the chat; every secret
@@ -190,6 +232,7 @@ export async function runBotCommand(
   if (subcommand === 'retire') return retireReply(ctx)
   if (subcommand === 'activate') return activateReply(ctx)
   if (subcommand === 'name') return nameReply(ctx, rest)
+  if (subcommand === 'account') return accountReply(ctx, rest)
   return {
     reply: `⚠️ 未知子命令 \`${subcommand}\`。可用：${[...SUBCOMMANDS].map((s) => `\`${s}\``).join(' / ')}（无参数 = 状态面板）`,
     resolved: false,
@@ -224,7 +267,7 @@ async function statusReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
       `- 共享设置（${syncDirHint()}）：`,
       settingRows,
       '',
-      '子命令：`/bot set <key> <value>` / `/bot unset <key>` / `/bot peers` / `/bot sync-plugins [apply]` / `/bot export [include-secrets]` / `/bot import [file] [apply]`',
+      '子命令：`/bot set <key> <value>` / `/bot unset <key>` / `/bot peers` / `/bot sync-plugins [apply]` / `/bot account [save|use|forget <名字>]` / `/bot export [include-secrets]` / `/bot import [file] [apply]`',
     ].join('\n'),
     resolved: true,
   }
@@ -504,6 +547,7 @@ export async function renewPresence(ctx: SyncCommandContext): Promise<void> {
   try {
     const identity = await ensureDeviceId(ctx.home)
     const previous = await readCloudArbitration(ctx)
+    const key = endpointKey(identity.deviceId, ctx.form, ctx.profile)
     const entry: PresenceEntry = {
       name: identity.deviceName,
       form: ctx.form,
@@ -512,17 +556,18 @@ export async function renewPresence(ctx: SyncCommandContext): Promise<void> {
       lastSeen: Date.now(),
     }
     const base: Arbitration = previous ?? {
-      // No file yet: this machine is implicitly active (first mover).
+      // No file yet: this endpoint is implicitly active (first mover).
       activeDeviceId: identity.deviceId,
       activeName: identity.deviceName,
       form: ctx.form,
       profile: ctx.profile,
+      activeEndpoint: key,
       updatedAt: new Date().toISOString(),
       devices: {},
     }
     await cloud.putJson(CLOUD_ARBITRATION_NAME, JSON.stringify({
       ...base,
-      devices: { ...base.devices, [identity.deviceId]: entry },
+      devices: { ...base.devices, [key]: entry },
     }, null, 2))
   } catch {
     // Presence is advisory; the local fleet keeps working without it.
@@ -530,30 +575,37 @@ export async function renewPresence(ctx: SyncCommandContext): Promise<void> {
 }
 
 /**
- * Election: when the arbitration's active machine has gone silent past the
- * presence timeout, the online machine with the lexicographically smallest
- * deviceId claims the slot — deterministic, so concurrent electors converge
- * on one winner even without an atomic test-and-set on the drive. `known`
- * is the caller's (possibly cached) arbitration; a fresh read happens only
- * when an election looks possible, keeping the quiet path API-free.
+ * Election: when the arbitration's active ENDPOINT has gone silent past the
+ * presence timeout, the online endpoint with the lexicographically smallest
+ * endpoint key claims the slot — deterministic, so concurrent electors
+ * converge on one winner even without an atomic test-and-set on the drive.
+ * Keys are endpoint-scoped (device+form+profile): on one machine the web and
+ * desktop forms are separate contenders, so a silent web form hands the slot
+ * to desktop (or another machine) instead of deadlocking on a shared id.
+ * `known` is the caller's (possibly cached) arbitration; a fresh read happens
+ * only when an election looks possible, keeping the quiet path API-free.
  */
 export async function claimIfActiveStale(ctx: SyncCommandContext, known: Arbitration | null): Promise<boolean> {
   if (known === null) return false
   const identity = await ensureDeviceId(ctx.home)
-  if (known.activeDeviceId === identity.deviceId) return false
-  const activeSeen = known.devices?.[known.activeDeviceId]?.lastSeen ?? Date.parse(known.updatedAt)
+  const mine = endpointKey(identity.deviceId, ctx.form, ctx.profile)
+  if (arbitrationActiveKey(known) === mine) return false
+  const knownKey = arbitrationActiveKey(known)
+  const activeSeen = known.devices?.[knownKey]?.lastSeen ?? Date.parse(known.updatedAt)
   if (Number.isNaN(activeSeen) || Date.now() - activeSeen < PRESENCE_TIMEOUT_MS) return false
   const cloud = cloudOf(ctx)
   if (cloud === null) return false
   // Re-read to decide on the latest ledger; a lost race lands the same verdict.
   const latest = await readCloudArbitration(ctx)
   if (latest === null) return false
-  const latestSeen = latest.devices?.[latest.activeDeviceId]?.lastSeen ?? Date.parse(latest.updatedAt)
+  const latestKey = arbitrationActiveKey(latest)
+  if (latestKey === mine) return false
+  const latestSeen = latest.devices?.[latestKey]?.lastSeen ?? Date.parse(latest.updatedAt)
   if (!Number.isNaN(latestSeen) && Date.now() - latestSeen < PRESENCE_TIMEOUT_MS) return false
   const rivals = Object.entries(latest.devices ?? {})
-    .filter(([id, entry]) => id !== latest.activeDeviceId && Date.now() - entry.lastSeen < PRESENCE_TIMEOUT_MS)
-    .map(([id]) => id)
-  if (rivals.some((id) => id < identity.deviceId)) return false
+    .filter(([key, entry]) => key !== latestKey && Date.now() - entry.lastSeen < PRESENCE_TIMEOUT_MS)
+    .map(([key]) => key)
+  if (rivals.some((key) => key < mine)) return false
   await publishArbitration(ctx)
   return true
 }
@@ -570,6 +622,77 @@ async function nameReply(ctx: SyncCommandContext, rest: string[]): Promise<Comma
 }
 
 /**
+ * `/bot account` — named Feishu-app credential sets for one-command account
+ * switching. A "switch" rewrites the transport keys in the shared settings
+ * (exactly what two `/bot set` calls would do, but atomically and without
+ * pasting a secret into chat twice), so the normal restart/reconnect path
+ * picks the new identity up. Secrets never echo unmasked.
+ */
+async function accountReply(ctx: SyncCommandContext, rest: string[]): Promise<CommandOutcome> {
+  const [action, name, ...noteParts] = rest
+  const book = await readAccounts(ctx.home)
+  if (action === undefined) {
+    const names = Object.keys(book.accounts)
+    if (names.length === 0) {
+      return { reply: '**账号库**为空。存当前凭证：`/bot account save <名字> [备注]`；切换：`/bot account use <名字>`。', resolved: true }
+    }
+    const rows = names.map((key) => {
+      const account = book.accounts[key]!
+      const activeTag = book.active === key ? ' · 🎖 当前' : ''
+      return `- **${key}**：\`${maskSecret(account.appId)}\`（存于 ${account.savedAt}${account.note === undefined ? '' : `，${account.note}`}）${activeTag}`
+    })
+    return { reply: `**账号库**（${syncDirHint()} 旁 accounts.json）\n${rows.join('\n')}\n\n切换：\`/bot account use <名字>\`；删除：\`/bot account forget <名字>\`。`, resolved: true }
+  }
+  if (action === 'save') {
+    if (name === undefined || name === '') {
+      return { reply: '⚠️ 格式：`/bot account save <名字> [备注]`', resolved: false }
+    }
+    if (ctx.credentials === undefined) {
+      return { reply: '⚠️ 本端当前没有可保存的凭证（尚未 onboard）。', resolved: false }
+    }
+    const { appId, appSecret, domain } = ctx.credentials
+    book.accounts[name] = { appId, appSecret, ...(domain !== undefined ? { domain } : {}), savedAt: new Date().toISOString().slice(0, 10), ...(noteParts.length > 0 ? { note: noteParts.join(' ') } : {}) }
+    await writeAccounts(book, ctx.home)
+    return { reply: `✅ 当前凭证已存为 **${name}**（\`${maskSecret(appId)}\`）。查看：\`/bot account\`。`, resolved: true }
+  }
+  if (action === 'use') {
+    if (name === undefined || name === '') {
+      return { reply: '⚠️ 格式：`/bot account use <名字>`', resolved: false }
+    }
+    const account = book.accounts[name]
+    if (account === undefined) {
+      return { reply: `⚠️ 账号库里没有 **${name}**。已有：${Object.keys(book.accounts).map((key) => `\`${key}\``).join(' / ') || '（空）'}`, resolved: false }
+    }
+    await updateSettings(ctx.home, (current) => ({
+      ...current,
+      appId: account.appId,
+      appSecret: account.appSecret,
+      ...(account.domain !== undefined ? { domain: account.domain } : {}),
+    }))
+    book.active = name
+    await writeAccounts(book, ctx.home)
+    return {
+      reply: [
+        `✅ 已切换到账号 **${name}**（\`${maskSecret(account.appId)}\`）——凭证写入共享设置。`,
+        '⚠️ 传输层身份已变更：本端发 `/restart` 生效（desktop 端重启 DSH Desktop 生效）；其它端下次启动自动采用。',
+        '提醒：同一飞书 app 双端同连会双投递，切换后确认旧端已停或退避。',
+      ].join('\n'),
+      resolved: true,
+    }
+  }
+  if (action === 'forget') {
+    if (name === undefined || name === '' || book.accounts[name] === undefined) {
+      return { reply: '⚠️ 格式：`/bot account forget <名字>`（须是已存账号）', resolved: false }
+    }
+    delete book.accounts[name]
+    if (book.active === name) delete book.active
+    await writeAccounts(book, ctx.home)
+    return { reply: `✅ 账号 **${name}** 已从账号库删除。`, resolved: true }
+  }
+  return { reply: '⚠️ 未知动作。可用：`/bot account`（列表）/ `save <名字>` / `use <名字>` / `forget <名字>`', resolved: false }
+}
+
+/**
  * `/bot devices` — the device roster: this machine (with its lifecycle state),
  * whoever the heartbeat currently sees, and any machine a migration file came
  * from. The roster is informational; the Feishu app itself stays single-active.
@@ -578,7 +701,7 @@ async function devicesReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
   const identity = await ensureDeviceId(ctx.home)
   const state = await readDeviceState(ctx.home)
   const peers = await listPeers(ctx.home)
-  const lines = [`**设备台账**（飞书 app 单活跃——同一时刻只有一台回复消息）：`]
+  const lines = [`**设备台账**（飞书 app 单活跃——同一时刻只有一端回复消息）：`]
   lines.push(`- **本机** \`${identity.deviceName}\`（\`${identity.deviceId}\`）：profile \`${ctx.profile}\`（${ctx.form}）v${ctx.bridgeVersion}${state.retired ? ' —— **已退位**，发 \`/bot activate\` 重新启用' : ' —— ✅ 活跃'}`)
   if (peers.length === 0) {
     lines.push('- 在线对端：无')
@@ -589,13 +712,17 @@ async function devicesReply(ctx: SyncCommandContext): Promise<CommandOutcome> {
   }
   const arbitration = await readCloudArbitration(ctx)
   if (arbitration !== null) {
-    const mine = arbitration.activeDeviceId === identity.deviceId
-    lines.push(`- 云端仲裁活跃：**${arbitration.activeName}**（\`${arbitration.activeDeviceId}\`）${mine ? ' = 本机' : ''} · 更新于 ${arbitration.updatedAt}`)
-    for (const [id, entry] of Object.entries(arbitration.devices ?? {})) {
+    const mine = isActiveEndpoint(arbitration, identity.deviceId, ctx.form, ctx.profile)
+    const activeForm = arbitration.form ?? '?'
+    const activeProfile = arbitration.profile ?? '?'
+    lines.push(`- 云端仲裁活跃：**${arbitration.activeName}**（${activeForm}/${activeProfile}）${mine ? ' = 本端' : ''} · 更新于 ${arbitration.updatedAt}`)
+    const activeKey = arbitrationActiveKey(arbitration)
+    for (const [key, entry] of Object.entries(arbitration.devices ?? {})) {
       const age = Date.now() - entry.lastSeen
       const online = age < PRESENCE_TIMEOUT_MS
-      const activeTag = id === arbitration.activeDeviceId ? ' · 🎖 活跃' : ''
-      lines.push(`  - \`${entry.name}\`（${id}）${entry.form} v${entry.version} —— ${online ? `在线（${Math.round(age / 1000)}s 前）` : `离线（${Math.round(age / 60000)}min 前）`}${activeTag}`)
+      const activeTag = key === activeKey ? ' · 🎖 活跃' : ''
+      const where = `${entry.form}/${entry.profile ?? '?'}`
+      lines.push(`  - \`${entry.name}\`（${where}）v${entry.version} —— ${online ? `在线（${Math.round(age / 1000)}s 前）` : `离线（${Math.round(age / 60000)}min 前）`}${activeTag}`)
     }
   }
   try {
