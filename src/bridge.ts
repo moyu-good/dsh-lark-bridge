@@ -56,6 +56,7 @@ import { briefingPrefix } from './briefing.ts'
 import * as subCard from './subagent-card.ts'
 import {
   AUDIT_COMMAND,
+  BALANCE_COMMAND,
   CONFIG_COMMAND,
   CONTEXT_COMMAND,
   FEEDBACK_COMMAND,
@@ -979,6 +980,7 @@ export function installBridge(
     { name: SCHEDULES_COMMAND, description: describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders') },
     { name: JOBS_COMMAND, description: describeCommand(JOBS_COMMAND, locale, 'View background jobs') },
     { name: AUDIT_COMMAND, description: describeCommand(AUDIT_COMMAND, locale, 'View operation audit') },
+    { name: BALANCE_COMMAND, description: describeCommand(BALANCE_COMMAND, locale, 'DeepSeek API balance') },
     { name: FEEDBACK_COMMAND, description: describeCommand(FEEDBACK_COMMAND, locale, 'Record feedback about this session') },
     { name: CONTEXT_COMMAND, description: describeCommand(CONTEXT_COMMAND, locale, 'View context pressure') },
     { name: SKILLS_COMMAND, description: describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills') },

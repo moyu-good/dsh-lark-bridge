@@ -4,6 +4,17 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] — 2026-09-09
+
+### Added
+- **`/balance`** — query the DeepSeek open-platform balance the deployment
+  bills through (`DEEPSEEK_API_KEY` in the process env; the web deploy
+  exports it in `run-dsh-web.sh`). Verified against the live endpoint
+  (2026-09-09): per-currency totals with the granted/topped-up breakdown
+  shown only when non-zero, service availability, the query moment in
+  Beijing time, and the live peak/off-peak phase. Panel + `/help` entry
+  included.
+
 ## [0.7.3] — 2026-09-09
 
 ### Added

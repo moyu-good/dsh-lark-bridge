@@ -38,6 +38,8 @@ export declare const PRESET_COMMAND = "preset";
 export declare const SESSIONS_COMMAND = "sessions";
 /** Bridge dual-end status, settings, and plugin sync. */
 export declare const BOT_COMMAND = "bot";
+/** Query the DeepSeek platform balance the deployment bills through. */
+export declare const BALANCE_COMMAND = "balance";
 /** View or toggle the chat's denied tools at runtime. */
 export declare const TOOLS_COMMAND = "tools";
 /** List the chat's active schedules (reminders). */

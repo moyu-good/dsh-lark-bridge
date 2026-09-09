@@ -15,6 +15,7 @@ import type { ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 import type { SyncCommandContext } from './sync/bot-command.ts'
 import { runBotCommand } from './sync/bot-command.ts'
+import { fetchDeepseekBalance, formatBalanceReply } from './balance.ts'
 
 /** Cancel the running turn. Not a host command: cancellation is an agent method. */
 export const STOP_COMMAND = 'stop'
@@ -58,6 +59,9 @@ export const SESSIONS_COMMAND = 'sessions'
 
 /** Bridge dual-end status, settings, and plugin sync. */
 export const BOT_COMMAND = 'bot'
+
+/** Query the DeepSeek platform balance the deployment bills through. */
+export const BALANCE_COMMAND = 'balance'
 
 /** View or toggle the chat's denied tools at runtime. */
 export const TOOLS_COMMAND = 'tools'
@@ -177,6 +181,7 @@ export function helpText(commands: HostCommands | undefined, agent: HostAgent, l
     `\`/${SKILLS_COMMAND}\` — ${describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills')}`,
     `\`/${MODEL_COMMAND}\` — ${describeCommand(MODEL_COMMAND, locale, 'View or switch the default model')}`,
     `\`/${BOT_COMMAND}\` — ${describeCommand(BOT_COMMAND, locale, 'Bridge dual-end status, settings, plugin sync')}`,
+    `\`/${BALANCE_COMMAND}\` — ${describeCommand(BALANCE_COMMAND, locale, 'DeepSeek API balance')}`,
     `\`/${WS_COMMAND}\` — ${describeCommand(WS_COMMAND, locale, 'List registered workspaces')}`,
     `\`/${PLUGINS_COMMAND}\` — ${describeCommand(PLUGINS_COMMAND, locale, 'List deployed plugins and status')}`,
     `\`/${AUDIT_COMMAND}\` — ${describeCommand(AUDIT_COMMAND, locale, 'View operation audit')}`,
@@ -284,6 +289,23 @@ export async function runCommandLine(
       return { reply: '⚠️ 本部署未启用双端同步（缺少 sync 上下文）。', resolved: false }
     }
     return runBotCommand(trimmed, sync)
+  }
+  if (name === BALANCE_COMMAND) {
+    // The key that matters is the one the harness bills through, which the
+    // deployment exports into this process (run-dsh-web.sh on the web side).
+    const key = process.env.DEEPSEEK_API_KEY
+    if (key === undefined || key === '') {
+      return {
+        reply: '⚠️ 本端环境没有 `DEEPSEEK_API_KEY`，查不了余额。web 端由启动脚本导出；desktop 端看应用自身的 provider 配置。',
+        resolved: true,
+      }
+    }
+    try {
+      const result = await fetchDeepseekBalance(key)
+      return { reply: formatBalanceReply(result), resolved: true }
+    } catch (error) {
+      return { reply: `⚠️ 余额查询失败：${error instanceof Error ? error.message : String(error)}`, resolved: true }
+    }
   }
   if (name === MODEL_COMMAND) {
     return runModelCommand(trimmed, defaultModel, configModel, config?.modelCatalog)
