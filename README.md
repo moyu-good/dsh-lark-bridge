@@ -1,28 +1,40 @@
 <p align="center">
   <a href="https://github.com/moyu-good/dsh-lark-bridge/actions/workflows/ci.yml"><img src="https://github.com/moyu-good/dsh-lark-bridge/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-293%20passing-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-397%20passing-brightgreen" alt="tests">
   <a href="https://dshbase.com/plugins/moyu-good-dsh-lark-bridge/"><img src="https://img.shields.io/badge/dshbase-verified-blue" alt="dshbase verified"></a>
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-blue" alt="license">
   <img src="https://img.shields.io/badge/transport-WebSocket%20long--connection-orange" alt="transport">
+  <img src="https://img.shields.io/badge/fleet-web%20%7C%20desktop%20%7C%20CLI-7c5cff" alt="fleet">
 </p>
 
 <h1 align="center">🕊️ dsh-lark-bridge</h1>
 
 <p align="center">
   <b>Run a full DeepSeek Harness coding agent inside Feishu / Lark</b><br/>
-  <i>Native thinking process · approval cards · live goal/todo cards · subagent fan-out ·
-  bilingual slash panel — no public webhook URL needed.</i>
+  <i>Native thinking process · approval cards · web/desktop/CLI fleet sync · one-tap
+  account switching · balance &amp; peak/off-peak awareness — no public webhook URL needed.</i>
 </p>
 
 <p align="center">
   <a href="README.zh.md">中文文档</a> ·
   <a href="#-quick-start-in-60-seconds">Quick Start</a> ·
+  <a href="#-use-it-like-a-user">User Guide</a> ·
   <a href="#-features">Features</a> ·
   <a href="#-extend-it">Extend It</a> ·
   <a href="#-faq">FAQ</a>
 </p>
 
 ---
+
+## 🖼️ Screenshots
+
+<p align="center">
+  <a href="docs/assets/shot1.png"><img src="docs/assets/shot1.png" width="360" alt="Balance, account card, ack & thinking (illustrative)"></a>
+  <a href="docs/assets/shot2.png"><img src="docs/assets/shot2.png" width="360" alt="/manual guide and the device fleet roster (illustrative)"></a>
+</p>
+<p align="center">
+  <sub>Illustrative Feishu-style renders. Left: <code>/balance</code> (live balance + peak/off-peak phase), the <code>/bot account</code> switcher card, task ack and the thinking state. Right: <code>/manual</code> — the full in-chat user guide — and the <code>/bot devices</code> fleet roster.</sub>
+</p>
 
 ## 🤔 What is this?
 
@@ -37,7 +49,10 @@ dsh agent, and everything the desktop UI shows lives in the chat:
 - 🎯 **Live goal & todo cards** — long-running tasks update a card in real time instead of
   going silent; goals auto-resume after restarts.
 - 🔌 **WebSocket long connection** — no public callback URL, no reverse proxy.
-- 🔄 **Dual-end sync** — bot settings and plugin lists stay in step between the `web` profile and the Desktop 2.0.0 app (`/bot sync-plugins`).
+- 🌐 **Three-surface fleet sync** — web (browser), desktop (DSH Desktop) and the CLI share one `~/.dsh` session library; cloud arbitration keyed per ENDPOINT (`deviceId:form:profile`) means exactly one surface replies, and if the active one goes silent the fleet elects a successor automatically.
+- 🔄 **One-tap account switching** — `/bot account` renders an interactive card of saved Feishu-app credentials; two taps to switch, synced to every surface.
+- 💰 **Balance & peak/off-peak awareness** — `/balance` queries the DeepSeek open-platform balance live (per currency, timestamped); the model prompt carries the peak/off-peak tariff table so deferrable heavy work lands in the half-price windows.
+- 📖 **`/manual` in chat** — the full eight-section user guide, one command away.
 
 Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 
@@ -65,6 +80,11 @@ pnpm dlx @deepseek-ai/dsh plugin --profile web add @moyu-good/dsh-lark-bridge \
 > Open `<your-home>/.dsh/profiles/web/pnpm-workspace.yaml` and change the
 > placeholder line to `protobufjs: true`, then re-run the same command. This
 > is a one-time step per profile.
+
+> [!TIP]
+> Not sure what the bot can do? Send it **`/manual`** — the full eight-section user
+> guide arrives right in the chat. `/help` lists every command. The only skill you
+> need is "say what you want".
 
 > [!WARNING]
 > **Use pnpm, not bare npx/npm, to run the upstream dsh CLI.** Measured on the
@@ -123,6 +143,19 @@ goessilent, the freshest machine with the smallest deviceId is elected
 automatically on the next inbound message. `/bot name <readable-name>` names
 a device for the roster.
 
+## 🗨️ Use it like a user
+
+- **Just say what you want**: "why are the tests failing in this project?" — drag files and
+  images straight into the chat.
+- **Three surfaces, one conversation**: open `http://127.0.0.1:18787` for the web UI (same
+  session library as the Feishu side); once DSH Desktop runs the plugin it joins the same
+  fleet. Exactly one surface replies; `/bot devices` shows who.
+- **Switch Feishu apps in two taps**: `/bot account` → tap **Use** on the card → `/restart`.
+- **Guidance is built in**: new chats get a short starter guide; `/manual` is the full one;
+  `/balance` is the wallet.
+
+The complete handbook lives at [`docs/用户手册.md`](docs/用户手册.md) (Chinese; `/manual` serves the same content in chat).
+
 ## ✨ Features
 
 Highlights — the ones other bridges don't have:
@@ -134,6 +167,11 @@ Highlights — the ones other bridges don't have:
 | 🎯 **Live goal / todo cards + auto-resume** | Phase changes stream into chat; `autoResumeGoals` re-arms after restarts |
 | 🔍 **Session history search** | `/sessions <keyword>` full-text search over this chat's stored history |
 | 🌐 **Bilingual slash panel** | English on international Lark, Chinese on domestic Feishu — auto |
+| 🌐 **Three-surface fleet sync** | web/desktop/CLI share one session library; per-endpoint cloud arbitration (`deviceId:form:profile`) — no double replies, automatic failover election |
+| 🔄 **Interactive account switcher** | `/bot account` stores/switches/forgets Feishu-app credentials from a card; shared settings push it to every surface |
+| 💰 **Balance & peak/off-peak awareness** | `/balance` live DeepSeek balance (per currency, timestamped); the prompt embeds the tariff table so batch work lands in half-price windows |
+| 🛠️ **Native Feishu agent tools** | `feishu_notify` proactive messages, `feishu_drive_*` cloud-drive scratchpad reachable from any device |
+| 🖥️ **Self-healing slash panel** | the panel has a single writer (the arbitration-active endpoint), bilingual, kept in step with what actually runs |
 
 <details>
 <summary><b>All capabilities</b></summary>
@@ -171,6 +209,9 @@ Highlights — the ones other bridges don't have:
 | Compaction transparency | ✅ | — | — | — |
 | Goal auto-resume after restart | ✅ | — | crash-safe | — |
 | Bilingual slash panel sync | ✅ | — | — | panel buttons |
+| Multi-surface fleet sync + endpoint arbitration | ✅ | — | — | — |
+| Interactive account switcher | ✅ | — | — | — |
+| Balance query + peak/off-peak awareness | ✅ | — | — | — |
 | Session history search + skills/model/ws panels | ✅ | — | — | — |
 
 ## 💬 Slash Commands
@@ -179,6 +220,8 @@ Highlights — the ones other bridges don't have:
 |---|---|
 | `/stop` | Cancel the running turn |
 | `/help` | Show this listing |
+| `/manual` | The full user guide (start here if you're new) |
+| `/balance` | DeepSeek API balance (with the live peak/off-peak phase) |
 | `/preset` | View / switch agent preset (standard / code / minimal / cordis) |
 | `/permission` | View / switch permission mode (host) |
 | `/goal` | View / set the goal (host) |
@@ -197,6 +240,8 @@ Highlights — the ones other bridges don't have:
 | `/feedback` | Rate the last answer |
 
 Set `locale: zh|en` to force a language; otherwise it follows the platform domain.
+
+**`/bot` subcommands** (bridge admin): `set` / `unset` / `peers` / `sync-plugins` / **`account`** (save·use·forget, interactive card) / `export` / `import` / `devices` / `retire` / `activate` / `name`. The slash panel has a single writer — the arbitration-active endpoint — so it always matches what actually runs.
 
 ## ⚙️ Configuration
 
@@ -265,9 +310,14 @@ src/
   bridge.ts        message pipeline: normalize → authorize → ack → agent turn → render
   commands.ts      slash commands (i18n bilingual)
   cot.ts outbound.ts  thinking-process & answer rendering
+  feishu-tools.ts    native Feishu agent tools (notify / cloud drive)
+  sync/              dual-end sync: settings source of truth, peers, control API,
+                     migration, account book, endpoint arbitration
+  pricing.ts         live DeepSeek peak/off-peak phase
+  user-guide.ts      single source of the /manual content
   chronicle.ts     optional external-ledger ingest hook (integration example)
   config.ts        schema + defaults
-tests/             vitest suites (293) incl. harness-based fakes
+tests/             vitest suites (397) incl. harness-based fakes
 scripts/           verify-dsh-contract.mjs — asserts no drift vs upstream master
 plugin-contract-test.mjs   43 assertions on the host contract surface
 ```
@@ -275,7 +325,7 @@ plugin-contract-test.mjs   43 assertions on the host contract surface
 **Quality gates**
 
 ```sh
-pnpm test                        # 293 unit/integration tests
+pnpm test                        # 397 unit/integration tests
 node plugin-contract-test.mjs    # 43 host-contract assertions
 node scripts/verify-dsh-contract.mjs   # drift check against upstream master
 pnpm typecheck && pnpm run build # tsc + tsdown (lib/ is committed)
@@ -323,6 +373,20 @@ raw buffers always work.
 Boot registers constant commands; the full panel sync runs on the first message of a
 session. Send the bot anything. If it stays empty, check the
 <code>application:app_slash_command</code> scope and publish an app version.
+</details>
+
+<details>
+<summary><b>Will multiple machines / surfaces double-reply?</b></summary>
+No. Cloud arbitration is keyed per <b>endpoint</b> (<code>deviceId:form:profile</code>): exactly one surface
+replies at any moment, and if the active one goes silent the freshest endpoints elect a
+successor automatically on the next message.
+</details>
+
+<details>
+<summary><b>How do I switch to a different Feishu app?</b></summary>
+<code>/bot account save &lt;name&gt;</code> archives the current credentials; later <code>/bot account</code> and tap
+<b>Use</b> on the card, then <code>/restart</code> (web) or restart Desktop. Multiple credential sets can
+live side by side.
 </details>
 
 <details>
