@@ -40,6 +40,8 @@ export declare const SESSIONS_COMMAND = "sessions";
 export declare const BOT_COMMAND = "bot";
 /** Query the DeepSeek platform balance the deployment bills through. */
 export declare const BALANCE_COMMAND = "balance";
+/** The full user guide, in chat. */
+export declare const MANUAL_COMMAND = "manual";
 /** View or toggle the chat's denied tools at runtime. */
 export declare const TOOLS_COMMAND = "tools";
 /** List the chat's active schedules (reminders). */

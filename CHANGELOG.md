@@ -4,6 +4,16 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] — 2026-09-09
+
+### Added
+- **`/manual`** — the full user guide, in chat: what the bot is, daily usage,
+  every command with categories, the account-switch flow, fleet/device
+  management, billing phases, and troubleshooting. Source of truth is
+  `src/user-guide.ts`; `docs/用户手册.md` mirrors it for repo readers (a
+  sync test keeps them in step). The first-contact guide now points new
+  users at `/manual`.
+
 ## [0.7.4] — 2026-09-09
 
 ### Added
