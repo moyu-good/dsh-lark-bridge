@@ -113,6 +113,7 @@ import { createReplayPort } from './replay.ts'
 import { createSendFileTool, deliverFile } from './files.ts'
 import { createFeishuTools, feishuToolsPromptSection, FEISHU_NOTIFY_TOOL } from './feishu-tools.ts'
 import { FeishuCloud } from './sync/feishu-cloud.ts'
+import { pricingPromptLine } from './pricing.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -478,6 +479,7 @@ function composeChatAgent(
   if (extraTools.some((tool) => (tool as { name?: string }).name === FEISHU_NOTIFY_TOOL)) {
     prompt?.section({ name: 'dsh-lark-bridge:feishu-tools', order: 121, text: feishuToolsPromptSection() })
   }
+  prompt?.section({ name: 'dsh-lark-bridge:pricing', order: 122, text: pricingPromptLine() })
 }
 
 /**

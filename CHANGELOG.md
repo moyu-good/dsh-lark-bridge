@@ -4,6 +4,18 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] — 2026-09-09
+
+### Added
+- **Peak/off-peak billing awareness** (`src/pricing.ts`): DeepSeek's official
+  API bills weekday-morning/afternoon hours (Beijing 9:00–12:00, 14:00–18:00)
+  at DOUBLE the off-peak rate — lunch breaks, evenings, and weekends are all
+  half price (verified against the official pricing page, 2026-09-09). The
+  live phase is computed in Asia/Shanghai wall clock and surfaces in two
+  places: a model prompt section (`dsh-lark-bridge:pricing`) with the rule,
+  the current phase, and the "schedule deferrable heavy work off-peak" nudge;
+  and one human-facing line in the first-contact guide.
+
 ## [0.7.1] — 2026-09-09
 
 ### Fixed

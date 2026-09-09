@@ -12,6 +12,8 @@
  * @module dsh-lark-bridge/first-contact
  */
 
+import { pricingHumanLine } from './pricing.ts'
+
 /** The sandbox/permission mode the deployment runs under. */
 export type PermissionPosture = 'workspace-write' | 'danger-full-access' | 'read-only' | string
 
@@ -87,6 +89,8 @@ export function onboardingText(posture: PermissionPosture, identity?: string): s
     `权限：${postureLine(posture)}`,
     '',
     commandGuide(posture),
+    '',
+    pricingHumanLine(),
     '',
     '开始吧——发一句话试试。',
   ].join('\n')
