@@ -8,7 +8,8 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { readDeviceState, ensureDeviceId } from './sync/migrate.ts'
-import { arbitrationForInbound, claimIfActiveStale, isActiveEndpoint } from './sync/bot-command.ts'
+import { arbitrationForInbound, claimIfActiveStale, isActiveEndpoint, accountUseByName, accountForgetByName } from './sync/bot-command.ts'
+import { accountCardValue } from './account-card.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   CardActionEvent,
@@ -1177,6 +1178,11 @@ export function installBridge(
         if (outcome.reply !== '') {
           await replay.send(binding.chatId, { markdown: outcome.reply }).catch(reportSendFailure)
         }
+        // An interactive outcome (the account switcher) rides a card; the
+        // empty reply says the card IS the whole answer.
+        if (outcome.card !== undefined) {
+          await replay.send(binding.chatId, { card: outcome.card }).catch(reportSendFailure)
+        }
         return
       }
       // Aimed before the turn starts: the reply belongs to the message that
@@ -1371,9 +1377,57 @@ export function installBridge(
     }
   }
 
+  /**
+   * The account-switcher card's buttons: fleet-single-writer (both ends
+   * receive every click; only the arbitration-active endpoint acts), then
+   * operator authorization, then the same switch/forget the text command
+   * runs. The result lands as a toast plus a chat line — the stale card
+   * stays behind, the line is the truth.
+   */
+  const handleAccountCardAction = async (
+    evt: CardActionEvent,
+    acct: { act: 'use' | 'forget'; name: string },
+  ): Promise<CardActionResponse> => {
+    const syncCtx = getSyncContext()
+    if (syncCtx === undefined) return { toast: { type: 'error', content: '同步层未就绪，稍后再试' } }
+    const arbitration = await arbitrationForInbound()
+    if (arbitration !== null) {
+      const identity = await ensureDeviceId()
+      if (!isActiveEndpoint(arbitration, identity.deviceId, syncCtx.form, syncCtx.profile)) {
+        return { toast: { type: 'info', content: '本端为待命端，已忽略（活跃端处理中）' } }
+      }
+    }
+    const refusal = refuseMessage(authorization, {
+      senderId: evt.operator.openId,
+      chatId: evt.chatId,
+      chatType: 'p2p',
+    })
+    if (refusal !== undefined) {
+      notify(`dsh-lark-bridge: rejected an account-card click: ${refusal}`)
+      return { toast: { type: 'error', content: '你无权切换账号' } }
+    }
+    const outcome = acct.act === 'use'
+      ? await accountUseByName(syncCtx, acct.name)
+      : await accountForgetByName(syncCtx, acct.name)
+    void replay.send(evt.chatId, { markdown: outcome.text }).catch(reportSendFailure)
+    return {
+      toast: {
+        type: outcome.ok ? 'success' : 'error',
+        content: outcome.ok
+          ? (acct.act === 'use' ? `已切换到 ${acct.name}，重启后生效` : `已删除 ${acct.name}`)
+          : '没有这个账号，见聊天里的提示',
+      },
+    }
+  }
+
   const handleCardAction = (evt: CardActionEvent): CardActionResponse | undefined => {
     const questionResponse = questions.handleCardAction(evt)
     if (questionResponse !== undefined) return questionResponse
+    const acct = accountCardValue(evt.action.value)
+    if (acct !== undefined) {
+      void handleAccountCardAction(evt, acct)
+      return { toast: { type: 'info', content: '正在处理…' } }
+    }
     const goalValue = goalActionValue(evt.action.value)
     if (goalValue !== undefined) {
       return handleGoalCardAction(evt, goalValue)

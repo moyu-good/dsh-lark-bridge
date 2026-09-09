@@ -142,6 +142,12 @@ export interface CommandOutcome {
   readonly reply: string
   /** Whether the line resolved at all; an unresolved one is a typo worth naming. */
   readonly resolved: boolean
+  /**
+   * An interactive Feishu card to send alongside (or instead of, when the
+   * reply is empty) the text — the account-switcher uses it so switching is
+   * two taps instead of a typed name.
+   */
+  readonly card?: object
 }
 
 /**

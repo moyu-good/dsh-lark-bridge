@@ -121,4 +121,19 @@ export declare function renewPresence(ctx: SyncCommandContext): Promise<void>;
  * only when an election looks possible, keeping the quiet path API-free.
  */
 export declare function claimIfActiveStale(ctx: SyncCommandContext, known: Arbitration | null): Promise<boolean>;
+/**
+ * Switch the shared transport keys to a saved account — the guts of
+ * `/bot account use`, exported for the account card's 使用 button.
+ * `ok:false` marks a refusal (unknown name) so the command path can flag it
+ * unresolved; the text is the human-facing line either way.
+ */
+export declare function accountUseByName(ctx: SyncCommandContext, name: string): Promise<{
+    text: string;
+    ok: boolean;
+}>;
+/** Remove one saved account and clear an active marker — the card's 忘记 button. */
+export declare function accountForgetByName(ctx: SyncCommandContext, name: string): Promise<{
+    text: string;
+    ok: boolean;
+}>;
 //# sourceMappingURL=bot-command.d.ts.map

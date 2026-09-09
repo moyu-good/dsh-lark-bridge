@@ -76,7 +76,7 @@ describe('/bot account', () => {
     expect(book.active).toBeUndefined()
   })
 
-  it('listing shows every saved account with an active tag', async () => {
+  it('listing renders the interactive card when accounts exist', async () => {
     const home = home_()
     await runBotCommand('/bot account save one', ctx(home))
     await runBotCommand('/bot account save two', ctx(home, {
@@ -84,10 +84,19 @@ describe('/bot account', () => {
     }))
     await runBotCommand('/bot account use two', ctx(home))
     const out = await runBotCommand('/bot account', ctx(home))
-    expect(out.reply).toContain('**one**')
-    expect(out.reply).toContain('**two**')
-    expect(out.reply).toContain('🎖 当前')
-    expect(out.reply).not.toContain('cli_aaaabbbbcccc')
-    expect(out.reply).not.toContain('secret-two-222')
+    expect(out.resolved).toBe(true)
+    // The roster IS the card now; the text reply stays empty so nothing duplicates it.
+    expect(out.reply).toBe('')
+    expect(out.card).toBeDefined()
+    const elements = (out.card as { elements: { tag: string; text?: { content?: string }; actions?: { value: { name: string; act: string } }[] }[] }).elements
+    const texts = elements.filter((e) => e.tag === 'div').map((e) => e.text?.content ?? '')
+    expect(texts.some((t) => t.includes('one'))).toBe(true)
+    expect(texts.some((t) => t.includes('two') && t.includes('🎖 当前'))).toBe(true)
+    const buttonNames = elements.flatMap((e) => e.actions ?? []).map((a) => a.value.name)
+    expect(buttonNames).toContain('one')
+    expect(buttonNames).toContain('two')
+    // Secrets never reach the card either.
+    expect(JSON.stringify(out.card)).not.toContain('cli_aaaabbbbcccc')
+    expect(JSON.stringify(out.card)).not.toContain('secret-two-222')
   })
 })

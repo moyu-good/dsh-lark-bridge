@@ -4,6 +4,21 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] — 2026-09-09
+
+### Added
+- **Interactive account-switcher card**: `/bot account` with a non-empty
+  roster now renders a card — every saved account with 使用 / 忘记 buttons,
+  so switching is two taps instead of typing a name. Card clicks pass the
+  fleet single-writer gate (standby endpoints ignore with a toast) and the
+  operator authorization check before running the same switch/forget the
+  text command runs; the result lands as a toast plus a chat line, and
+  secrets never reach card markup.
+
+### Changed
+- `CommandOutcome` may carry an interactive card; empty reply + card means
+  the card is the whole answer.
+
 ## [0.7.2] — 2026-09-09
 
 ### Added

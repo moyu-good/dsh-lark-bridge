@@ -20,6 +20,7 @@ import { fetchPeerManifest } from './control-api.ts'
 import { buildMigration, buildImportPlan, crossHostWarning, ensureDeviceId, patchDeviceState, readDeviceState, readMigration, resolveMigrationFile, SECRET_KEYS, validateMigration } from './migrate.ts'
 import type { MigrationFile, TraveledProfile } from './migrate.ts'
 import { readAccounts, writeAccounts } from './accounts-store.ts'
+import { buildAccountCard } from '../account-card.ts'
 import { FeishuCloud } from './feishu-cloud.ts'
 import fsp from 'node:fs/promises'
 
@@ -636,12 +637,22 @@ async function accountReply(ctx: SyncCommandContext, rest: string[]): Promise<Co
     if (names.length === 0) {
       return { reply: '**账号库**为空。存当前凭证：`/bot account save <名字> [备注]`；切换：`/bot account use <名字>`。', resolved: true }
     }
-    const rows = names.map((key) => {
-      const account = book.accounts[key]!
-      const activeTag = book.active === key ? ' · 🎖 当前' : ''
-      return `- **${key}**：\`${maskSecret(account.appId)}\`（存于 ${account.savedAt}${account.note === undefined ? '' : `，${account.note}`}）${activeTag}`
-    })
-    return { reply: `**账号库**（${syncDirHint()} 旁 accounts.json）\n${rows.join('\n')}\n\n切换：\`/bot account use <名字>\`；删除：\`/bot account forget <名字>\`。`, resolved: true }
+    // A roster exists: render it as the interactive card (two taps to
+    // switch) and keep the reply text empty so nothing duplicates it.
+    const entries = names.map((key) => ({
+      name: key,
+      maskedAppId: maskSecret(book.accounts[key]!.appId),
+      savedAt: book.accounts[key]!.savedAt,
+      active: book.active === key,
+    }))
+    return {
+      reply: '',
+      resolved: true,
+      card: buildAccountCard({
+        entries,
+        hint: '「使用」切换到该账号（写入共享设置，重启后生效）；「忘记」从账号库删除。',
+      }),
+    }
   }
   if (action === 'save') {
     if (name === undefined || name === '') {
@@ -659,37 +670,62 @@ async function accountReply(ctx: SyncCommandContext, rest: string[]): Promise<Co
     if (name === undefined || name === '') {
       return { reply: '⚠️ 格式：`/bot account use <名字>`', resolved: false }
     }
-    const account = book.accounts[name]
-    if (account === undefined) {
-      return { reply: `⚠️ 账号库里没有 **${name}**。已有：${Object.keys(book.accounts).map((key) => `\`${key}\``).join(' / ') || '（空）'}`, resolved: false }
-    }
-    await updateSettings(ctx.home, (current) => ({
-      ...current,
-      appId: account.appId,
-      appSecret: account.appSecret,
-      ...(account.domain !== undefined ? { domain: account.domain } : {}),
-    }))
-    book.active = name
-    await writeAccounts(book, ctx.home)
-    return {
-      reply: [
-        `✅ 已切换到账号 **${name}**（\`${maskSecret(account.appId)}\`）——凭证写入共享设置。`,
-        '⚠️ 传输层身份已变更：本端发 `/restart` 生效（desktop 端重启 DSH Desktop 生效）；其它端下次启动自动采用。',
-        '提醒：同一飞书 app 双端同连会双投递，切换后确认旧端已停或退避。',
-      ].join('\n'),
-      resolved: true,
-    }
+    const outcome = await accountUseByName(ctx, name)
+    return { reply: outcome.text, resolved: outcome.ok }
   }
   if (action === 'forget') {
-    if (name === undefined || name === '' || book.accounts[name] === undefined) {
-      return { reply: '⚠️ 格式：`/bot account forget <名字>`（须是已存账号）', resolved: false }
+    if (name === undefined || name === '') {
+      return { reply: '⚠️ 格式：`/bot account forget <名字>`', resolved: false }
     }
-    delete book.accounts[name]
-    if (book.active === name) delete book.active
-    await writeAccounts(book, ctx.home)
-    return { reply: `✅ 账号 **${name}** 已从账号库删除。`, resolved: true }
+    const outcome = await accountForgetByName(ctx, name)
+    return { reply: outcome.text, resolved: outcome.ok }
   }
   return { reply: '⚠️ 未知动作。可用：`/bot account`（列表）/ `save <名字>` / `use <名字>` / `forget <名字>`', resolved: false }
+}
+
+/**
+ * Switch the shared transport keys to a saved account — the guts of
+ * `/bot account use`, exported for the account card's 使用 button.
+ * `ok:false` marks a refusal (unknown name) so the command path can flag it
+ * unresolved; the text is the human-facing line either way.
+ */
+export async function accountUseByName(ctx: SyncCommandContext, name: string): Promise<{ text: string; ok: boolean }> {
+  const book = await readAccounts(ctx.home)
+  const account = book.accounts[name]
+  if (account === undefined) {
+    return {
+      text: `⚠️ 账号库里没有 **${name}**。已有：${Object.keys(book.accounts).map((key) => `\`${key}\``).join(' / ') || '（空）'}`,
+      ok: false,
+    }
+  }
+  await updateSettings(ctx.home, (current) => ({
+    ...current,
+    appId: account.appId,
+    appSecret: account.appSecret,
+    ...(account.domain !== undefined ? { domain: account.domain } : {}),
+  }))
+  book.active = name
+  await writeAccounts(book, ctx.home)
+  return {
+    text: [
+      `✅ 已切换到账号 **${name}**（\`${maskSecret(account.appId)}\`）——凭证写入共享设置。`,
+      '⚠️ 传输层身份已变更：本端发 `/restart` 生效（desktop 端重启 DSH Desktop 生效）；其它端下次启动自动采用。',
+      '提醒：同一飞书 app 双端同连会双投递，切换后确认旧端已停或退避。',
+    ].join('\n'),
+    ok: true,
+  }
+}
+
+/** Remove one saved account and clear an active marker — the card's 忘记 button. */
+export async function accountForgetByName(ctx: SyncCommandContext, name: string): Promise<{ text: string; ok: boolean }> {
+  const book = await readAccounts(ctx.home)
+  if (book.accounts[name] === undefined) {
+    return { text: `⚠️ 账号库里没有 **${name}**。`, ok: false }
+  }
+  delete book.accounts[name]
+  if (book.active === name) delete book.active
+  await writeAccounts(book, ctx.home)
+  return { text: `✅ 账号 **${name}** 已从账号库删除。`, ok: true }
 }
 
 /**
