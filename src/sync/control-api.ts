@@ -93,7 +93,7 @@ async function handle(
 export async function fetchPeerManifest(
   port: number,
   token: string,
-  timeoutMs = 5000,
+  timeoutMs = 10_000,
 ): Promise<ProfileManifest | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -115,7 +115,7 @@ export async function fetchPeerManifest(
 export async function fetchPeerHealth(
   port: number,
   token: string,
-  timeoutMs = 5000,
+  timeoutMs = 10_000,
 ): Promise<{ profile: string; form: string; bridgeVersion: string; pid: number } | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)

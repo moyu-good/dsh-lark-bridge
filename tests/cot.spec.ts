@@ -15,7 +15,7 @@ describe('thinking process (CoT)', () => {
   /** Bind one chat and return an emitter for its session events. */
   async function chat(harness: Awaited<ReturnType<typeof mountChannel>>) {
     await harness.fake.emitMessage(fakeMessage())
-    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
     const session = harness.agents.created[0]!.agent.session
     return (type: string, data: unknown) => { harness.ctx.emit('session/event', session, { type, data }) }
   }

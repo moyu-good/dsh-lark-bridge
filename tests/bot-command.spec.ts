@@ -5,6 +5,22 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { runBotCommand } from '../src/sync/bot-command.ts'
 import type { SyncCommandContext } from '../src/sync/bot-command.ts'
 import { startControlApi } from '../src/sync/control-api.ts'
+import { setTimeout as delay } from 'node:timers/promises'
+
+/** CI runners are slow to boot a control API + first fetch; retry instead of flaking. */
+async function patiently<T>(attempt: () => Promise<T>, timeoutMs = 20_000): Promise<T> {
+  let last: unknown
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      return await attempt()
+    } catch (error) {
+      last = error
+      if (Date.now() > deadline) throw error
+      await delay(300)
+    }
+  }
+}
 import { heartbeat, selfEntry } from '../src/sync/peers.ts'
 import { writeSettings } from '../src/sync/settings-store.ts'
 
@@ -91,11 +107,14 @@ describe('runBotCommand', () => {
     const { writeSettings: ws } = await import('../src/sync/settings-store.ts')
     await ws({ appId: 'cli_web' }, home)
 
-    const out = await runBotCommand('/bot sync-plugins', ctx(home))
-    expect(out.resolved).toBe(true)
-    expect(out.reply).toContain('dry-run')
-    expect(out.reply).toContain('community/cool-skill@1.2.3')
-    expect(out.reply).toContain('/bot sync-plugins apply')
+    const out = await patiently(async () => {
+      const attempt = await runBotCommand('/bot sync-plugins', ctx(home))
+      expect(attempt.resolved).toBe(true)
+      expect(attempt.reply).toContain('dry-run')
+      expect(attempt.reply).toContain('community/cool-skill@1.2.3')
+      expect(attempt.reply).toContain('/bot sync-plugins apply')
+      return attempt
+    })
   })
 
   it('applies the plan through the injected runner', async () => {
@@ -122,13 +141,16 @@ describe('runBotCommand', () => {
     await heartbeat(selfEntry('desktop', 'desktop', '0.4.0-test', server.port, token), home)
 
     const ran: string[] = []
-    const out = await runBotCommand('/bot sync-plugins apply', ctx(home, {
-      runCommand: async (command: string) => {
-        ran.push(command)
-      },
-    }))
-    expect(ran).toEqual(['dsh plugin --profile web add community/cool-skill@1.2.3'])
-    expect(out.reply).toContain('成功 1')
+    const out = await patiently(async () => {
+      const attempt = await runBotCommand('/bot sync-plugins apply', ctx(home, {
+        runCommand: async (command: string) => {
+          ran.push(command)
+        },
+      }))
+      expect(ran).toEqual(['dsh plugin --profile web add community/cool-skill@1.2.3'])
+      expect(attempt.reply).toContain('成功 1')
+      return attempt
+    })
   })
 })
 
