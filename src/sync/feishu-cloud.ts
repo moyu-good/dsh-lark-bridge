@@ -57,9 +57,26 @@ export class FeishuCloud {
     return this.token.value
   }
 
+  /**
+   * The app's own bot profile — the display name a human sees in the Feishu
+   * chat header. Fleet UX depends on it: several endpoints (and even several
+   * deployments) share or echo app names, so the model's self-description and
+   * the first-contact guide quote this name instead of guessing.
+   */
+  async botInfo(): Promise<{ name: string; active: boolean }> {
+    const token = await this.getToken()
+    const res = await this.fetchImpl(`${this.origin()}/open-apis/bot/v3/info`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const data = (await res.json()) as { code?: number; msg?: string; bot?: { app_name?: string; activate_status?: number } }
+    if (data.code !== 0 || data.bot?.app_name === undefined) {
+      throw new Error(`飞书 bot 信息获取失败(${data.code}): ${data.msg ?? 'unknown'}`)
+    }
+    return { name: data.bot.app_name, active: data.bot.activate_status === 2 }
+  }
+
   /** The app's own drive root folder — files land here unless told otherwise. */
-  async rootFolder(): Promise<string> {
-    if (this.rootToken) return this.rootToken
+  async rootFolder(): Promise<string> {    if (this.rootToken) return this.rootToken
     const token = await this.getToken()
     const res = await this.fetchImpl(`${this.origin()}/open-apis/drive/explorer/v2/root_folder/meta`, {
       headers: { Authorization: `Bearer ${token}` },

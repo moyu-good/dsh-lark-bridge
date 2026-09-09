@@ -41,7 +41,10 @@ export const COMMAND_DESCRIPTIONS: Record<string, BilingualText> = {
   plugins: { zh: '查看已部署的插件及运行状态', en: 'List deployed plugins and status' },
   audit: { zh: '查看本会话的操作审计', en: 'View this session’s operation audit' },
   config: { zh: '查看桥的当前配置', en: 'View the bridge’s current configuration' },
-  bot: { zh: '双端状态/设置/插件同步', en: 'Dual-end status, settings, and plugin sync' },
+  bot: {
+    zh: '桥管理：状态/设置/账号/同步/设备（set · unset · peers · sync-plugins · account · export · import · devices · retire · activate · name，发 /bot 看用法）',
+    en: 'Bridge admin: status/settings/accounts/sync/devices (set · unset · peers · sync-plugins · account · export · import · devices · retire · activate · name — send /bot for usage)',
+  },
   help: { zh: '显示可用命令', en: 'Show available commands' },
   // dsh host commands a chat profile composes.
   goal: { zh: '查看/设置目标', en: 'Set or view the goal' },

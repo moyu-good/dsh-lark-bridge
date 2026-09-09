@@ -70,11 +70,17 @@ export function commandGuide(posture: PermissionPosture): string {
 /**
  * Render the first-contact guide for a brand-new session.
  * @param posture - the deployment's permission posture.
+ * @param identity - optional leading clause naming the bot as Feishu names it
+ *   (e.g. `「MyBot」（本端：web · web）`), so the very first line answers
+ *   "who — and which endpoint of it — am I talking to".
  * @returns the markdown message to send into the chat.
  */
-export function onboardingText(posture: PermissionPosture): string {
+export function onboardingText(posture: PermissionPosture, identity?: string): string {
+  const head = identity === undefined
+    ? '**你好，我是跑在飞书里的编码智能体（DeepSeek Harness）。**'
+    : `**你好，我是飞书上的${identity}，一个跑在 DeepSeek Harness 里的编码智能体。**`
   return [
-    '**你好，我是跑在飞书里的编码智能体（DeepSeek Harness）。**',
+    head,
     '',
     '直接说你要做的事，我会调用工具（终端/文件/搜索等）去完成。',
     '',
@@ -87,6 +93,9 @@ export function onboardingText(posture: PermissionPosture): string {
 }
 
 /** The first-contact message, as a plain object for `port.send({ markdown })`. */
-export function onboardingMessage(env: NodeJS.ProcessEnv = process.env): { markdown: string } {
-  return { markdown: onboardingText(permissionPosture(env)) }
+export function onboardingMessage(
+  env: NodeJS.ProcessEnv = process.env,
+  identity?: string,
+): { markdown: string } {
+  return { markdown: onboardingText(permissionPosture(env), identity) }
 }

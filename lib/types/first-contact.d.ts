@@ -36,11 +36,14 @@ export declare function commandGuide(posture: PermissionPosture): string;
 /**
  * Render the first-contact guide for a brand-new session.
  * @param posture - the deployment's permission posture.
+ * @param identity - optional leading clause naming the bot as Feishu names it
+ *   (e.g. `「MyBot」（本端：web · web）`), so the very first line answers
+ *   "who — and which endpoint of it — am I talking to".
  * @returns the markdown message to send into the chat.
  */
-export declare function onboardingText(posture: PermissionPosture): string;
+export declare function onboardingText(posture: PermissionPosture, identity?: string): string;
 /** The first-contact message, as a plain object for `port.send({ markdown })`. */
-export declare function onboardingMessage(env?: NodeJS.ProcessEnv): {
+export declare function onboardingMessage(env?: NodeJS.ProcessEnv, identity?: string): {
     markdown: string;
 };
 //# sourceMappingURL=first-contact.d.ts.map

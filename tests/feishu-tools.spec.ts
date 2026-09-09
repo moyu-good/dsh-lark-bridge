@@ -79,8 +79,28 @@ describe('feishu_notify', () => {
   })
 })
 
-describe('drive tools', () => {
-  it('without credentials they refuse cleanly instead of throwing', async () => {
+describe('FeishuCloud.botInfo', () => {
+  it('returns the app display name the human sees in the chat header', async () => {
+    const json = (body: unknown): Response => ({ status: 200, json: async () => body } as unknown as Response)
+    const fetchImpl: FetchImpl = async (url) => {
+      const href = String(url)
+      if (href.includes('/tenant_access_token/')) {
+        return json({ code: 0, tenant_access_token: 't-1', expire: 7200 })
+      }
+      if (href.includes('/bot/v3/info')) {
+        return json({ code: 0, bot: { app_name: 'MyBot', activate_status: 2 } })
+      }
+      return json({ code: -1 }, )
+    }
+    const { FeishuCloud } = await import('../src/sync/feishu-cloud.ts')
+    const cloud = new FeishuCloud({ appId: 'cli_x', appSecret: 's' }, fetchImpl)
+    const info = await cloud.botInfo()
+    expect(info.name).toBe('MyBot')
+    expect(info.active).toBe(true)
+  })
+})
+
+describe('drive tools', () => {  it('without credentials they refuse cleanly instead of throwing', async () => {
     const { byName } = tools({ credentials: undefined })
     const write = byName.get(FEISHU_DRIVE_WRITE_TOOL) as { execute: (args: unknown) => Promise<{ ok: boolean; error?: string }> }
     const read = byName.get(FEISHU_DRIVE_READ_TOOL) as { execute: (args: unknown) => Promise<{ ok: boolean; error?: string }> }

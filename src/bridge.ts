@@ -112,6 +112,7 @@ import { onboardingMessage } from './first-contact.ts'
 import { createReplayPort } from './replay.ts'
 import { createSendFileTool, deliverFile } from './files.ts'
 import { createFeishuTools, feishuToolsPromptSection, FEISHU_NOTIFY_TOOL } from './feishu-tools.ts'
+import { FeishuCloud } from './sync/feishu-cloud.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -413,6 +414,7 @@ function composeChatAgent(
   config: ResolvedConfig,
   extraTools: readonly object[] = [],
   runtimeDenied: ReadonlySet<string> | undefined = undefined,
+  identityClause?: () => string | undefined,
 ): void {
   // Channel-owned tools (currently `send_file`) register on the agent's own
   // scope, so they exist exactly where the agent looks, and vanish with it.
@@ -442,13 +444,18 @@ function composeChatAgent(
   // The channel's identity is a fact the model must know before anything else:
   // the same harness serves Web and CLI surfaces, and without an explicit
   // persona a chat agent answers as "a coding agent" instead of the Feishu bot
-  // the human is actually talking to. Kept independent of denyTools so it is
-  // always injected, not only when there is a tool restriction to announce.
+  // the human is actually talking to. The bot's Feishu app name (when the
+  // lookup settled) leads the section — asked "who are you", the model quotes
+  // the name the human already sees in the chat header, plus which fleet
+  // endpoint is answering. Kept independent of denyTools so it is always
+  // injected, not only when there is a tool restriction to announce.
   const prompt = agentCtx.get('systemPrompt') as HostSystemPrompt | undefined
+  const clause = identityClause?.()
   prompt?.section({
     name: 'dsh-lark-bridge:identity',
     order: 120,
-    text: 'You are MyBot (dsh-lark-bridge), a coding agent running inside a Feishu/Lark chat '
+    text: (clause === undefined ? '' : `你是飞书上的${clause}。`)
+      + 'You are MyBot (dsh-lark-bridge), a coding agent running inside a Feishu/Lark chat '
       + 'via the DeepSeek Harness host. The person you are talking to is the user of this '
       + 'chat, not a machine. Reply in the same language they write in. '
       + 'You have the full coding-agent toolset of the host: you can read and edit files, run '
@@ -456,7 +463,8 @@ function composeChatAgent(
       + 'ask a clarifying question, write it directly in your reply — their next message is the '
       + 'answer, and the chat keeps the conversation going. Do not describe your own '
       + 'architecture or ask what kind of interface you are running on; you are simply the bot '
-      + 'in this chat.',
+      + 'in this chat. When the user asks who you are, answer with the Chinese name above '
+      + '(if present) — never invent a different name.',
   })
   prompt?.section({
     name: 'dsh-lark-bridge:interaction',
@@ -543,6 +551,27 @@ export function installBridge(
       ? { appId: config.appId, appSecret: config.appSecret, ...(config.domain !== undefined ? { domain: config.domain } : {}) }
       : undefined,
   })
+  /**
+   * Who the human is talking to, as Feishu itself names the app — quoted by
+   * the model's self-description and the first-contact guide so the identity
+   * question is answered before it is asked (fleet UX: endpoints and even
+   * separate deployments echo similar names; the form/profile suffix tells
+   * same-app ends apart). Best-effort: a failed lookup only hides the name.
+   */
+  let botName: string | undefined
+  if (config.appId !== undefined && config.appSecret !== undefined) {
+    void new FeishuCloud({
+      appId: config.appId,
+      appSecret: config.appSecret,
+      ...(config.domain !== undefined ? { domain: config.domain } : {}),
+    }).botInfo().then((info) => { botName = info.name }).catch(() => {})
+  }
+  /** One clause naming this bot and which endpoint is answering. */
+  const identityClause = (): string | undefined => {
+    const syncCtx = getSyncContext()
+    const where = syncCtx === undefined ? '' : `（本端：${syncCtx.form} · ${syncCtx.profile}）`
+    return botName === undefined ? undefined : `「${botName}」${where}`
+  }
   // The live denied-tool set: seeded from config, then toggled at runtime via
   // /tools. Every chat agent's guard reads this same object, so a switch takes
   // effect on the next tool call without a restart.
@@ -740,7 +769,7 @@ export function installBridge(
       presentCall: createCallPresenter(ctx.get('tools') as HostTools | undefined, toolScope),
       setup: async (agentCtx: Context) => {
         if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
-        composeChatAgent(agentCtx, config, [sendFileTool, ...feishuTools], runtimeDeniedTools)
+        composeChatAgent(agentCtx, config, [sendFileTool, ...feishuTools], runtimeDeniedTools, identityClause)
         // Background jobs: a registered under this agent scope sees exactly the
         // jobs its owner starts. Announce terminals so a long-running task's
         // completion is visible in the chat instead of silent until asked.
@@ -817,6 +846,7 @@ export function installBridge(
       // after a restart must refresh it too, or the human's `/` list keeps
       // whatever the previous boot published.
       publishSlashPanel(handle.agent)
+      maybeSyncPendingPanel(handle.agent)
       return handle
     },
     create: async (sessionId) => {
@@ -844,6 +874,7 @@ export function installBridge(
       // The panel is app-wide, and the command list is only knowable from an
       // agent's scope, so the first chat to exist is what can publish it.
       publishSlashPanel(handle.agent)
+      maybeSyncPendingPanel(handle.agent)
       return handle
     },
     // A rejected resume is the registry's only existence probe, and an
@@ -879,7 +910,7 @@ export function installBridge(
     // First contact this boot: send the one-time guide. Best-effort — a send
     // failure must not block the chat that already has the agent working.
     if (config.onboarding && freshlyCreated.delete(sessionId)) {
-      void replay.send(binding.chatId, onboardingMessage()).catch(reportSendFailure)
+      void replay.send(binding.chatId, onboardingMessage(process.env, identityClause())).catch(reportSendFailure)
     }
     return binding
   }
@@ -959,26 +990,61 @@ export function installBridge(
     { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
   ]
 
+  /**
+   * The panel belongs to the Feishu APP, and a fleet shares one app: when web
+   * and desktop both boot, two differently composed host command sets would
+   * rewrite the panel out from under each other, and the menu stops matching
+   * whichever endpoint actually answers the commands. The arbitration's
+   * active endpoint is therefore the single panel writer — standbys keep
+   * their list to themselves and re-sync the moment they are promoted
+   * (election, `/bot activate`), which the inbound path drives through
+   * `maybeSyncPendingPanel`.
+   */
+  let panelSyncPending = false
+  const ownPanel = async (): Promise<boolean> => {
+    const arbitration = await arbitrationForInbound()
+    if (arbitration === null) return true
+    const syncCtx = getSyncContext()
+    const identity = await ensureDeviceId()
+    return isActiveEndpoint(arbitration, identity.deviceId, syncCtx?.form ?? 'web', syncCtx?.profile ?? 'web')
+  }
   const publishSlashPanel = (agent: HostAgent): void => {
     if (!config.syncSlashCommands) return
-    const hosted = (ctx.get('commands') as HostCommands | undefined)?.list(agent) ?? []
-    // The channel's own commands must appear in the panel too, not only the
-    // host's: a command that lives in runCommandLine but never reaches the
-    // bot's `/` list is invisible to the human, who reads the panel as the
-    // contract of what the bot accepts. Host command descriptions come from
-    // dsh in English; the panel follows the bridge's resolved locale, and
-    // anything unmapped keeps its own description verbatim.
-    const locale = config.locale
-    const desired = [
-      ...hosted.map(descriptor => ({
-        name: descriptor.name,
-        description: describeCommand(descriptor.name, locale, descriptor.description),
-      })),
-      ...channelCommands(locale),
-    ]
-    void syncSlashPanel(port, desired, notify).then(({ added, removed }) => {
-      if (added.length > 0) notify(`dsh-lark-bridge: registered /${added.join(', /')} on the bot's slash panel`)
-      if (removed.length > 0) notify(`dsh-lark-bridge: removed /${removed.join(', /')} from the bot's slash panel`)
+    void (async () => {
+      if (!(await ownPanel())) {
+        panelSyncPending = true
+        notify('dsh-lark-bridge: standby endpoint skipped slash-panel sync (the active endpoint owns the panel)')
+        return
+      }
+      panelSyncPending = false
+      const hosted = (ctx.get('commands') as HostCommands | undefined)?.list(agent) ?? []
+      // The channel's own commands must appear in the panel too, not only the
+      // host's: a command that lives in runCommandLine but never reaches the
+      // bot's `/` list is invisible to the human, who reads the panel as the
+      // contract of what the bot accepts. Host command descriptions come from
+      // dsh in English; the panel follows the bridge's resolved locale, and
+      // anything unmapped keeps its own description verbatim.
+      const locale = config.locale
+      const desired = [
+        ...hosted.map(descriptor => ({
+          name: descriptor.name,
+          description: describeCommand(descriptor.name, locale, descriptor.description),
+        })),
+        ...channelCommands(locale),
+      ]
+      void syncSlashPanel(port, desired, notify).then(({ added, removed }) => {
+        if (added.length > 0) notify(`dsh-lark-bridge: registered /${added.join(', /')} on the bot's slash panel`)
+        if (removed.length > 0) notify(`dsh-lark-bridge: removed /${removed.join(', /')} from the bot's slash panel`)
+      })
+    })()
+  }
+  /** A promoted standby re-syncs the panel once, on the next inbound message. */
+  const maybeSyncPendingPanel = (agent: HostAgent): void => {
+    if (!panelSyncPending || !config.syncSlashCommands) return
+    void ownPanel().then((mine) => {
+      if (!mine) return
+      panelSyncPending = false
+      publishSlashPanel(agent)
     })
   }
 

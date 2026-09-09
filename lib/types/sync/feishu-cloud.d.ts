@@ -34,6 +34,16 @@ export declare class FeishuCloud {
     private origin;
     /** Mint (or reuse) a tenant_access_token. */
     getToken(): Promise<string>;
+    /**
+     * The app's own bot profile — the display name a human sees in the Feishu
+     * chat header. Fleet UX depends on it: several endpoints (and even several
+     * deployments) share or echo app names, so the model's self-description and
+     * the first-contact guide quote this name instead of guessing.
+     */
+    botInfo(): Promise<{
+        name: string;
+        active: boolean;
+    }>;
     /** The app's own drive root folder — files land here unless told otherwise. */
     rootFolder(): Promise<string>;
     /** Upload one text file. Returns its drive file token. */

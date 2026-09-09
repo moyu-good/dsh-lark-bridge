@@ -4,6 +4,27 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — 2026-09-09
+
+### Fixed
+- **Slash-panel single writer**: the panel belongs to the Feishu APP, and a
+  fleet shares one app — web and desktop both booting rewrote it with their
+  own (differently composed) host command sets, so the menu stopped matching
+  whichever endpoint actually executes the commands. Only the arbitration's
+  active endpoint now syncs the panel; standbys skip with a console line and
+  re-sync once promoted (election or `/bot activate`).
+- `/bot` panel/help description now enumerates its subcommands (set · unset ·
+  peers · sync-plugins · account · export · import · devices · retire ·
+  activate · name) instead of the vague two-word summary.
+
+### Added
+- **Identity in the first line of the prompt**: the bridge fetches the app's
+  real display name from Feishu (`bot/v3/info`, `FeishuCloud.botInfo()`) and
+  leads the model's identity section and the first-contact guide with it,
+  plus which fleet endpoint is answering (`「MyBot」（本端：web · web）`).
+  Asked "who are you", the model now quotes the name the human sees in the
+  chat header instead of inventing one.
+
 ## [0.7.0] — 2026-09-09
 
 ### Added
