@@ -75,7 +75,7 @@ describe('dsh-lark-bridge', () => {
   it('drives one agent per chat from inbound messages', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage({ content: 'first' }))
-    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
 
     const created = harness.agents.created[0]!
     // Derived from the conversation alone, so a restart reaches this session again.

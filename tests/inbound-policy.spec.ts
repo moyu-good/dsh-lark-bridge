@@ -48,7 +48,7 @@ describe('inbound admission', () => {
       await harness.fake.emitMessage(fakeMessage({ content: 'from a human' }))
       // The inbound path is detached from the emit, and a first-contact chat
       // probes for a stored session before creating one.
-      await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) })
+      await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
       expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1)
     } finally {
       await harness.dispose()

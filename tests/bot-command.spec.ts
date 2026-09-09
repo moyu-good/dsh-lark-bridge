@@ -73,7 +73,7 @@ describe('runBotCommand', () => {
 
   it('reports no peer when the other end is silent', async () => {
     const home = home_()
-    const out = await runBotCommand('/bot sync-plugins', ctx(home))
+    const out = await runBotCommand('/bot sync-plugins', ctx(home, { harnessHome: home }))
     expect(out.reply).toContain('无在线对端')
   })
 
@@ -108,7 +108,8 @@ describe('runBotCommand', () => {
     await ws({ appId: 'cli_web' }, home)
 
     const out = await patiently(async () => {
-      const attempt = await runBotCommand('/bot sync-plugins', ctx(home))
+      const attempt = await runBotCommand('/bot sync-plugins', ctx(home, { harnessHome: home }))
+      if (!attempt.resolved) throw new Error('resolved=false, reply: ' + attempt.reply)
       expect(attempt.resolved).toBe(true)
       expect(attempt.reply).toContain('dry-run')
       expect(attempt.reply).toContain('community/cool-skill@1.2.3')
@@ -143,6 +144,7 @@ describe('runBotCommand', () => {
     const ran: string[] = []
     const out = await patiently(async () => {
       const attempt = await runBotCommand('/bot sync-plugins apply', ctx(home, {
+        harnessHome: home,
         runCommand: async (command: string) => {
           ran.push(command)
         },
@@ -156,6 +158,20 @@ describe('runBotCommand', () => {
 
 /** One isolated fake home per test. */
 function home_(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-bot-cmd-'))
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-bot-cmd-'))
+  // Seed THIS home's web-profile manifest: sync-plugins must diff against an
+  // isolated manifest, never the developer's real ~/.dsh (CI has none, which
+  // is exactly how the hidden dependency surfaced).
+  fs.mkdirSync(path.join(home, 'profiles', 'web'), { recursive: true })
+  fs.writeFileSync(
+    path.join(home, 'profiles', 'web', 'package.json'),
+    JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { '@deepseek-ai/cordis': '^4.0.1' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    }, null, 2) + '\n',
+  )
+  return home
 }
 
