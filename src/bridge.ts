@@ -1110,10 +1110,12 @@ export function installBridge(
         if (!isActiveEndpoint(arbitration, myIdentity.deviceId, myForm, myProfile)) {
           const claimed = syncCtx !== undefined && await claimIfActiveStale(syncCtx, arbitration)
           if (!claimed) {
+            // Standby backs off SILENTLY: the active endpoint answers every
+            // message anyway, so a per-message chat notice reads as the bot
+            // talking to itself from a phone client (2026-09-10 运营方 report).
+            // The fleet roster (/bot devices) is where standby state belongs.
             const where = arbitration.form === undefined ? '' : `（${arbitration.form}${arbitration.profile === undefined ? '' : `/${arbitration.profile}`}）`
-            await port.send(msg.chatId, {
-              markdown: `↪️ 活跃端是 **${arbitration.activeName}**${where}，本端已退避。如需在本端接管，请发 \`/bot activate\`。`,
-            }).catch(reportSendFailure)
+            notify(`dsh-lark-bridge: standby backed off a message in ${msg.chatId} (active: ${arbitration.activeName}${where})`)
             return
           }
           notify(`dsh-lark-bridge: elected active endpoint ${myIdentity.deviceId} (${myForm}/${myProfile}; previous went silent)`)
