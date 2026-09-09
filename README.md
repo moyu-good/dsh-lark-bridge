@@ -199,20 +199,23 @@ Highlights — the ones other bridges don't have:
 
 ### vs. other Feishu/Lark bridges
 
+> **Verification basis**: re-checked against each project's public README on 2026-09-09
+> (links under Listings & Community). "Not found" means not seen in public docs — not proof
+> of absence. Different bets: dsh-im is a multi-platform gateway (8+ channels) where breadth
+> is the point; this bridge bets on single-platform depth plus a multi-surface fleet.
+
 | Capability | **dsh-lark-bridge** | xmanrui/dsh-im | omdsh-dev/dsh-lark | AX1202/ax-feishu-bridge |
 |---|---|---|---|---|
-| Positioning | Deep Harness channel | Multi-platform gateway | Scan-to-use | Pi + DSH dual bridge |
-| Native thinking process (Feishu CoT) | ✅ | — | — | — |
-| Approval cards + decider trail | ✅ | — | — | remote approve |
-| Live goal/todo cards | ✅ | — | — | — |
-| Workflow fan-out + phase/log lines | ✅ | — | — | — |
-| Compaction transparency | ✅ | — | — | — |
-| Goal auto-resume after restart | ✅ | — | crash-safe | — |
-| Bilingual slash panel sync | ✅ | — | — | panel buttons |
-| Multi-surface fleet sync + endpoint arbitration | ✅ | — | — | — |
-| Interactive account switcher | ✅ | — | — | — |
-| Balance query + peak/off-peak awareness | ✅ | — | — | — |
-| Session history search + skills/model/ws panels | ✅ | — | — | — |
+| Positioning | Feishu depth + multi-surface fleet | Multi-platform gateway (Feishu/DingTalk/WeCom/WhatsApp/Discord/QQ…) | Feishu depth, multi-agent groups | Feishu × Pi agent |
+| Thinking display | Feishu-native "thinking" message | Streaming card (thinking/tool progress) | Native (needs PC 7.70+/mobile 7.74+) | Streaming card output |
+| Approvals | Cards + decider written back | Text reply (approve/deny) | Cards + decider resolution | Not documented |
+| Live goal/todo cards | ✅ | Not found | Not found | Not found |
+| Compaction transparency | ✅ (progress + freed tokens) | `/compact` command | `/compact` (host passthrough) | Not found |
+| Multi-surface fleet + endpoint arbitration | ✅ shared library, automatic failover | DM text two-way sync (opt-in) | — | — |
+| Interactive account switcher | ✅ two taps, propagates everywhere | — | — | — |
+| Balance + peak/off-peak awareness | ✅ | — | — | — |
+| Slash panel | Bilingual registration + active-writer self-heal | Native panel (`/repair` grants) | Host passthrough | Not found |
+
 
 ## 💬 Slash Commands
 
