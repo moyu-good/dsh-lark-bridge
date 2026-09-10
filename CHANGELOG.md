@@ -4,6 +4,17 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-09-10
+
+### Added
+- **Cross-surface mirror (W-11)**: assistant turns initiated from the web UI
+  or desktop surface of the same harness process — outside the bridge's own
+  pipeline — are now mirrored into the bound Feishu chat at turn end, with a
+  `🌐【web】` surface marker and a 3000-char cap. Feishu-originated messages
+  were always shared through the session library; this closes the reverse
+  direction (web → Feishu), the last leg of "send from either side, both
+  sides see it" (2026-09-10 user report).
+
 ## [0.7.6] — 2026-09-10
 
 ### Fixed

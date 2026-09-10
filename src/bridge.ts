@@ -593,6 +593,14 @@ export function installBridge(
   // event stream. Process-local like the schedule registry.
   const auditStats = new Map<string, AuditStats>()
   const bySession = new Map<string, ChatBinding>()
+  // Turns the bridge itself initiated (set at followup, cleared at turn/end).
+  // Anything assistant-emitted outside this set on a bound session is a
+  // cross-surface turn (web UI / desktop surface of the same harness process)
+  // and gets mirrored into the chat — the surfaces share one session library,
+  // but only the bridge renders to Feishu (2026-09-10 运营方 sync expectation).
+  const bridgeDriving = new Set<string>()
+  /** Latest external assistant text per bound session, flushed at turn/end. */
+  const externalAnswers = new Map<string, string>()
   const pendingApprovals = new Map<string, PendingApproval>()
   /**
    * Arguments of tool calls this turn requested, by call id. An approval names
@@ -1253,6 +1261,7 @@ export function installBridge(
             ...turn.content,
           ])
       opened.handle.agent.followup({ ...turn, content })
+      bridgeDriving.add(opened.handle.agent.session.id)
     }
     } catch (error) {
       notify(`dsh-lark-bridge: agent creation failed for chat ${msg.chatId}: ${String(error)}`)
@@ -1556,6 +1565,27 @@ export function installBridge(
   ctx.on('session/event', (session, event: HostSessionEvent) => {
     const binding = bySession.get(session.id)
     if (binding === undefined) return
+    // Cross-surface mirror (2026-09-10): assistant turns initiated OUTSIDE the
+    // bridge (web UI / desktop surface of the same harness process) never pass
+    // the Feishu pipeline. While this bridge is not driving the session,
+    // capture the latest assistant text and flush it to the bound chat at
+    // turn/end with a surface marker — one bubble per external turn.
+    if (isAssistantMessageEvent(event) && !bridgeDriving.has(session.id)) {
+      const text = event.data.message.content
+        .filter(block => block.type === 'text' && block.text)
+        .map(block => block.text).join('').trim()
+      if (text !== '') externalAnswers.set(session.id, text)
+    }
+    if (isTurnEndEvent(event)) {
+      bridgeDriving.delete(session.id)
+      const external = externalAnswers.get(session.id)
+      if (external !== undefined && !bridgeDriving.has(session.id)) {
+        externalAnswers.delete(session.id)
+        void replay.send(binding.chatId, {
+          markdown: `🌐【web】${external.slice(0, 3000)}${external.length > 3000 ? '…' : ''}`,
+        }).catch(reportSendFailure)
+      }
+    }
     // Audit counters: one lightweight pass over the same stream the renderers
     // consume, so /audit needs no file access or extra host seam.
     {
