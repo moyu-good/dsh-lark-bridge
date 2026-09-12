@@ -1199,6 +1199,12 @@ export function installBridge(
         }
         return
       }
+      // Queue visibility (2026-09-12 运营方 report, P140): a follow-up sent
+      // while a turn is running is silent by design — the chat reads the wait
+      // as a hang. One short line says the message is queued, not lost.
+      if (opened.handle.agent.status === 'running') {
+        void replay.send(binding.chatId, { markdown: '⏳ 已排队：当前任务完成后自动处理这条。' }).catch(reportSendFailure)
+      }
       // Aimed before the turn starts: the reply belongs to the message that
       // asked for it, and in a topic group an unaimed reply leaves the thread.
       binding.renderer.aim({
@@ -1506,8 +1512,10 @@ export function installBridge(
 
   // A gap in the long connection is a gap in delivery: the transport has no
   // replay and no cursor, so events arriving while it is down are simply lost.
+  let disconnectedAt: number | undefined
   ctx.effect(() => replay.on('reconnecting', () => {
     replay.setConnected(false)
+    disconnectedAt ??= Date.now()
     notify('dsh-lark-bridge: connection lost, reconnecting — outbound is queued and will replay once restored')
     ctx.logger.warn('connection lost, reconnecting')
   }), 'dsh-lark-bridge:on(reconnecting)')
@@ -1516,6 +1524,22 @@ export function installBridge(
     replay.setConnected(true)
     notify('dsh-lark-bridge: connection restored')
     ctx.logger.info('connection restored')
+    // Inbound events are not replayed across a gap (the transport has no
+    // cursor), so a long one silently ate every message the chat sent. Tell
+    // the bound chats instead of leaving them reading the silence as a hang
+    // (2026-09-12 运营方 report; P140).
+    const gapStart = disconnectedAt
+    disconnectedAt = undefined
+    if (gapStart === undefined) return
+    const gapMs = Date.now() - gapStart
+    if (gapMs < 30_000) return
+    const gapLabel = gapMs < 120_000
+      ? `${Math.round(gapMs / 1000)} 秒`
+      : `${Math.round(gapMs / 60_000)} 分钟`
+    const notice = `⚠️ 连接中断了约 ${gapLabel}——期间发来的消息飞书不会补送，重要指令请重发。`
+    for (const chatId of new Set([...bySession.values()].map(binding => binding.chatId))) {
+      void replay.send(chatId, { markdown: notice }).catch(reportSendFailure)
+    }
   }), 'dsh-lark-bridge:on(reconnected)')
 
   // Boot-time panel floor: sync the channel-owned commands as soon as the
