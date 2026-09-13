@@ -1099,6 +1099,26 @@ describe('dsh-lark-bridge', () => {
       await harness.dispose()
     })
 
+    it('registers the channel\'s own tools on the agent scope', async () => {
+      // The channel owns `send_file` (and any configured feishu tools); it
+      // registers them on the agent's own scope so they exist exactly where the
+      // model looks. 0.1.5 moved the service accessor — the old `ctx.get('tools')`
+      // still type-checks but no longer returns the service, so every register
+      // threw and the tools silently did not exist. This asserts the contract
+      // rather than the accessor, so it holds whichever way the host exposes it.
+      const harness = await mountChannel({ output: 'stream' }, { tools: createFakeTools().service })
+      await streamingChat(harness)
+
+      // `agents` is the fake registry the channel creates agents through; its
+      // `created` list carries what each composition produced.
+      const created = harness.agents.created.at(-1)
+      expect(created).toBeDefined()
+      const registered = created!.registeredTools()
+      expect(registered.length).toBeGreaterThan(0)
+      expect(registered).toContain('send_file')
+      await harness.dispose()
+    })
+
     it('labels a call with the tool\'s own presentation title', async () => {
       const tools = createFakeTools({
         grep: (args) => ({ title: `Search for ${(args as { pattern: string }).pattern}` }),

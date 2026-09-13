@@ -325,14 +325,27 @@ export function createFakeAgents(extraServices: { jobs?: object } = {}) {
    */
   const compose = async (setup?: (agentCtx: Context) => Promise<void>) => {
     const guards: ((execution: { name: string }) => string | undefined)[] = []
+    /** Definitions the bridge registered on this agent's own scope. */
+    const registered: { name?: string }[] = []
     const sections: { name: string; order: number; text: string }[] = []
     if (setup !== undefined) {
       const agentCtx = new Context()
       if (extraServices.jobs !== undefined) agentCtx.provide('jobs', extraServices.jobs)
-      agentCtx.provide('tools', { guard: (g: (e: { name: string }) => string | undefined) => {
-        guards.push(g)
-        return () => { guards.splice(guards.indexOf(g), 1) }
-      } })
+      // The host's tools service carries `register` beside `guard` — the channel
+      // registers its own tools (send_file) through it. Omitting `register` here
+      // made every composition throw "register is not a function", so the harness
+      // only ever exercised the failure path and the registration itself had no
+      // coverage. Records what was registered so a test can assert on it.
+      agentCtx.provide('tools', {
+        guard: (g: (e: { name: string }) => string | undefined) => {
+          guards.push(g)
+          return () => { guards.splice(guards.indexOf(g), 1) }
+        },
+        register: (definition: { name?: string }) => {
+          registered.push(definition)
+          return () => { registered.splice(registered.indexOf(definition), 1) }
+        },
+      })
       agentCtx.provide('systemPrompt', { section: (s: { name: string; order: number; text: string }) => {
         sections.push(s)
         return () => undefined
@@ -341,6 +354,8 @@ export function createFakeAgents(extraServices: { jobs?: object } = {}) {
     }
     return {
       setupRan: setup !== undefined,
+      /** Definitions registered on the agent scope, in registration order. */
+      registeredTools: () => registered.map(d => d.name),
       /** Deny reason the composed guards give a tool, or undefined when allowed. */
       denyReason: (name: string) => guards.map(g => g({ name })).find(r => r !== undefined),
       promptSections: sections,
