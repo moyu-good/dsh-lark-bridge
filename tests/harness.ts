@@ -331,12 +331,19 @@ export function createFakeAgents(extraServices: { jobs?: object } = {}) {
     if (setup !== undefined) {
       const agentCtx = new Context()
       if (extraServices.jobs !== undefined) agentCtx.provide('jobs', extraServices.jobs)
-      // The host's tools service carries `register` beside `guard` — the channel
-      // registers its own tools (send_file) through it. Omitting `register` here
-      // made every composition throw "register is not a function", so the harness
-      // only ever exercised the failure path and the registration itself had no
-      // coverage. Records what was registered so a test can assert on it.
-      agentCtx.provide('tools', {
+      // Model the 0.1.5 shape of the tools service, not the 0.1.1 one.
+      //
+      // 0.1.5 hands the service back as a Context-merge property (`agent.ctx.tools`).
+      // `ctx.get('tools')` still type-checks and still resolves *something* — it is
+      // what the plugin used to call — but that something has no `register`, so the
+      // old call site threw "register is not a function" for every channel tool and
+      // the tools silently did not exist for the model.
+      //
+      // A harness that serves one object through both routes cannot tell those two
+      // call sites apart: reverting the accessor fix would still pass. So the routes
+      // are separated here — `get` sees the register-less view, the property sees the
+      // real service — and the test only passes if the plugin reaches the service.
+      const toolsService = {
         guard: (g: (e: { name: string }) => string | undefined) => {
           guards.push(g)
           return () => { guards.splice(guards.indexOf(g), 1) }
@@ -345,7 +352,14 @@ export function createFakeAgents(extraServices: { jobs?: object } = {}) {
           registered.push(definition)
           return () => { registered.splice(registered.indexOf(definition), 1) }
         },
+      }
+      agentCtx.provide('tools', {
+        guard: (g: (e: { name: string }) => string | undefined) => {
+          guards.push(g)
+          return () => { guards.splice(guards.indexOf(g), 1) }
+        },
       })
+      Object.defineProperty(agentCtx, 'tools', { value: toolsService, configurable: true })
       agentCtx.provide('systemPrompt', { section: (s: { name: string; order: number; text: string }) => {
         sections.push(s)
         return () => undefined
