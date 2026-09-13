@@ -60,6 +60,8 @@ Feishu is the carrier; the work is still done by DeepSeek Harness itself.
 
 **Prerequisites:** Node 18+, [pnpm](https://pnpm.io/installation) (recommended, see note), a DeepSeek API key, and the Feishu app on your phone.
 
+**Harness version:** this bridge targets **DeepSeek Harness >= 0.1.5-rc.2**. It talks to the harness through the plugin seam, and 0.1.5 moved the user-questions seam from a provider registry to the `user-questions/request` waterfall — see the CHANGELOG for the one-line compatibility note.
+
 ```sh
 # 1. install the plugin into a dsh profile & boot (pnpm — ~20s, parallel install)
 pnpm dlx @deepseek-ai/dsh plugin --profile web add @moyu-good/dsh-lark-bridge \
@@ -362,6 +364,31 @@ Two tracks, written down so nobody guesses:
 
 - **preview track** — development/experimentation. Pull the latest upstream (GitHub releases including alpha/rc, or `master`) and the newest bridge features; breakage is expected here.
 - **stable track** — production deployments. Pin the npm `latest` / release-candidate line. **Production never runs an `alpha`.**
+
+### Moving to a new harness version
+
+The bridge consumes the harness through the plugin seam, so a harness upgrade can
+move the seam under it. The check is one command:
+
+```sh
+node scripts/verify-dsh-contract.mjs   # compares the bridge's host mirrors with upstream
+```
+
+It fetches the harness source it declares a contract against and fails when an
+entry the bridge mirrors has moved or vanished — run it before and after an
+upgrade. When it fails, the fix belongs in the bridge (`src/bridge.ts`,
+`src/questions.ts`), not in a pin: the bridge follows the newest harness, and the
+host-contract mirrors in those files are the single place that records what the
+seam looked like when it was last verified.
+
+Two rules keep the upgrade honest:
+1. **Upgrade the engine by switching trees, not by layering one on top.** A dsh
+   profile resolves the harness's own packages from the tree the CLI runs out of,
+   so pointing the launcher at a new checkout is the whole switch. Side-by-side
+   trees fight over the profile's `node_modules`.
+2. **A profile declares only its own additions** (this bridge, extra plugins).
+   Harness packages are not profile dependencies — declaring them pins the
+   profile to a version and hides the seam behind a stale copy.
 
 Promoting preview → stable requires the full quality gate to pass:
 `pnpm test` → `node plugin-contract-test.mjs` → `node scripts/verify-dsh-contract.mjs` → `pnpm typecheck && pnpm run build` → live smoke.
