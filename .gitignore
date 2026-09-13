@@ -16,3 +16,8 @@ run-*.sh.bak-*
 journey/report-*.json
 journey/基线审计*.md
 journey/s1-probe.sh
+
+# 部署私有词表：本仓检查脚本的补充模式（内部项目名/私人称呼/私有主机名）
+# 必须留在本地——把这些词写进仓库，等于用泄漏清单去泄漏。
+# 模板见 .leak-patterns.example
+.leak-patterns

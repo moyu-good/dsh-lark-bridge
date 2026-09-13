@@ -294,6 +294,21 @@ CI 每次 push / PR 都跑全套，其中漂移检查钉在上游 dsh master—�
 **想加功能？** 先写设计卡（模板在 `docs/design/`），再实现、再回填。如果需求只是「看到消息」，
 优先用 `chronicleEndpoint` 钩子而不是改管线——参考 `src/chronicle.ts`。
 
+## 🧱 开发与 MR 流程
+
+`main` 是稳定基线，**只接受经过评审的 merge request**。所有开发都在特性分支（`feat/<名称>`）上进行，不直接提到 `main`。
+
+每个 MR 的清单：
+1. 从 `main` 开分支；改动要小、只做一件事。
+2. 全量质量门全绿（`pnpm hygiene`、`pnpm test`、`node plugin-contract-test.mjs`、`node scripts/verify-dsh-contract.mjs`、`pnpm typecheck && pnpm build`）。
+3. 仓库卫生扫描 —— `pnpm hygiene` —— 必须 exit 0。部署专有词写在本机 `.leak-patterns`（模板见 `.leak-patterns.example`），**绝不进仓库**。
+4. 评审通过 → 合入 `main` → 从 `main` 部署。
+5. 线上事故当场回滚（历史留在 git 里）；被回滚的分支 rebase 后带上修复重新提 MR。
+
+发布就是打标签。推 `v*` 标签会跑与 CI 相同的门禁、校验标签与 `package.json` 一致，并把 CHANGELOG 对应段落发成 release notes —— 所以标签不可能指向一个过不了 CI 的提交。
+
+这条规矩是被逼出来的：过去直接改 `main` 的实验，最后只能作为一个多提交的批量回滚收场 —— 特性分支才能让 `main` 永远可发布。
+
 ## 📦 版本与升级策略
 
 双轨制，写明白免得靠猜：

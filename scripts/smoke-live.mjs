@@ -8,6 +8,9 @@
 import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
+// 部署方的 systemd 单元名——各机器不同，用环境变量覆盖。
+const SERVICE = process.env.BRIDGE_SERVICE ?? 'dsh-lark-bridge'
+
 let failed = 0
 function check(name, ok, detail = '') {
   console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ` — ${detail}` : ''}`)
@@ -16,10 +19,10 @@ function check(name, ok, detail = '') {
 
 // 1) systemd 服务
 const active = (() => {
-  try { return execSync('systemctl is-active dsh-lark-bridge', { encoding: 'utf8' }).trim() === 'active' }
+  try { return execSync(`systemctl is-active ${SERVICE}`, { encoding: 'utf8' }).trim() === 'active' }
   catch { return false }
 })()
-check('dsh-lark-bridge 服务 active', active)
+check(`${SERVICE} 服务 active`, active)
 
 // 2) 组合树含新插件
 const HARNESS_CLI = process.env.DSH_HARNESS_CLI

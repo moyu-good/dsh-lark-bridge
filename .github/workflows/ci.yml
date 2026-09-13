@@ -18,6 +18,20 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Hygiene runs FIRST: a leaked path or credential is the one failure
+      # that cannot be fixed by a follow-up commit (it is already public).
+      # Deployment-specific terms arrive via a secret so the list itself
+      # stays out of the repository.
+      - name: Repo hygiene
+        env:
+          HYGIENE_PATTERNS: ${{ secrets.REPO_HYGIENE_PATTERNS }}
+        run: |
+          if [ -n "$HYGIENE_PATTERNS" ]; then
+            printf '%s\n' "$HYGIENE_PATTERNS" > "$RUNNER_TEMP/leak-patterns"
+            node scripts/check-repo-hygiene.mjs . --lib --patterns-file "$RUNNER_TEMP/leak-patterns"
+          else
+            node scripts/check-repo-hygiene.mjs . --lib
+          fi
       - run: node plugin-contract-test.mjs
       - run: pnpm typecheck
       - run: node scripts/verify-dsh-contract.mjs

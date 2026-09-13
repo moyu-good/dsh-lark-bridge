@@ -341,6 +341,21 @@ pinned to dsh master — if upstream changes a contract, the build tells you bef
 backfill the change record. For an integration that only needs message visibility, prefer
 the `chronicleEndpoint` hook over modifying the pipeline — see `src/chronicle.ts`.
 
+## 🧱 Development & MR Flow
+
+`main` is the stable baseline and only receives **reviewed merge requests**. All development happens on feature branches (`feat/<name>`), never directly on `main`.
+
+Per-MR checklist:
+1. Branch from `main`; keep the change small and single-purpose.
+2. Full quality gate green (`pnpm hygiene`, `pnpm test`, `node plugin-contract-test.mjs`, `node scripts/verify-dsh-contract.mjs`, `pnpm typecheck && pnpm build`).
+3. Repo hygiene scan — `pnpm hygiene` — must exit 0. Deployment-specific terms go in a local `.leak-patterns` file (see `.leak-patterns.example`), never in the repo.
+4. Reviewer approves → merge to `main` → deploy from `main`.
+5. Production incidents revert on the spot (history stays in git); the reverted branch is rebased and re-MR'd with a fix.
+
+Releases are tags. Pushing a `v*` tag runs the same gate as CI, verifies the tag matches `package.json`, and publishes the CHANGELOG section as the release notes — so a tag can never point at a commit that would have failed CI.
+
+This is enforced because past direct-to-`main` experiments had to be rolled back as a multi-commit revert in one batch — feature branches keep `main` shippable at all times.
+
 ## 📦 Version & Release Policy
 
 Two tracks, written down so nobody guesses:
