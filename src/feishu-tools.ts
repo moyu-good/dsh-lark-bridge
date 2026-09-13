@@ -187,7 +187,11 @@ export function createFeishuTools(deps: FeishuToolDeps): object[] {
           properties: {
             ok: { type: 'boolean' },
             name: { type: 'string' },
-            content: { type: ['string', 'null'] },
+            // 0.1.5's schema subset rejects type arrays ("must be a single type
+            // string"); exact-one `oneOf` is the supported way to spell a value
+            // that may be null. A type array here makes the whole tool fail to
+            // register, so the tool silently does not exist for the model.
+            content: { oneOf: [{ type: 'string' }, { type: 'null' }] },
             error: { type: 'string' },
           },
           additionalProperties: false,
