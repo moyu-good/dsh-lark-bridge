@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 对比测试：用 @larksuiteoapi/node-sdk 官方 createLarkChannel 连MyBot
+ * 对比测试：用 @larksuiteoapi/node-sdk 官方 createLarkChannel 连一个测试机器人
  * 与 opencode 桥完全相同的用法，验证事件是否能收到。
  */
 import { createLarkChannel, Domain, LoggerLevel } from '@larksuiteoapi/node-sdk'
@@ -53,7 +53,7 @@ channel.on('message', (evt) => {
 channel.connect()
   .then(() => {
     connected = true
-    console.log('[sdk-smoke] WS connected ✓ (send a message to MyBot now)')
+    console.log('[sdk-smoke] WS connected ✓ (send a message to your bot now)')
   })
   .catch((err) => {
     console.error('[sdk-smoke] connect failed:', err?.message || err)
