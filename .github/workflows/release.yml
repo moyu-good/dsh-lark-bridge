@@ -1,0 +1,67 @@
+name: Release
+
+# Tags are the release record. Pushing one runs the same gate as CI and then
+# publishes — so a tag can never point at a commit that would have failed CI.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Repo hygiene
+        env:
+          HYGIENE_PATTERNS: ${{ secrets.REPO_HYGIENE_PATTERNS }}
+        run: |
+          if [ -n "$HYGIENE_PATTERNS" ]; then
+            printf '%s\n' "$HYGIENE_PATTERNS" > "$RUNNER_TEMP/leak-patterns"
+            node scripts/check-repo-hygiene.mjs . --lib --patterns-file "$RUNNER_TEMP/leak-patterns"
+          else
+            node scripts/check-repo-hygiene.mjs . --lib
+          fi
+
+      # The tag must agree with package.json, or the artifact and the release
+      # disagree about what shipped and neither is authoritative.
+      - name: Tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $pkg" >&2
+            exit 1
+          fi
+
+      - run: node plugin-contract-test.mjs
+      - run: pnpm typecheck
+      - run: node scripts/verify-dsh-contract.mjs
+      - run: pnpm test
+      - run: pnpm run build
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$(awk -v ver="$GITHUB_REF_NAME" '
+            $0 ~ "^## \\[" substr(ver,2) "\\]" {capture=1}
+            capture && /^## \[/ && $0 !~ "^## \\[" substr(ver,2) "\\]" {exit}
+            capture {print}
+          ' CHANGELOG.md)"
+          if [ -z "$notes" ]; then
+            echo "no CHANGELOG.md section for $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          printf '%s\n' "$notes" > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
