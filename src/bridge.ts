@@ -89,8 +89,48 @@ import type { SessionLadder } from './session.ts'
 import { createReactionTracker } from './reaction.ts'
 import type { ReactionTracker } from './reaction.ts'
 import { createQuestionProvider } from './questions.ts'
-import type { HostUserQuestions } from './questions.ts'
+import type { HostUserQuestionRequest, HostQuestionAnswer } from './questions.ts'
 import { createTodoRenderer } from './todo.ts'
+
+/**
+ * Host contract mirror: the 0.1.5 `user-questions/request` waterfall.
+ *
+ * Declared here so the bridge's composition-time listener is type-checked
+ * against the same shape the host dispatches. Scope-filtered: an agent-scoped
+ * listener only receives that agent's requests.
+ */
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'user-questions/request'(
+      request: HostUserQuestionRequest,
+      next: () => Promise<HostQuestionAnswer>,
+    ): Promise<HostQuestionAnswer>
+    /**
+     * Live assistant streaming, published by the driving Agent (0.1.5).
+     *
+     * Frames arrive as `start` (carrying turn and step), a run of `chunk`
+     * frames, then `end`. The chunk payload is the same `StreamChunk` the
+     * retired `assistant/chunk` session event carried.
+     */
+    'agent/assistant-stream'(
+      payload: {
+        agent: { readonly session: { readonly id: string } }
+        frame:
+          | { readonly type: 'start'; readonly attemptId: string; readonly turn: number; readonly step: number }
+          | { readonly type: 'chunk'; readonly attemptId: string; readonly chunk: StreamChunkLike }
+          | { readonly type: 'end'; readonly attemptId: string }
+      },
+    ): void
+  }
+}
+
+/** The subset of the host's `StreamChunk` the renderer reads. */
+interface StreamChunkLike {
+  readonly type: string
+  readonly text?: string
+  readonly index?: number
+  readonly block?: { readonly type?: string; readonly text?: string }
+}
 import { createGoalRenderer } from './goal.ts'
 import { goalActionValue, type GoalActionValue } from './goal.ts'
 import {
@@ -422,7 +462,13 @@ function composeChatAgent(
 ): void {
   // Channel-owned tools (currently `send_file`) register on the agent's own
   // scope, so they exist exactly where the agent looks, and vanish with it.
-  const tools = agentCtx.get('tools') as (HostTools & { register(definition: object): () => void }) | undefined
+  // 0.1.5 exposes the service through the Context merge (`agent.ctx.tools`).
+  // `ctx.get('tools')` still type-checks but no longer hands back the service
+  // itself, so every registration threw "register is not a function" and the
+  // channel's own tools silently did not exist for the agent. Prefer the
+  // accessor and keep `get` only as the fallback for older harnesses.
+  const tools = ((agentCtx as unknown as { tools?: unknown }).tools
+    ?? agentCtx.get('tools')) as (HostTools & { register(definition: object): () => void }) | undefined
   for (const tool of extraTools) {
     try {
       tools?.register(tool)
@@ -723,20 +769,32 @@ export function installBridge(
     const binding = bySession.get(sessionId)
     return binding === undefined ? undefined : { chatId: binding.chatId }
   })
-  const hostQuestions = ctx.get('userQuestions') as HostUserQuestions | undefined
   let disposeQuestions: (() => void) | undefined
-  if (hostQuestions !== undefined) {
-    try {
-      disposeQuestions = hostQuestions.registerProvider(questions.provider)
-    } catch (error) {
-      // Synchronous throw (wrong profile composition) or a later async
-      // fiber failure both land here only for synchronous throws; an async
-      // effect failure would surface as a plugin error instead. The card
-      // handler stays installed either way so a slot that opens later can
-      // resolve pending questions.
-      notify(`dsh-lark-bridge: user-questions provider unavailable (${error instanceof Error ? error.message : String(error)})`)
-      ctx.logger.warn('user-questions provider unavailable: %s', error)
+  try {
+    // 0.1.5 moved this seam from a provider registry on `ctx.userQuestions`
+    // (`registerProvider`) to the `user-questions/request` waterfall: a
+    // listener claims the request by RETURNING an answer and delegates by
+    // calling `next()`. The request shape is unchanged (questions/agent/
+    // signal), so the provider plugs in directly. A throw fails the question
+    // closed rather than leaving the model hanging.
+    const onQuestion = async (
+      request: HostUserQuestionRequest,
+      next: () => Promise<HostQuestionAnswer>,
+    ): Promise<HostQuestionAnswer> => {
+      try {
+        return await questions.provider.ask(request)
+      } catch (error) {
+        ctx.logger.warn('user-questions answerer failed, delegating: %s', error)
+        return await next()
+      }
     }
+    disposeQuestions = ctx.on('user-questions/request', onQuestion)
+  } catch (error) {
+    // A synchronous throw here means the seam is absent from this profile
+    // composition. The card handler stays installed either way so a slot
+    // that opens later can still resolve a pending question.
+    notify(`dsh-lark-bridge: user-questions provider unavailable (${error instanceof Error ? error.message : String(error)})`)
+    ctx.logger.warn('user-questions provider unavailable: %s', error)
   }
 
   /** Resolve the provider/model for a new chat agent; config overrides the host default. */
@@ -1067,7 +1125,6 @@ export function installBridge(
   const commands = new AbortController()
   ctx.effect(() => () => { commands.abort() }, 'dsh-lark-bridge:commands')
   const commandSignal = (): AbortSignal => commands.signal
-
 
   /**
    * Report a stage that overruns, naming it.
@@ -1628,6 +1685,45 @@ export function installBridge(
     void replay.send(chatId, { markdown: workflowLogLine(message) }).catch(reportSendFailure)
   })
 
+  /**
+  * Host contract mirror: 0.1.5 delivers live assistant streaming through the
+  * Agent-scoped `agent/assistant-stream` event. Older harnesses appended an
+  * `assistant/chunk` session event instead, and 0.1.5 dropped that producer —
+  * the type survives only in the session-format migrations, so a renderer
+  * that waits for it renders no reasoning at all while the run looks healthy.
+  *
+  * The frame union carries `turn`/`step` on `start` and only the `chunk` on
+  * each `chunk` frame, so the pair is tracked per attempt and folded back in
+  * before handing the renderer the event shape it already consumes.
+  */
+  const attemptSteps = new Map<string, { turn: number; step: number }>()
+  ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+    const sessionId = agent.session.id
+    const binding = bySession.get(sessionId)
+    if (binding === undefined) return
+    // Children publish their own attempts on the session they share with the
+    // agent that spawned them, and their turn/step counters restart at 1. Left
+    // unfiltered they render into the same chat as the parent's, so the reader
+    // sees the reasoning of every subagent interleaved with the parent's and
+    // the same step numbers over and over. Only the session's own agent owns
+    // the chat's process display.
+    const owner = agents.get(sessionId)
+    if (owner !== undefined && owner !== agent) return
+  if (frame.type === 'end') {
+    attemptSteps.delete(frame.attemptId)
+    return
+  }
+  if (frame.type === 'start') {
+    attemptSteps.set(frame.attemptId, { turn: frame.turn, step: frame.step })
+    return
+  }
+  const at = attemptSteps.get(frame.attemptId) ?? { turn: 0, step: 0 }
+  binding.renderer.handle({
+    type: 'assistant/chunk',
+    data: { turn: at.turn, step: at.step, chunk: frame.chunk },
+  } as HostSessionEvent)
+  })
+
   ctx.on('session/event', (session, event: HostSessionEvent) => {
     const binding = bySession.get(session.id)
     if (binding === undefined) return
@@ -1794,6 +1890,7 @@ export function installBridge(
       if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
     }
     binding.renderer.handle(event)
+
   })
 
   // Approval questions for owned agents become cards; everything else delegates.

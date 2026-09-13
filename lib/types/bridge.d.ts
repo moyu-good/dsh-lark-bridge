@@ -13,6 +13,56 @@ import type { OutboundPort } from './outbound.ts';
 import type { Authorization } from './authorization.ts';
 import type { CollectedImages, ImagePort } from './images.ts';
 import type { SlashPanelPort } from './slash-panel.ts';
+import type { HostUserQuestionRequest, HostQuestionAnswer } from './questions.ts';
+/**
+ * Host contract mirror: the 0.1.5 `user-questions/request` waterfall.
+ *
+ * Declared here so the bridge's composition-time listener is type-checked
+ * against the same shape the host dispatches. Scope-filtered: an agent-scoped
+ * listener only receives that agent's requests.
+ */
+declare module '@deepseek-ai/cordis' {
+    interface Events {
+        'user-questions/request'(request: HostUserQuestionRequest, next: () => Promise<HostQuestionAnswer>): Promise<HostQuestionAnswer>;
+        /**
+         * Live assistant streaming, published by the driving Agent (0.1.5).
+         *
+         * Frames arrive as `start` (carrying turn and step), a run of `chunk`
+         * frames, then `end`. The chunk payload is the same `StreamChunk` the
+         * retired `assistant/chunk` session event carried.
+         */
+        'agent/assistant-stream'(payload: {
+            agent: {
+                readonly session: {
+                    readonly id: string;
+                };
+            };
+            frame: {
+                readonly type: 'start';
+                readonly attemptId: string;
+                readonly turn: number;
+                readonly step: number;
+            } | {
+                readonly type: 'chunk';
+                readonly attemptId: string;
+                readonly chunk: StreamChunkLike;
+            } | {
+                readonly type: 'end';
+                readonly attemptId: string;
+            };
+        }): void;
+    }
+}
+/** The subset of the host's `StreamChunk` the renderer reads. */
+interface StreamChunkLike {
+    readonly type: string;
+    readonly text?: string;
+    readonly index?: number;
+    readonly block?: {
+        readonly type?: string;
+        readonly text?: string;
+    };
+}
 /**
  * The transport surface the bridge drives. `LarkChannel` from
  * `@larksuite/channel` satisfies it structurally; tests substitute a fake.
@@ -63,4 +113,5 @@ export declare function chatUserMessage(msg: NormalizedMessage, images: Collecte
  * @param port - the transport to drive; production passes the real Lark channel.
  */
 export declare function installBridge(ctx: Context, config: ResolvedConfig, port: ChannelPort, notify: (line: string) => void, authorization: Authorization): void;
+export {};
 //# sourceMappingURL=bridge.d.ts.map

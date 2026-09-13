@@ -4,6 +4,24 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-09-13
+
+### Changed
+- **Targets DeepSeek Harness 0.1.5.** The bridge now registers its question
+  provider on the `user-questions/request` Cordis waterfall. Harness 0.1.5
+  replaced the `ctx.userQuestions.registerProvider` registry that earlier
+  versions exposed; a waterfall listener claims the request by returning an
+  answer and delegates through `next()`. The request and answer payloads are
+  unchanged, so the card flow is identical from the user's side.
+  **Requires harness `>=0.1.5-rc.2`** — on 0.1.1 the seam is absent, the
+  listener never fires, and the bridge logs `user-questions provider
+  unavailable` while the model's question falls back to prose.
+
+### Fixed
+- The event is mirrored in a local `cordis` `Events` augmentation so the
+  composition-time listener is type-checked against the same shape the host
+  dispatches, instead of being cast past the compiler.
+
 ## [0.8.1] — 2026-09-13
 
 ### Fixed
