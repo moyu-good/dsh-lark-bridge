@@ -2,7 +2,8 @@
 import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
-const LIB = "/mnt/d/PROJECT/dsh-lark-bridge/lib/types/sync"
+// 相对脚本自身定位构建产物：硬编码绝对路径会让别人克隆后直接跑不起来。
+const LIB = new URL("../lib/types/sync", import.meta.url).href
 const { runBotCommand, readCloudArbitration, claimIfActiveStale } = await import(`${LIB}/bot-command.js`)
 const { ensureDeviceId } = await import(`${LIB}/migrate.js`)
 const { FeishuCloud } = await import(`${LIB}/feishu-cloud.js`)
