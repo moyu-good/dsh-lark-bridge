@@ -41,6 +41,38 @@ const COT_API = '/open-apis/im/v1/message_cot'
 const SETTINGS_NAMESPACE = 'dsh-lark-bridge'
 
 /**
+ * Every reaction call is bounded.
+ *
+ * Reactions are cosmetic — they tell the user the message landed. They must
+ * never be able to hold up the turn, and the carrier gives no deadline of its
+ * own. A stalled reaction call happens to sit BEFORE the first instrumented
+ * stage of the inbound handler, so when it hangs the message is acknowledged
+ * and then nothing happens at all: no reply, no error, no diagnostic.
+ */
+const REACTION_TIMEOUT_MS = 10_000
+
+/**
+ * Race a promise against a deadline.
+ * @param work - the carrier call to bound.
+ * @param ms - how long it may take before it is abandoned.
+ * @param what - name used in the timeout error.
+ * @returns the call's result, or a rejection at the deadline.
+ */
+function withDeadline<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`dsh-lark-bridge: ${what} timed out after ${ms}ms`)),
+      ms,
+    )
+    timer.unref?.()
+    work.then(
+      value => { clearTimeout(timer); resolve(value) },
+      error => { clearTimeout(timer); reject(error) },
+    )
+  })
+}
+
+/**
  * Narrow a resolved configuration to one carrying live credentials.
  * @param config - resolved plugin configuration.
  * @returns whether both credential fields are non-empty strings.
@@ -168,10 +200,18 @@ export function createLarkChannelPort(config: ChannelConfig, authorization: Auth
       // overwrites it with this wrapper — referencing `channel.addReaction`
       // here after the assign resolves to this method itself and recurses
       // until the stack blows.
-      return await nativeAddReaction(messageId, emojiType)
+      return await withDeadline(
+        nativeAddReaction(messageId, emojiType),
+        REACTION_TIMEOUT_MS,
+        `addReaction(${emojiType})`,
+      )
     },
     async removeReaction(messageId: string, reactionId: string): Promise<void> {
-      await nativeRemoveReaction(messageId, reactionId)
+      await withDeadline(
+        nativeRemoveReaction(messageId, reactionId),
+        REACTION_TIMEOUT_MS,
+        'removeReaction',
+      )
     },
   })
 }

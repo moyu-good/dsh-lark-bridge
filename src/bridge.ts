@@ -597,7 +597,7 @@ export function installBridge(
   // Anything assistant-emitted outside this set on a bound session is a
   // cross-surface turn (web UI / desktop surface of the same harness process)
   // and gets mirrored into the chat — the surfaces share one session library,
-  // but only the bridge renders to Feishu (2026-09-10 运营方 sync expectation).
+  // but only the bridge renders to Feishu (2026-09-10 operator sync expectation).
   const bridgeDriving = new Set<string>()
   /** Latest external assistant text per bound session, flushed at turn/end. */
   const externalAnswers = new Map<string, string>()
@@ -1069,7 +1069,35 @@ export function installBridge(
   const commandSignal = (): AbortSignal => commands.signal
 
 
+  /**
+   * Report a stage that overruns, naming it.
+   *
+   * The inbound handler awaits several things with no deadline (device state,
+   * the cloud arbitration record, session acquisition). When one never
+   * settles the handler parks for good: the message is acknowledged with a
+   * reaction and then nothing happens — no reply, no error, no log — and only
+   * a restart clears it. Naming the stage that overran turns that from
+   * guesswork into a one-line diagnosis.
+   */
+  const SLOW_STAGE_MS = 10_000
+  const stage = async <T>(messageId: string, name: string, run: () => Promise<T>): Promise<T> => {
+    const timer = setInterval(
+      () => notify(`dsh-lark-bridge: inbound ${messageId} still in stage=${name} after ${SLOW_STAGE_MS / 1000}s`),
+      SLOW_STAGE_MS,
+    )
+    timer.unref?.()
+    try {
+      return await run()
+    } finally {
+      clearInterval(timer)
+    }
+  }
+
   const handleMessage = async (msg: NormalizedMessage): Promise<void> => {
+    // One line per inbound message: without it, "no reply and no log" cannot be
+    // told apart from "the handler never ran at all" — and that distinction
+    // decides whether to look inside the bridge or outside it.
+    notify(`dsh-lark-bridge: inbound ${msg.messageId} in ${msg.chatId}`)
     // Authorization before anything else: a message here starts a
     // shell-capable agent. Refusals stay silent in the chat — answering would
     // turn the bot into an oracle for who is authorized — and name the sender
@@ -1095,7 +1123,7 @@ export function installBridge(
     // turn — the successor machine owns the Feishu app's reply path now.
     // `/bot activate` passes through so this end can be re-enabled in chat.
     if (msg.content.trim() !== '/bot activate') {
-      const deviceState = await readDeviceState()
+      const deviceState = await stage(msg.messageId, 'device-state', () => readDeviceState())
       if (deviceState.retired === true) {
         await port.send(msg.chatId, {
           markdown: '↪️ 本端已退位（设备已迁移）。如需在本机重新启用，请发 `/bot activate`。',
@@ -1109,10 +1137,10 @@ export function installBridge(
       // carrier down, never written — keeps every end replying as before.
       // When the active endpoint has gone silent, election lets the smallest
       // fresh endpoint key take over.
-      const arbitration = await arbitrationForInbound()
+      const arbitration = await stage(msg.messageId, 'arbitration', () => arbitrationForInbound())
       if (arbitration !== null) {
         const syncCtx = getSyncContext()
-        const myIdentity = await ensureDeviceId()
+        const myIdentity = await stage(msg.messageId, 'device-identity', () => ensureDeviceId())
         const myForm = syncCtx?.form ?? 'web'
         const myProfile = syncCtx?.profile ?? 'web'
         if (!isActiveEndpoint(arbitration, myIdentity.deviceId, myForm, myProfile)) {
@@ -1120,7 +1148,7 @@ export function installBridge(
           if (!claimed) {
             // Standby backs off SILENTLY: the active endpoint answers every
             // message anyway, so a per-message chat notice reads as the bot
-            // talking to itself from a phone client (2026-09-10 运营方 report).
+            // talking to itself from a phone client (2026-09-10 operator report).
             // The fleet roster (/bot devices) is where standby state belongs.
             const where = arbitration.form === undefined ? '' : `（${arbitration.form}${arbitration.profile === undefined ? '' : `/${arbitration.profile}`}）`
             notify(`dsh-lark-bridge: standby backed off a message in ${msg.chatId} (active: ${arbitration.activeName}${where})`)
@@ -1134,8 +1162,8 @@ export function installBridge(
     // or fails the turn (contract in src/chronicle.ts).
     postChronicle(config.chronicleEndpoint, { source: config.chronicleSource, text: msg.content, chatId: msg.chatId }, notify)
     try {
-      const opened = await sessions.acquire(msg)
-      const binding = await bindingFor(opened.handle.agent.session.id, msg)
+      const opened = await stage(msg.messageId, 'session-acquire', () => sessions.acquire(msg))
+      const binding = await stage(msg.messageId, 'session-bind', () => bindingFor(opened.handle.agent.session.id, msg))
       // The reaction lifecycle follows this session's current trigger.
       binding.currentMessageId = msg.messageId
 
@@ -1199,7 +1227,7 @@ export function installBridge(
         }
         return
       }
-      // Queue visibility (2026-09-12 运营方 report, P140): a follow-up sent
+      // Queue visibility (2026-09-12 operator report, P140): a follow-up sent
       // while a turn is running is silent by design — the chat reads the wait
       // as a hang. One short line says the message is queued, not lost.
       if (opened.handle.agent.status === 'running') {
@@ -1251,9 +1279,11 @@ export function installBridge(
         }
       }
       {
-      // Ambient situational briefing: once per session, prepended ahead of the
-      // user's own text; failures degrade silently to no-briefing.
-      const prefix = briefingPrefix(config.briefingFile, opened.handle.agent.session.id, notify)
+        // Ambient situational briefing: once per session, prepended ahead of the
+        // user's own text; failures degrade silently to no-briefing. The read is
+        // sync and the file may live on a bridged filesystem, so wrap it: a
+        // stall then names its stage instead of freezing the loop silently.
+        const prefix = await stage(msg.messageId, 'briefing', async () => briefingPrefix(config.briefingFile, opened.handle.agent.session.id, notify))
       // Append file notes to the user's text so the agent knows what arrived.
       const allNotes = [...images.notes, ...fileNotes]
       const spoken = allNotes.length > 0
@@ -1484,7 +1514,19 @@ export function installBridge(
   }
 
   // Inbound events. Registered before connect so no early event is dropped.
-  ctx.effect(() => replay.on('message', (msg) => { void handleMessage(msg) }), 'dsh-lark-bridge:on(message)')
+  // A rejected handler must not vanish: the message is acknowledged with a
+  // reaction before any of the work starts, so an unobserved rejection (or a
+  // handler parked on a call with no deadline) reads to the human as "the bot
+  // saw me, then did nothing" and leaves no trace to diagnose. Report it and
+  // settle the reaction as a failure so the ack is not the last thing it shows.
+  ctx.effect(() => replay.on('message', (msg: NormalizedMessage) => {
+    void handleMessage(msg).catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error)
+      notify(`dsh-lark-bridge: inbound handler failed for ${msg.messageId}: ${detail}`)
+      ctx.logger.warn('inbound handler failed for %s: %s', msg.messageId, error)
+      void reactions?.fail(msg.messageId)
+    })
+  }), 'dsh-lark-bridge:on(message)')
   ctx.effect(() => replay.on('cardAction', handleCardAction), 'dsh-lark-bridge:on(cardAction)')
 
   // Observability. Without these, the failure modes an operator actually hits —
@@ -1527,7 +1569,7 @@ export function installBridge(
     // Inbound events are not replayed across a gap (the transport has no
     // cursor), so a long one silently ate every message the chat sent. Tell
     // the bound chats instead of leaving them reading the silence as a hang
-    // (2026-09-12 运营方 report; P140).
+    // (2026-09-12 operator report; P140).
     const gapStart = disconnectedAt
     disconnectedAt = undefined
     if (gapStart === undefined) return

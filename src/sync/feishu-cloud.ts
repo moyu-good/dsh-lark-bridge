@@ -21,21 +21,39 @@ export type FetchImpl = (url: string, init?: {
   method?: string
   headers?: Record<string, string>
   body?: BodyInit
+  signal?: AbortSignal
 }) => Promise<{ status: number; json: () => Promise<Record<string, unknown>>; text: () => Promise<string> }>
 
 interface CachedToken { value: string; expiresAt: number }
 
 const TOKEN_SAFETY_MS = 60_000
 
+/**
+ * Deadline for every drive/auth call made here.
+ *
+ * This class is read on the inbound message path (the arbitration record is
+ * fetched per message, cached for a minute), and `fetch` has no default
+ * deadline. A request that stalls without one parks the inbound handler
+ * forever: the message is acknowledged with a reaction and then nothing
+ * happens — no reply, no error, no log — until the process is restarted.
+ * Bounding every call here keeps a stalled carrier from wedging the channel.
+ */
+const CLOUD_TIMEOUT_MS = 15_000
+
 /** Drive-backed JSON storage scoped to the app's own root folder. */
 export class FeishuCloud {
   private token?: CachedToken
   private rootToken?: string
+  private readonly fetchImpl: FetchImpl
 
   constructor(
     private readonly creds: FeishuCredentials,
-    private readonly fetchImpl: FetchImpl = fetch as unknown as FetchImpl,
-  ) {}
+    fetchImpl: FetchImpl = fetch as unknown as FetchImpl,
+  ) {
+    // Bound every call at the seam rather than at each call site.
+    this.fetchImpl = (url, init = {}) =>
+      fetchImpl(url, { ...init, signal: AbortSignal.timeout(CLOUD_TIMEOUT_MS) })
+  }
 
   private origin(): string {
     return (this.creds.domain ?? 'https://open.feishu.cn').replace(/\/$/, '')

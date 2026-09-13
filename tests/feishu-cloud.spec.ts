@@ -34,6 +34,25 @@ function scriptedFetch(replies: unknown[]): { fetch: Parameters<typeof FeishuClo
 }
 
 describe('feishu cloud client', () => {
+  it('bounds every carrier call with a deadline', async () => {
+    // The arbitration record is read on the inbound message path, and a
+    // request that stalls without a deadline parks that handler for good:
+    // the message is acknowledged with a reaction and then nothing happens.
+    const signals: (AbortSignal | undefined)[] = []
+    const fetch = async (url: string, init?: { signal?: AbortSignal }) => {
+      signals.push(init?.signal)
+      if (url.includes('tenant_access_token')) {
+        return { status: 200, json: async () => ({ code: 0, tenant_access_token: 't-x', expire: 7200 }), text: async () => '' }
+      }
+      return { status: 200, json: async () => ({ code: 0, data: { token: 'fld-root', files: [] } }), text: async () => '' }
+    }
+    const cloud = new FeishuCloud({ appId: 'cli_a', appSecret: 's' }, fetch as never)
+    await cloud.getToken()
+    await cloud.list()
+    expect(signals.length).toBeGreaterThan(0)
+    expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true)
+  })
+
   it('mints the token once and reuses it across calls', async () => {
     const { fetch, calls } = scriptedFetch([
       { code: 0, tenant_access_token: 't-x', expire: 7200 },

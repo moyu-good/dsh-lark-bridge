@@ -31,3 +31,4 @@
 | [消息链路与富媒体管道](设计卡_消息链路与富媒体管道.md) | 现行设计 | 入站归一化→agent→出站渲染全链路 |
 | [多bot舰队部署拓扑](设计卡_多bot舰队部署拓扑.md) | 现行设计 | MyBot/MyBot/MyBot三链路定版 |
 | [出站图片管道](设计卡_出站图片管道.md) | 🚧 阻塞于上游 | 传输层就绪，等宿主暴露 image 事件源 |
+| [上游跟进_AgentTeams与artifact](设计卡_上游跟进_AgentTeams与artifact.md) | 现行设计 | team/* 四事件复用卡片模式渲染；present 事件喂 send_file 管道；前置运行时升 0.1.5-alpha.2 |

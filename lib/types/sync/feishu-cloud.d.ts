@@ -19,6 +19,7 @@ export type FetchImpl = (url: string, init?: {
     method?: string;
     headers?: Record<string, string>;
     body?: BodyInit;
+    signal?: AbortSignal;
 }) => Promise<{
     status: number;
     json: () => Promise<Record<string, unknown>>;
@@ -27,9 +28,9 @@ export type FetchImpl = (url: string, init?: {
 /** Drive-backed JSON storage scoped to the app's own root folder. */
 export declare class FeishuCloud {
     private readonly creds;
-    private readonly fetchImpl;
     private token?;
     private rootToken?;
+    private readonly fetchImpl;
     constructor(creds: FeishuCredentials, fetchImpl?: FetchImpl);
     private origin;
     /** Mint (or reuse) a tenant_access_token. */

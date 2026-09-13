@@ -70,6 +70,8 @@ export interface HostAgent {
     /** The single identity shared with {@link session}. */
     readonly id: string;
     readonly session: HostSession;
+    /** Live phase label (`'idle' | 'running'`) when the host agent exposes it; test doubles may omit it. */
+    readonly status?: string;
     /** Queue an ordinary follow-up turn and wake the driver. */
     followup(message: HostUserMessage): void;
     /**
