@@ -462,7 +462,13 @@ function composeChatAgent(
 ): void {
   // Channel-owned tools (currently `send_file`) register on the agent's own
   // scope, so they exist exactly where the agent looks, and vanish with it.
-  const tools = agentCtx.get('tools') as (HostTools & { register(definition: object): () => void }) | undefined
+  // 0.1.5 exposes the service through the Context merge (`agent.ctx.tools`).
+  // `ctx.get('tools')` still type-checks but no longer hands back the service
+  // itself, so every registration threw "register is not a function" and the
+  // channel's own tools silently did not exist for the agent. Prefer the
+  // accessor and keep `get` only as the fallback for older harnesses.
+  const tools = ((agentCtx as unknown as { tools?: unknown }).tools
+    ?? agentCtx.get('tools')) as (HostTools & { register(definition: object): () => void }) | undefined
   for (const tool of extraTools) {
     try {
       tools?.register(tool)
