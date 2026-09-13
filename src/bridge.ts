@@ -1866,8 +1866,17 @@ export function installBridge(
     */
     const attemptSteps = new Map<string, { turn: number; step: number }>()
     ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-    const binding = bySession.get(agent.session.id)
-    if (binding === undefined) return
+      const sessionId = agent.session.id
+      const binding = bySession.get(sessionId)
+      if (binding === undefined) return
+      // Children publish their own attempts on the session they share with the
+      // agent that spawned them, and their turn/step counters restart at 1. Left
+      // unfiltered they render into the same chat as the parent's, so the reader
+      // sees the reasoning of every subagent interleaved with the parent's and
+      // the same step numbers over and over. Only the session's own agent owns
+      // the chat's process display.
+      const owner = agents.get(sessionId)
+      if (owner !== undefined && owner !== agent) return
     if (frame.type === 'end') {
       attemptSteps.delete(frame.attemptId)
       return
