@@ -1,0 +1,18 @@
+# Deployment-specific hygiene patterns — one JavaScript regex per line.
+#
+# Copy to `.leak-patterns` (gitignored) and add the terms that are private to
+# YOUR deployment: internal project names, personal forms of address, private
+# hostnames, ticket-prefix conventions.
+#
+#   cp .leak-patterns.example .leak-patterns
+#   node scripts/check-repo-hygiene.mjs . --lib --patterns-file .leak-patterns
+#
+# These deliberately do NOT live in the repository: a committed list of the
+# terms to avoid is itself the thing you are trying to keep private.
+#
+# Lines starting with # are ignored. Invalid regexes are skipped with a warning.
+
+# --- examples (uncomment and edit) ---
+# AcmeInternalPlatform
+# sir|madam        # personal forms of address
+# /srv/private/    # private host paths

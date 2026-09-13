@@ -1,6 +1,6 @@
 {
   "name": "@moyu-good/dsh-lark-bridge",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Feishu (Lark) IM bot channel for DeepSeek Harness agents — per-chat sessions, native thinking process, interactive approval cards, WebSocket long connection.",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
@@ -13,7 +13,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "contract-test": "node plugin-contract-test.mjs",
-    "contract-drift": "node scripts/verify-dsh-contract.mjs"
+    "contract-drift": "node scripts/verify-dsh-contract.mjs",
+    "hygiene": "node scripts/check-repo-hygiene.mjs . --lib"
   },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

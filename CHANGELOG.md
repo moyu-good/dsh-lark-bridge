@@ -4,6 +4,40 @@ All notable changes to dsh-lark-bridge are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-09-13
+
+### Fixed
+- **Stalls are now bounded or self-reporting.** Three different causes shared
+  one symptom — the message is acknowledged with a reaction and then nothing
+  happens, with no reply, no error and no log until the process is restarted:
+  - `briefing`: the prefix was read with `readFileSync`. The file can live on
+    a bridged filesystem, where a synchronous read blocks the whole event
+    loop for as long as the read takes. Now async.
+  - `runtime`: `addReaction`/`removeReaction` had no deadline. Reactions are
+    cosmetic and must never hold up a turn; both now time out at 10s.
+  - `sync/feishu-cloud`: every drive/auth call now carries a 15s deadline.
+  - `bridge`: one log line per inbound message, plus a report from any stage
+    that overruns 10s, so a stall names where it is instead of being inferred.
+- **`journey/e2e-fleet.mjs`** resolved the sync lib from an absolute checkout
+  path, so it could not run anywhere but the machine that wrote it. Now
+  resolved relative to the script.
+
+### Added
+- **`scripts/check-repo-hygiene.mjs`** — the hygiene scan the MR flow requires,
+  shipped in the repository. It covers machine-specific paths and pasted
+  credentials, and takes deployment-specific terms from a local
+  `.leak-patterns` file (gitignored) or the `REPO_HYGIENE_PATTERNS` secret in
+  CI. The term list deliberately stays out of the repo: a committed list of
+  what to avoid is itself the leak.
+- **Release workflow** — a `v*` tag runs the same gate as CI, checks that the
+  tag agrees with `package.json`, and publishes the CHANGELOG section as the
+  release notes.
+- `pnpm hygiene` runs the scan locally.
+
+### Changed
+- Hygiene now runs first in CI, before the build: a leaked path or credential
+  is the one failure a follow-up commit cannot undo.
+
 ## [0.8.0] — 2026-09-10
 
 ### Added

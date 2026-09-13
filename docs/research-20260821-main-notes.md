@@ -38,7 +38,7 @@
 
 bihangchi9 今天在做 attachments（图片/文件下载进会话）+ 群管理命令（/allow /disallow /whoami）——值得学。
 
-## 三、P006 旧报告要点（2026-08-20，MyBot）
+## 三、P006 旧报告要点（2026-08-20，本桥）
 
 - GitHub topic:dsh-plugin ≈ **8,770 仓库**；飞书桥接 feishu≈70 / lark≈50 → **红海**
 - 目录站：dshfind.com · dshbase.com · dsh-plugin.org · awesome-dsh-plugin(★956) · dsh-plugins-store

@@ -88,14 +88,14 @@ describe('FeishuCloud.botInfo', () => {
         return json({ code: 0, tenant_access_token: 't-1', expire: 7200 })
       }
       if (href.includes('/bot/v3/info')) {
-        return json({ code: 0, bot: { app_name: 'MyBot', activate_status: 2 } })
+        return json({ code: 0, bot: { app_name: 'TestBot', activate_status: 2 } })
       }
       return json({ code: -1 }, )
     }
     const { FeishuCloud } = await import('../src/sync/feishu-cloud.ts')
     const cloud = new FeishuCloud({ appId: 'cli_x', appSecret: 's' }, fetchImpl)
     const info = await cloud.botInfo()
-    expect(info.name).toBe('MyBot')
+    expect(info.name).toBe('TestBot')
     expect(info.active).toBe(true)
   })
 })
