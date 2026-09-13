@@ -89,8 +89,24 @@ import type { SessionLadder } from './session.ts'
 import { createReactionTracker } from './reaction.ts'
 import type { ReactionTracker } from './reaction.ts'
 import { createQuestionProvider } from './questions.ts'
-import type { HostUserQuestions } from './questions.ts'
+import type { HostUserQuestionRequest, HostQuestionAnswer } from './questions.ts'
 import { createTodoRenderer } from './todo.ts'
+
+/**
+ * Host contract mirror: the 0.1.5 `user-questions/request` waterfall.
+ *
+ * Declared here so the bridge's composition-time listener is type-checked
+ * against the same shape the host dispatches. Scope-filtered: an agent-scoped
+ * listener only receives that agent's requests.
+ */
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    'user-questions/request'(
+      request: HostUserQuestionRequest,
+      next: () => Promise<HostQuestionAnswer>,
+    ): Promise<HostQuestionAnswer>
+  }
+}
 import { createGoalRenderer } from './goal.ts'
 import { goalActionValue, type GoalActionValue } from './goal.ts'
 import {
@@ -723,20 +739,32 @@ export function installBridge(
     const binding = bySession.get(sessionId)
     return binding === undefined ? undefined : { chatId: binding.chatId }
   })
-  const hostQuestions = ctx.get('userQuestions') as HostUserQuestions | undefined
   let disposeQuestions: (() => void) | undefined
-  if (hostQuestions !== undefined) {
-    try {
-      disposeQuestions = hostQuestions.registerProvider(questions.provider)
-    } catch (error) {
-      // Synchronous throw (wrong profile composition) or a later async
-      // fiber failure both land here only for synchronous throws; an async
-      // effect failure would surface as a plugin error instead. The card
-      // handler stays installed either way so a slot that opens later can
-      // resolve pending questions.
-      notify(`dsh-lark-bridge: user-questions provider unavailable (${error instanceof Error ? error.message : String(error)})`)
-      ctx.logger.warn('user-questions provider unavailable: %s', error)
+  try {
+    // 0.1.5 moved this seam from a provider registry on `ctx.userQuestions`
+    // (`registerProvider`) to the `user-questions/request` waterfall: a
+    // listener claims the request by RETURNING an answer and delegates by
+    // calling `next()`. The request shape is unchanged (questions/agent/
+    // signal), so the provider plugs in directly. A throw fails the question
+    // closed rather than leaving the model hanging.
+    const onQuestion = async (
+      request: HostUserQuestionRequest,
+      next: () => Promise<HostQuestionAnswer>,
+    ): Promise<HostQuestionAnswer> => {
+      try {
+        return await questions.provider.ask(request)
+      } catch (error) {
+        ctx.logger.warn('user-questions answerer failed, delegating: %s', error)
+        return await next()
+      }
     }
+    disposeQuestions = ctx.on('user-questions/request', onQuestion)
+  } catch (error) {
+    // A synchronous throw here means the seam is absent from this profile
+    // composition. The card handler stays installed either way so a slot
+    // that opens later can still resolve a pending question.
+    notify(`dsh-lark-bridge: user-questions provider unavailable (${error instanceof Error ? error.message : String(error)})`)
+    ctx.logger.warn('user-questions provider unavailable: %s', error)
   }
 
   /** Resolve the provider/model for a new chat agent; config overrides the host default. */

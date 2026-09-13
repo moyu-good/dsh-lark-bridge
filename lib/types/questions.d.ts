@@ -33,19 +33,24 @@ export interface HostQuestionAnswer {
     }[];
 }
 /** The subset of the host user-questions seam the bridge consumes. */
-export interface HostUserQuestions {
-    registerProvider(provider: {
-        ask(request: {
-            readonly questions: readonly HostQuestion[];
-            /** The exact live calling agent, when the request came from a tool call. */
-            readonly agent?: {
-                readonly session: {
-                    readonly id: string;
-                };
-            };
-            readonly signal?: AbortSignal;
-        }): Promise<HostQuestionAnswer>;
-    }): () => void;
+/**
+ * The host's `user-questions/request` waterfall, as 0.1.5 declares it.
+ *
+ * Earlier harness versions exposed a `ctx.userQuestions.registerProvider`
+ * registry; 0.1.5 replaced it with a Cordis waterfall where a listener claims
+ * the request by returning an answer and delegates through `next()`. The
+ * request/answer payloads are unchanged, so the bridge's provider plugs
+ * straight in.
+ */
+export interface HostUserQuestionRequest {
+    readonly questions: readonly HostQuestion[];
+    /** The exact live calling agent, when the request came from a tool call. */
+    readonly agent?: {
+        readonly session: {
+            readonly id: string;
+        };
+    };
+    readonly signal?: AbortSignal;
 }
 /** Card-button payload carried by an option selection. */
 declare const QUESTION_ACTION = "dsh-lark-bridge/question";

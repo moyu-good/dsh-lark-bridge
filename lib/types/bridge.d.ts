@@ -13,6 +13,19 @@ import type { OutboundPort } from './outbound.ts';
 import type { Authorization } from './authorization.ts';
 import type { CollectedImages, ImagePort } from './images.ts';
 import type { SlashPanelPort } from './slash-panel.ts';
+import type { HostUserQuestionRequest, HostQuestionAnswer } from './questions.ts';
+/**
+ * Host contract mirror: the 0.1.5 `user-questions/request` waterfall.
+ *
+ * Declared here so the bridge's composition-time listener is type-checked
+ * against the same shape the host dispatches. Scope-filtered: an agent-scoped
+ * listener only receives that agent's requests.
+ */
+declare module '@deepseek-ai/cordis' {
+    interface Events {
+        'user-questions/request'(request: HostUserQuestionRequest, next: () => Promise<HostQuestionAnswer>): Promise<HostQuestionAnswer>;
+    }
+}
 /**
  * The transport surface the bridge drives. `LarkChannel` from
  * `@larksuite/channel` satisfies it structurally; tests substitute a fake.
