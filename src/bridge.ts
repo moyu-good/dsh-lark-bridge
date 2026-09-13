@@ -105,7 +105,31 @@ declare module '@deepseek-ai/cordis' {
       request: HostUserQuestionRequest,
       next: () => Promise<HostQuestionAnswer>,
     ): Promise<HostQuestionAnswer>
+    /**
+     * Live assistant streaming, published by the driving Agent (0.1.5).
+     *
+     * Frames arrive as `start` (carrying turn and step), a run of `chunk`
+     * frames, then `end`. The chunk payload is the same `StreamChunk` the
+     * retired `assistant/chunk` session event carried.
+     */
+    'agent/assistant-stream'(
+      payload: {
+        agent: { readonly session: { readonly id: string } }
+        frame:
+          | { readonly type: 'start'; readonly attemptId: string; readonly turn: number; readonly step: number }
+          | { readonly type: 'chunk'; readonly attemptId: string; readonly chunk: StreamChunkLike }
+          | { readonly type: 'end'; readonly attemptId: string }
+      },
+    ): void
   }
+}
+
+/** The subset of the host's `StreamChunk` the renderer reads. */
+interface StreamChunkLike {
+  readonly type: string
+  readonly text?: string
+  readonly index?: number
+  readonly block?: { readonly type?: string; readonly text?: string }
 }
 import { createGoalRenderer } from './goal.ts'
 import { goalActionValue, type GoalActionValue } from './goal.ts'
@@ -1822,6 +1846,36 @@ export function installBridge(
       if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
     }
     binding.renderer.handle(event)
+
+    /**
+    * Host contract mirror: 0.1.5 delivers live assistant streaming through the
+    * Agent-scoped `agent/assistant-stream` event. Older harnesses appended an
+    * `assistant/chunk` session event instead, and 0.1.5 dropped that producer —
+    * the type survives only in the session-format migrations, so a renderer
+    * that waits for it renders no reasoning at all while the run looks healthy.
+    *
+    * The frame union carries `turn`/`step` on `start` and only the `chunk` on
+    * each `chunk` frame, so the pair is tracked per attempt and folded back in
+    * before handing the renderer the event shape it already consumes.
+    */
+    const attemptSteps = new Map<string, { turn: number; step: number }>()
+    ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+    const binding = bySession.get(agent.session.id)
+    if (binding === undefined) return
+    if (frame.type === 'end') {
+      attemptSteps.delete(frame.attemptId)
+      return
+    }
+    if (frame.type === 'start') {
+      attemptSteps.set(frame.attemptId, { turn: frame.turn, step: frame.step })
+      return
+    }
+    const at = attemptSteps.get(frame.attemptId) ?? { turn: 0, step: 0 }
+    binding.renderer.handle({
+      type: 'assistant/chunk',
+      data: { turn: at.turn, step: at.step, chunk: frame.chunk },
+    } as HostSessionEvent)
+    })
   })
 
   // Approval questions for owned agents become cards; everything else delegates.
