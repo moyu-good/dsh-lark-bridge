@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fakeMessage, mountChannel } from './harness.ts'
 
 /**
- * P141（2026-09-14 少东家报告）：任务运行中再发一条命令，聊天面无反馈、感知为卡死。
+ * P141（2026-09-14 owner report）：任务运行中再发一条命令，聊天面无反馈、感知为卡死。
  * 契约：agent.status==='running' 期间到达的消息 → 一条「已排队」回执；空闲时不发。
  */
 describe('mid-turn followup (P141)', () => {
