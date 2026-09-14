@@ -13,8 +13,7 @@ describe('mid-turn followup (P141)', () => {
 
     const agent = harness.agents.created[0]!.agent
     Object.defineProperty(agent, 'status', { value: 'running', configurable: true })
-    const sent: Array<{ to: string; input: Record<string, unknown> }> =
-      (harness as unknown as { sent?: typeof sent_list }).sent ?? (harness.fake as unknown as { state?: { sent?: typeof sent_list } }).state?.sent ?? []
+    const sent: Array<{ to: string; input: Record<string, unknown> }> = harness.fake.sent
     const before = sent.length
 
     await harness.fake.emitMessage(fakeMessage({ content: 'task-b' }))
@@ -32,8 +31,7 @@ describe('mid-turn followup (P141)', () => {
     await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1) })
     const agent = harness.agents.created[0]!.agent
     Object.defineProperty(agent, 'status', { value: 'idle', configurable: true })
-    const sent: Array<{ to: string; input: Record<string, unknown> }> =
-      (harness as unknown as { sent?: typeof sent_list }).sent ?? (harness.fake as unknown as { state?: { sent?: typeof sent_list } }).state?.sent ?? []
+    const sent: Array<{ to: string; input: Record<string, unknown> }> = harness.fake.sent
     const before = sent.length
 
     await harness.fake.emitMessage(fakeMessage({ content: 'task-b' }))
