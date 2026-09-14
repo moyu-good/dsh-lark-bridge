@@ -267,3 +267,32 @@ describe('thinking process (CoT)', () => {
     await harness.dispose()
   })
 })
+
+describe('mid-turn re-aim (P141)', () => {
+  it('keeps the running turn on its own target and hands the next turn to the follow-up', async () => {
+    const harness = await mountChannel()
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
+    const session = harness.agents.created[0]!.agent.session
+    const emit = (type: string, data: unknown) => { harness.ctx.emit('session/event', session, { type, data }) }
+
+    emit('step/start', { turn: 1, step: 1 })
+    await vi.waitFor(() => { expect(harness.fake.cots).toHaveLength(1) })
+    expect(harness.fake.cots[0]!.replyTo).toBe('om_in_1')
+
+    // A follow-up lands while turn 1 is still working: turn 1 keeps its target.
+    await harness.fake.emitMessage(fakeMessage({ messageId: 'om_in_2', content: '这条是我的' }))
+    await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(2) })
+    emit('step/start', { turn: 2, step: 1 })
+    await vi.waitFor(() => { expect(harness.fake.cots).toHaveLength(2) })
+    expect(harness.fake.cots[0]!.replyTo).toBe('om_in_1')
+    expect(harness.fake.cots[1]!.replyTo).toBe('om_in_2')
+
+    emit('assistant/message', { turn: 2, message: { content: [{ type: 'text', text: 'answer-b' }] } })
+    emit('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    await vi.waitFor(() => {
+      expect(harness.fake.sent.some(s => String((s.input as { markdown?: string }).markdown ?? '').includes('answer-b'))).toBe(true)
+    })
+    await harness.dispose()
+  })
+})

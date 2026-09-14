@@ -158,6 +158,8 @@ export function createCotRenderer(
   const { showProcess, hidden, presentCall, onFailure, answer } = options
   let live: LiveRun | undefined
   let aimed: ReplyTarget | undefined
+  /** A target that arrived mid-run; it owns the NEXT turn, never the live one. */
+  let pendingAim: ReplyTarget | undefined
   /**
    * The turn's latest committed text, held because only the LAST one is the
    * answer. An agent narrates between tool calls — "let me look at the packages
@@ -190,6 +192,11 @@ export function createCotRenderer(
   const ensure = (turn: number): LiveRun => {
     if (live !== undefined && live.turn === turn) return live
     if (live !== undefined) closeRun(live)
+    if (pendingAim !== undefined) {
+      aimed = pendingAim
+      pendingAim = undefined
+      answer.aim(aimed)
+    }
     const opening = port
       .createCot(chatId, { ...aimed === undefined ? {} : { replyTo: aimed.messageId }, hidden })
       .catch((error: unknown) => {
@@ -227,6 +234,13 @@ export function createCotRenderer(
 
   return {
     aim(target) {
+      // Mid-run re-aim deferral (P141): the running turn must keep answering
+      // where it was asked — its process is already open under that target and
+      // its answer is still owed there. The new target owns the NEXT turn.
+      if (live !== undefined && !live.finished) {
+        pendingAim = target
+        return
+      }
       aimed = target
       answer.aim(target)
     },
@@ -346,6 +360,13 @@ export function createCotRenderer(
         if (held?.turn === event.data.turn) {
           answer.handle(held.event)
           held = undefined
+        }
+        // The ended turn's target is spent; a mid-run re-aim now owns the next
+        // turn (P141).
+        if (pendingAim !== undefined) {
+          aimed = pendingAim
+          pendingAim = undefined
+          answer.aim(aimed)
         }
         if (live === undefined || live.turn !== event.data.turn) return
         const run = live
