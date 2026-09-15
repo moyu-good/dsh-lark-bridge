@@ -30,6 +30,10 @@ export interface SubagentEntry {
   lastAt?: number
   /** Short「最近在做的事」— the child's own latest output snippet. */
   lastActivity?: string
+  /** Last few distinct output lines (oldest first). The delivery block quotes
+   * the tail of this, so one child reports WHAT it produced, not just that it
+   * finished. Bounded — a child is not a transcript. */
+  recent: string[]
   /** How many activity samples have been folded into {@link lastActivity}. */
   chunks: number
   /** Epoch ms when it settled. */
@@ -50,6 +54,9 @@ export function createTracker(): SubagentCardState {
 
 /** Longest activity snippet kept per child — one card line, not a transcript. */
 export const ACTIVITY_MAX = 68
+
+/** How many distinct lines a child's delivery block remembers (and quotes ≤3). */
+export const RECENT_MAX = 5
 
 /** Collapse whitespace and clip, so one line stays one line on a phone. */
 export function clipActivity(text: string, max: number = ACTIVITY_MAX): string {
@@ -77,6 +84,7 @@ export function addEntry(
     mode: descriptor.mode === 'continuable' ? 'continuable' : 'one-shot',
     status: 'running',
     startedAt: now,
+    recent: [],
     chunks: 0,
   }
   state.entries.set(id, entry)
@@ -97,7 +105,15 @@ export function markActivity(
   const entry = state.entries.get(id)
   if (entry === undefined) return undefined
   const clipped = clipActivity(text)
-  if (clipped !== '') entry.lastActivity = clipped
+  if (clipped !== '') {
+    entry.lastActivity = clipped
+    // Consecutive duplicates are the same sentence still streaming — only a new
+    // line is worth quoting in the delivery block.
+    if (entry.recent[entry.recent.length - 1] !== clipped) {
+      entry.recent.push(clipped)
+      if (entry.recent.length > RECENT_MAX) entry.recent.splice(0, entry.recent.length - RECENT_MAX)
+    }
+  }
   entry.chunks += 1
   entry.lastAt = now
   return entry
@@ -117,6 +133,21 @@ export function settleEntry(
   else e.status = 'error'
   e.endedAt = now
   return e
+}
+
+/**
+ * The one-message summary a finished child posts.
+ *
+ * The panel row already answers「还在跑吗」; this answers「它到底做出了什么」,
+ * which is the question the reader actually has (and what the old bare
+ * `✅ 子任务结束 [id]` line never did). Deliberately bounded to the last few
+ * lines — a child is summarised, never replayed.
+ */
+export function deliveryText(entry: SubagentEntry, now: number = Date.now()): string {
+  const head = `${statusMark(entry.status)}【子代理${statusText(entry.status)}】${entry.label}`
+    + ` · ${entry.chunks} 条动作 · ${elapsedText(entry.startedAt, entry.endedAt ?? now)}`
+  const tail = entry.recent.slice(-3).map(l => `　　↳ ${l}`)
+  return [head, ...tail].join('\n')
 }
 
 /** Children still running — the window an unattributable frame may fall into. */

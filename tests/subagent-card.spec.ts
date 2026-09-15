@@ -3,8 +3,10 @@ import {
   addEntry,
   clipActivity,
   createTracker,
+  deliveryText,
   elapsedText,
   markActivity,
+  RECENT_MAX,
   render,
   runningEntries,
   settleEntry,
@@ -137,6 +139,44 @@ describe('multi-agent panel rows', () => {
     expect(body).toContain('5秒')
     expect(body).toContain('跑 自动通关 --era=纪四')
     expect(body).toContain('0 结束 / 1 进行中')
+  })
+
+  it('remembers only distinct lines — one streaming sentence is quoted once', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 1)
+    markActivity(state, 'c', '正在读文件', 1)
+    markActivity(state, 'c', '正在读文件', 2)
+    markActivity(state, 'c', '读完了，开始跑测试', 3)
+    expect(state.entries.get('c')?.recent).toEqual(['正在读文件', '读完了，开始跑测试'])
+  })
+
+  it('caps remembered lines so a long child cannot blow up the block', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 1)
+    for (let i = 0; i < RECENT_MAX + 4; i += 1) markActivity(state, 'c', `第 ${i} 步`, i)
+    expect(state.entries.get('c')?.recent).toHaveLength(RECENT_MAX)
+    expect(state.entries.get('c')?.recent.at(-1)).toBe(`第 ${RECENT_MAX + 3} 步`)
+  })
+
+  it('delivery block names the child, counts its actions and quotes its last lines', () => {
+    const state = createTracker()
+    addEntry(state, 'c1', { mode: 'one-shot', label: '纪四复核' }, 0)
+    for (let i = 0; i < 5; i += 1) markActivity(state, 'c1', `第 ${i} 步`, i)
+    settleEntry(state, 'c1', 'completed', 60_000)
+    const text = deliveryText(state.entries.get('c1')!, 60_000)
+    expect(text).toContain('【子代理完成】纪四复核')
+    expect(text).toContain('5 条动作')
+    expect(text).toContain('1分')
+    expect(text).toContain('↳ 第 4 步')
+    expect(text).not.toContain('↳ 第 1 步')   // only the tail is quoted
+    expect(text.split('\n')).toHaveLength(4)  // head + 3 lines, never a dump
+  })
+
+  it('delivery block still identifies a child that produced nothing', () => {
+    const state = createTracker()
+    addEntry(state, 'c2', { mode: 'one-shot', label: '空跑' }, 0)
+    settleEntry(state, 'c2', 'aborted', 1000)
+    expect(deliveryText(state.entries.get('c2')!, 1000)).toBe('⏹️【子代理已中止】空跑 · 0 条动作 · 1秒')
   })
 
   it('renders an empty panel without a runner count', () => {

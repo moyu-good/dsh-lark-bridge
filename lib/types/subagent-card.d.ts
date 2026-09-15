@@ -28,6 +28,10 @@ export interface SubagentEntry {
     lastAt?: number;
     /** Short「最近在做的事」— the child's own latest output snippet. */
     lastActivity?: string;
+    /** Last few distinct output lines (oldest first). The delivery block quotes
+     * the tail of this, so one child reports WHAT it produced, not just that it
+     * finished. Bounded — a child is not a transcript. */
+    recent: string[];
     /** How many activity samples have been folded into {@link lastActivity}. */
     chunks: number;
     /** Epoch ms when it settled. */
@@ -43,6 +47,8 @@ export interface SubagentCardState {
 export declare function createTracker(): SubagentCardState;
 /** Longest activity snippet kept per child — one card line, not a transcript. */
 export declare const ACTIVITY_MAX = 68;
+/** How many distinct lines a child's delivery block remembers (and quotes ≤3). */
+export declare const RECENT_MAX = 5;
 /** Collapse whitespace and clip, so one line stays one line on a phone. */
 export declare function clipActivity(text: string, max?: number): string;
 /**
@@ -60,6 +66,15 @@ export declare function addEntry(state: SubagentCardState, id: string, descripto
  */
 export declare function markActivity(state: SubagentCardState, id: string, text: string, now?: number): SubagentEntry | undefined;
 export declare function settleEntry(state: SubagentCardState, id: string, stopReason: string, now?: number): SubagentEntry | undefined;
+/**
+ * The one-message summary a finished child posts.
+ *
+ * The panel row already answers「还在跑吗」; this answers「它到底做出了什么」,
+ * which is the question the reader actually has (and what the old bare
+ * `✅ 子任务结束 [id]` line never did). Deliberately bounded to the last few
+ * lines — a child is summarised, never replayed.
+ */
+export declare function deliveryText(entry: SubagentEntry, now?: number): string;
 /** Children still running — the window an unattributable frame may fall into. */
 export declare function runningEntries(state: SubagentCardState): SubagentEntry[];
 /** Settle every still-running one-shot child once the spawning turn is over.

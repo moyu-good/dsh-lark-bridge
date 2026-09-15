@@ -950,10 +950,16 @@ export function installBridge(
           // Settle the panel row this child owns. `info.id` is the child's
           // session id, which is exactly the key the catalog row used.
           const tracker = subagentTrackers.get(binding.chatId)
+          const settled = tracker?.entries.get(info.id)
           if (tracker !== undefined && subCard.settleEntry(tracker, info.id, info.stopReason) !== undefined) {
             void flushSubagentCard(binding.chatId, tracker, true).catch(reportSendFailure)
           }
-          void replay.send(binding.chatId, { markdown: subagentEndLine(info) }).catch(reportSendFailure)
+          // Prefer the delivery block (label + duration + what it produced) over
+          // the bare「子任务结束 [id]」line, which told the reader nothing.
+          const delivery = settled === undefined ? undefined : subCard.deliveryText(settled)
+          void replay.send(binding.chatId, {
+            markdown: delivery ?? subagentEndLine(info),
+          }).catch(reportSendFailure)
         })
         const jobs = agentCtx.get('jobs') as HostJobs | undefined
         jobs?.onJobDone((snapshot) => {
