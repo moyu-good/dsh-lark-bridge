@@ -1234,7 +1234,7 @@ export function installBridge(
           description: describeCommand(descriptor.name, locale, descriptor.description),
         })),
         ...channelCommands(locale),
-      ]
+      ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
       void syncSlashPanel(port, desired, notify).then(({ added, removed }) => {
         if (added.length > 0) notify(`dsh-lark-bridge: registered /${added.join(', /')} on the bot's slash panel`)
         if (removed.length > 0) notify(`dsh-lark-bridge: removed /${removed.join(', /')} from the bot's slash panel`)
