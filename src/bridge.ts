@@ -1253,6 +1253,7 @@ export function installBridge(
 
   /** Aborts in-flight command executions when this bridge unwinds. */
   const commands = new AbortController()
+  const lastSearchNoticeAt = new Map<string, number>()
   ctx.effect(() => () => { commands.abort() }, 'dsh-lark-bridge:commands')
   const commandSignal = (): AbortSignal => commands.signal
 
@@ -2040,7 +2041,12 @@ export function installBridge(
       }
     }
     if (isWebSearchRequestEvent(event)) {
-      void replay.send(binding.chatId, { markdown: webSearchLine() }).catch(reportSendFailure)
+      const nowMs = Date.now()
+      const last = lastSearchNoticeAt.get(binding.chatId)
+      if (last === undefined || nowMs - last >= 90_000) {
+        lastSearchNoticeAt.set(binding.chatId, nowMs)
+        void replay.send(binding.chatId, { markdown: webSearchLine() }).catch(reportSendFailure)
+      }
     }
     if (isLlmRetryEvent(event)) {
       const line = retryLine(event.data)
