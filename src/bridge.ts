@@ -635,6 +635,8 @@ export function installBridge(
   // falls back to the configured default, which the /config command states.
   const sessionPresets = new Map<string, string>()
   const subagentTrackers = new Map<string, subCard.SubagentCardState>()
+  /** 外勤会话镜像 (P141)：未绑定且非子会话的独立会话，按会话节流推一行进度。 */
+  const externalMirrorAt = new Map<string, number>()
   /** childId → chatId. 0.1.5 runs every child in its OWN session — the id
    * `subagent/catalog` reports as `childId` IS that session id (verified against
    * this install: each of the 20 catalog ids had a matching session directory),
@@ -1873,7 +1875,30 @@ export function installBridge(
       // match a bound session — narrate them into its panel row instead of
       // dropping them. This is what makes the panel live.
       const childOf = childChat.get(session.id)
-      if (childOf !== undefined) noteChildSessionEvent(childOf, session.id, event)
+      if (childOf !== undefined) {
+        noteChildSessionEvent(childOf, session.id, event)
+        return
+      }
+      // 外勤会话镜像 (P141, 09-15 令：实时多agent实况)：既未绑定、也非
+      // 子会话的独立会话（并行开发线/CLI 运行）→ 按会话节流（60s）推一行进度/
+      // 完结到绑定聊天。聊天自身会话走下方渲染管线，互不重复。
+      const notable = isStepStartEvent(event) || isTurnEndEvent(event)
+      const nowMs = Date.now()
+      const last = externalMirrorAt.get(session.id)
+      if (notable && (last === undefined || nowMs - last >= 60_000)) {
+        externalMirrorAt.set(session.id, nowMs)
+        const turn = (event.data as { turn?: number }).turn
+        const reason = (event.data as { reason?: { kind?: string } }).reason?.kind
+        const label = isTurnEndEvent(event)
+          ? `✅ T${turn ?? '?'} 完成（${reason ?? '?'}）`
+          : `T${turn ?? '?'} 进行中`
+        const seenChats = new Set<string>()
+        for (const b of bySession.values()) {
+          if (seenChats.has(b.chatId)) continue
+          seenChats.add(b.chatId)
+          void replay.send(b.chatId, { markdown: `⚙️ [会话 ${session.id.slice(0, 8)}] ${label}` }).catch(() => {})
+        }
+      }
       return
     }
     // One answer, one bubble — no cross-surface relay here.
