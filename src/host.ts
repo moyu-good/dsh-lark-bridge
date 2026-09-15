@@ -689,6 +689,29 @@ export function isSubagentDescriptorEvent(
   return event.type === 'subagent/descriptor'
 }
 
+/**
+ * Cordis `subagent/catalog` payload: the DURABLE child record appended to the
+ * PARENT session (`subagent/src/catalog.ts` establishCatalogChild). This is the
+ * only subagent event a parent-session subscriber can rely on in 0.1.5 —
+ * `subagent/descriptor` is appended inside the child's own session by the
+ * in-process driver, so wiring a chat panel to it produces a feature that
+ * silently never appears (2026-09-15).
+ */
+export interface SubagentCatalogData {
+  readonly version: number
+  /** The child's own session id — the stable key for per-child bookkeeping. */
+  readonly childId: string
+  readonly childCreatedAt: number
+  readonly mode: 'one-shot' | 'continuable'
+  readonly label?: string
+}
+
+export function isSubagentCatalogEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: SubagentCatalogData } {
+  return event.type === 'subagent/catalog'
+}
+
 /** Narrow a session event to one schedule mutation. */
 export function isScheduleChangeEvent(
   event: HostSessionEvent,

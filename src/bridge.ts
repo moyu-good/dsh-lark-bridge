@@ -44,7 +44,7 @@ import type {
   ScheduleEntry,
 } from './host.ts'
 import type { HostJobs, HostLoaderEntry, HostMessageFeedback, HostSessionQuery, HostSkills, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
-import { isAssistantMessageEvent, isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
+import { isAssistantMessageEvent, isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentCatalogEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
@@ -665,6 +665,103 @@ export function installBridge(
   const cwd = resolve(config.cwd ?? process.cwd())
 
   /**
+   * Multi-agent panel plumbing — ONE updatable card per chat, keyed by the
+   * child's own session id.
+   *
+   * Why `subagent/catalog` and not `subagent/descriptor`: 0.1.5 appends the
+   * descriptor inside the CHILD's session (subagent-in-process-driver
+   * `attachDescriptorAppend`), so a subscriber on the parent chat session never
+   * receives it. The durable parent-side record is `subagent/catalog`
+   * (`establishCatalogChild` → `parent.append`), and it carries
+   * `childId / childCreatedAt / mode / label`. Wiring the panel to the
+   * descriptor is why「多代理执行面板」never appeared while every gate stayed
+   * green (2026-09-15).
+   */
+  const CARD_UPDATE_MIN_MS = 4000
+  const streamDebug = process.env.DSH_BRIDGE_STREAM_DEBUG === '1'
+
+  const trackerFor = (chatId: string): subCard.SubagentCardState => {
+    let tracker = subagentTrackers.get(chatId)
+    if (tracker === undefined) {
+      tracker = subCard.createTracker()
+      subagentTrackers.set(chatId, tracker)
+    }
+    return tracker
+  }
+
+  /** Send the panel the first time, then keep it updated in place. */
+  const flushSubagentCard = async (
+    chatId: string,
+    tracker: subCard.SubagentCardState,
+    force: boolean,
+  ): Promise<void> => {
+    const now = Date.now()
+    if (!force && tracker.updatedAt !== undefined && now - tracker.updatedAt < CARD_UPDATE_MIN_MS) return
+    tracker.updatedAt = now
+    const card = subCard.render(tracker, now)
+    if (tracker.messageId === undefined) {
+      const sent = await replay.send(chatId, { card })
+      tracker.messageId = sent.messageId
+      return
+    }
+    await port.updateCard(tracker.messageId, card)
+  }
+
+  const upsertSubagent = (
+    chatId: string,
+    id: string,
+    descriptor: { mode?: string; label?: string },
+    force = false,
+  ): void => {
+    const tracker = trackerFor(chatId)
+    subCard.addEntry(tracker, id, descriptor)
+    void flushSubagentCard(chatId, tracker, force).catch(reportSendFailure)
+  }
+
+  /**
+   * Attribute one child stream frame to a panel row.
+   *
+   * The host publishes child attempts on the session the child shares with its
+   * spawner, so the frame carries no catalog id of its own. Match the agent id
+   * first (it is the child session id when the host exposes it); when that
+   * fails and exactly ONE child is still running, attribute to it; otherwise
+   * drop the sample rather than guess — the panel must never show one child's
+   * output under another child's name. `DSH_BRIDGE_STREAM_DEBUG=1` logs each
+   * verdict, which is how the id match gets confirmed on a live run.
+   */
+  /** The stream frame's agent exposes only its session id in the public type
+   * (the session it shares with its spawner). Read an agent id opportunistically
+   * — the host may carry one at runtime — and fall back to the single-running
+   * rule when it does not. */
+  const agentIdOf = (agent: { readonly session: { readonly id: string } }): string =>
+    (agent as { readonly id?: string }).id ?? ''
+
+  const childIdFor = (tracker: subCard.SubagentCardState, agentId: string): string | undefined => {
+    if (agentId !== '' && tracker.entries.has(agentId)) return agentId
+    const running = subCard.runningEntries(tracker)
+    return running.length === 1 ? running[0]?.id : undefined
+  }
+
+  const noteChildActivity = (
+    chatId: string,
+    agentId: string,
+    frame: { readonly type: string; readonly chunk?: { readonly text?: string } },
+  ): void => {
+    const tracker = subagentTrackers.get(chatId)
+    if (tracker === undefined) return
+    const text = frame.type === 'chunk' ? frame.chunk?.text ?? '' : ''
+    if (text.trim() === '') return
+    const id = childIdFor(tracker, agentId)
+    if (streamDebug) {
+      notify(`dsh-lark-bridge: child frame agent=${agentId} -> ${id ?? 'unresolved'}` +
+        ` (${subCard.runningEntries(tracker).length} running)`)
+    }
+    if (id === undefined) return
+    if (subCard.markActivity(tracker, id, text) === undefined) return
+    void flushSubagentCard(chatId, tracker, false).catch(reportSendFailure)
+  }
+
+  /**
    * Proactive context-pressure polling. While a live session is bound, the
    * host `tokenMeter` reports how many tokens the session's context costs; a
    * long task that outgrows the advised ceiling degrades quality before any
@@ -850,6 +947,12 @@ export function installBridge(
         agentCtx.on('subagent/end', (info: SubagentEndData) => {
           const binding = bySession.get(sessionId)
           if (binding === undefined) return
+          // Settle the panel row this child owns. `info.id` is the child's
+          // session id, which is exactly the key the catalog row used.
+          const tracker = subagentTrackers.get(binding.chatId)
+          if (tracker !== undefined && subCard.settleEntry(tracker, info.id, info.stopReason) !== undefined) {
+            void flushSubagentCard(binding.chatId, tracker, true).catch(reportSendFailure)
+          }
           void replay.send(binding.chatId, { markdown: subagentEndLine(info) }).catch(reportSendFailure)
         })
         const jobs = agentCtx.get('jobs') as HostJobs | undefined
@@ -1708,7 +1811,18 @@ export function installBridge(
     // the same step numbers over and over. Only the session's own agent owns
     // the chat's process display.
     const owner = agents.get(sessionId)
-    if (owner !== undefined && owner !== agent) return
+    if (owner !== undefined && owner !== agent) {
+      // Child agent. Two rules, both learned the hard way:
+      //   1. never render it into the parent's process display — unfiltered,
+      //      every subagent's reasoning interleaved with the parent's and its
+      //      turn/step counters restarted at 1, so the reader saw the same
+      //      step numbers over and over (fix 80b6019);
+      //   2. do not drop it either — route it to the multi-agent panel, keyed
+      //      by the child's own session id, so the run stays visible without
+      //      polluting the parent's answer.
+      noteChildActivity(binding.chatId, agentIdOf(agent), frame)
+      return
+    }
   if (frame.type === 'end') {
     attemptSteps.delete(frame.attemptId)
     return
@@ -1746,6 +1860,13 @@ export function installBridge(
         void replay.send(binding.chatId, {
           markdown: `🌐【web】${external.slice(0, 3000)}${external.length > 3000 ? '…' : ''}`,
         }).catch(reportSendFailure)
+      }
+      // Close out one-shot children spawned by this turn, so the panel does not
+      // leave stale「进行中」rows behind. `continuable` children outlive the
+      // turn by design and keep their own status.
+      const panel = subagentTrackers.get(binding.chatId)
+      if (panel !== undefined && subCard.settleRunningOneShots(panel) > 0) {
+        void flushSubagentCard(binding.chatId, panel, true).catch(reportSendFailure)
       }
     }
     // Audit counters: one lightweight pass over the same stream the renderers
@@ -1845,6 +1966,15 @@ export function installBridge(
       subCard.addEntry(tracker, childKey, event.data)
       const card = subCard.render(tracker)
       void replay.send(binding.chatId, { card }).catch(reportSendFailure)
+    }
+    if (isSubagentCatalogEvent(event)) {
+      // Durable child record on the PARENT session — the reachable event in
+      // 0.1.5 (see the panel plumbing note above). Keyed by the child's own
+      // session id, so its activity can be attributed later.
+      upsertSubagent(binding.chatId, event.data.childId, {
+        mode: event.data.mode,
+        ...event.data.label === undefined ? {} : { label: event.data.label },
+      }, true)
     }
     if (isScheduleChangeEvent(event)) {
       const line = scheduleLine({
