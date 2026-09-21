@@ -7,6 +7,7 @@
  * @module dsh-lark-bridge/session
  */
 
+import { appendFileSync } from 'node:fs'
 import type { NormalizedMessage } from '@larksuite/channel'
 import type { HostAgentHandle } from './host.ts'
 
@@ -230,6 +231,12 @@ export class ConversationSessions {
       // signal that this conversation was never served here — and an unreadable
       // log looks exactly the same. Reporting it keeps a corrupt session log
       // from passing silently as first contact.
+      // A resumed failure is normally a benign "never served here", but when
+      // the follow-up create fails too, the chat shows only its message — so
+      // persist this side's stack for the operator before moving on.
+      try {
+        appendFileSync('/tmp/dsh-session-crash.log', `[${new Date().toISOString()}] resume ${key}\n${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n\n`)
+      } catch { /* diagnostics must never mask the original failure */ }
       this.ladder.report(
         `dsh-lark-bridge: resuming session for ${key} failed, starting a new one: ${failureDetail(error)}`,
       )

@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readDeviceState, ensureDeviceId } from './sync/migrate.ts'
 import { arbitrationForInbound, claimIfActiveStale, isActiveEndpoint, accountUseByName, accountForgetByName } from './sync/bot-command.ts'
@@ -1491,6 +1492,12 @@ export function installBridge(
     } catch (error) {
       notify(`dsh-lark-bridge: agent creation failed for chat ${msg.chatId}: ${String(error)}`)
       ctx.logger.warn('agent creation failed for chat %s: %s', msg.chatId, error)
+      // The chat only shows the message; the operator needs the stack. journald
+      // carries no trace for this process, so persist it where it survives.
+      const stack = error instanceof Error ? (error.stack ?? error.message) : String(error)
+      try {
+        appendFileSync('/tmp/dsh-session-crash.log', `[${new Date().toISOString()}] chat=${msg.chatId}\n${stack}\n\n`)
+      } catch { /* diagnostics must never mask the original failure */ }
       await port
         .send(msg.chatId, { text: `⚠️ 无法启动会话：${error instanceof Error ? error.message : String(error)}` })
         .catch(reportSendFailure)
