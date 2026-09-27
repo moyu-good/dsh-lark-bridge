@@ -193,7 +193,7 @@ export interface HostCommands {
      * or the name does not resolve, which is what distinguishes an unknown
      * command from one that ran and failed.
      */
-    execute(agent: HostAgent, line: string, signal: AbortSignal): Promise<HostCommandExecution | undefined>;
+    execute(agent: HostAgent, line: string, submittedAttachments: readonly unknown[], signal: AbortSignal): Promise<HostCommandExecution | undefined>;
 }
 /** The `systemPrompt` assembler, as this plugin's per-agent composition uses it. */
 export interface HostSystemPrompt {
@@ -664,6 +664,25 @@ export declare function isCompactionPruneEvent(event: HostSessionEvent): event i
 /** Narrow a session event to one subagent descriptor. */
 export declare function isSubagentDescriptorEvent(event: HostSessionEvent): event is HostSessionEvent & {
     readonly data: SubagentDescriptorData;
+};
+/**
+ * Cordis `subagent/catalog` payload: the DURABLE child record appended to the
+ * PARENT session (`subagent/src/catalog.ts` establishCatalogChild). This is the
+ * only subagent event a parent-session subscriber can rely on in 0.1.5 —
+ * `subagent/descriptor` is appended inside the child's own session by the
+ * in-process driver, so wiring a chat panel to it produces a feature that
+ * silently never appears (2026-09-15).
+ */
+export interface SubagentCatalogData {
+    readonly version: number;
+    /** The child's own session id — the stable key for per-child bookkeeping. */
+    readonly childId: string;
+    readonly childCreatedAt: number;
+    readonly mode: 'one-shot' | 'continuable';
+    readonly label?: string;
+}
+export declare function isSubagentCatalogEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: SubagentCatalogData;
 };
 /** Narrow a session event to one schedule mutation. */
 export declare function isScheduleChangeEvent(event: HostSessionEvent): event is HostSessionEvent & {

@@ -333,7 +333,11 @@ export async function runCommandLine(
   if (commands === undefined) {
     return { reply: `⚠️ 本部署没有组合命令运行时，\`/${name}\` 无法执行。`, resolved: false }
   }
-  const execution = await commands.execute(agent, trimmed, signal)
+  // dsh 0.1.5 的 execute 是四参 (agent, line, submittedAttachments, signal)：
+  // 附件槽不给空数组会把 signal 挤进附件位、signal 位留 undefined，
+  // 核心读 `signal.aborted` 即崩（症状：每条斜杠命令都报"无法启动会话"）。
+  // 桥不随命令提交附件（飞书图片走 notes 注入），恒传空。
+  const execution = await commands.execute(agent, trimmed, [], signal)
   if (execution === undefined) {
     return { reply: `⚠️ 未知命令 \`/${name}\`。\n\n${helpText(commands, agent, config?.locale ?? 'zh')}`, resolved: false }
   }
