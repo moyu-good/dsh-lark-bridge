@@ -219,11 +219,15 @@ export interface HostAgentPresets {
    */
   mount(agentCtx: Context, id?: string): Promise<unknown>
   /**
-   * The standing scope key a reader with no agent resolves this preset's
+   * The standing scope a reader with no agent resolves this preset's
    * registrations in — the view that holds its tools, since a roster keeps
    * every model-facing row off the global layer.
+   *
+   * dsh 0.1.7 renamed this from `standingKeyFor` and changed the return value:
+   * the lease now carries the key plus an async `dispose`. Hold the lease for
+   * as long as its scope is read; disposing it revokes the key.
    */
-  standingKeyFor(id?: string): Promise<unknown>
+  acquireScope(id?: string): Promise<{ readonly key: unknown } & AsyncDisposable>
   /** Every preset the configured roots currently supply, broken ones included. */
   list(): Promise<readonly { readonly id: string; readonly trust: 'system' | 'user'; readonly name?: string; readonly description?: string; readonly broken?: string }[]>
   /**
@@ -880,8 +884,34 @@ export type HostJobDoneListener = (
 ) => void | PromiseLike<void>
 
 /** The `jobs` registry (subset of the host `JobRegistry`), per-agent scoped. */
+/** A job lifecycle event (subset of the host `JobEvent`). */
+export type HostJobEvent = {
+  readonly type: 'settled'
+  readonly job: HostJobSnapshot
+  /** Whether this settlement already reached a live `wait()` caller. */
+  readonly awaited: boolean
+} | {
+  readonly type: 'registered' | 'started' | 'chunk' | 'progress'
+  readonly job: HostJobSnapshot
+}
+
+/** The registry's event stream (subset of the host `JobEvents`). */
+export interface HostJobEvents {
+  subscribe(
+    filter: { readonly owners?: 'scope' | 'all' },
+    listener: (event: HostJobEvent) => void,
+  ): () => void
+}
+
 export interface HostJobs {
-  onJobDone(listener: HostJobDoneListener): () => void
+  /**
+   * Lifecycle and output events, filtered per subscription.
+   *
+   * dsh 0.1.7 replaced the former `onJobDone(listener)` with this stream: a
+   * job's terminal state arrives as a `settled` event whose `awaited` flag
+   * tells a reporter whether a live `wait()` already delivered it.
+   */
+  readonly events: HostJobEvents
   /** List caller-owned and unowned jobs in registration order. */
   list(caller?: { readonly id: string }): readonly HostJobSnapshot[]
 }

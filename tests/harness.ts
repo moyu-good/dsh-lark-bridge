@@ -609,8 +609,12 @@ export function createFakePresets(ids: string[] = ['default'], defaultId = ids[0
       mounted.push({ id, scoped: agentCtx !== undefined })
       return undefined
     },
-    async standingKeyFor(id) {
-      return `standing:${id ?? defaultId}`
+    async acquireScope(id) {
+      // dsh 0.1.7 shape: a disposable lease carrying the scope key.
+      return {
+        key: `standing:${id ?? defaultId}`,
+        async [Symbol.asyncDispose]() {},
+      }
     },
   }
   return { presets, mounted, resolved }

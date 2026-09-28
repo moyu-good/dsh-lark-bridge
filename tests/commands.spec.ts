@@ -505,7 +505,7 @@ describe('/config command', () => {
 describe('/jobs command', () => {
   /** A fake job registry with the given snapshots. */
   function fakeJobs(snapshots: object[]): object {
-    return { onJobDone: async () => () => {}, list: () => snapshots }
+    return { events: { subscribe: () => () => {} }, list: () => snapshots }
   }
 
   it('lists jobs with active ones first', async () => {

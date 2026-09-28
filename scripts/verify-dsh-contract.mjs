@@ -16,7 +16,9 @@ const FILES = {
   subagent: 'packages/subagent/subagent/src/types.ts',
   workflow: 'packages/workflow/workflow/src/index.ts',
   jobs: 'packages/jobs/jobs/src/index.ts',
+  jobsTypes: 'packages/jobs/jobs/src/types.ts',
   feedback: 'packages/feedback/message-feedback/src/types.ts',
+  presetRegistry: 'packages/preset/agent-preset-registry/src/index.ts',
 }
 
 const checks = [
@@ -41,6 +43,16 @@ const checks = [
     pattern: /completed: 'completed'[\s\S]*aborted: 'aborted'[\s\S]*error: 'error'[\s\S]*'max-tokens': 'max-tokens'/,
   },
   {
+    name: 'agent-preset registry exposes acquireScope (0.1.7 rename of standingKeyFor)',
+    file: 'presetRegistry',
+    pattern: /acquireScope\(id\?: string\): Promise</,
+  },
+  {
+    name: 'agent-preset registry still exposes resolve+mount',
+    file: 'presetRegistry',
+    pattern: /resolve\(id\?: string\): Promise[\s\S]*mount\(ctx: Context, id\?: string\): Promise/,
+  },
+  {
     name: 'workflow/log is a two-argument event',
     file: 'workflow',
     pattern: /'workflow\/log'\(info: WorkflowRunInfo, message: string\): void/,
@@ -51,14 +63,21 @@ const checks = [
     pattern: /'workflow\/phase'\(info: WorkflowRunInfo, title: string\): void/,
   },
   {
-    name: 'jobs keeps the onJobDone listener contract',
+    name: 'jobs exposes the events stream with subscribe (0.1.7 replacement for onJobDone)',
     file: 'jobs',
-    pattern: /abstract onJobDone\(listener: JobDoneListener\): \(\) => void/,
+    pattern: /abstract readonly events: JobEvents/,
   },
   {
-    name: 'jobs keeps the list(caller) contract',
+    name: 'jobs settled event carries awaited (dup-report guard)',
+    file: 'jobsTypes',
+    // `awaited` sits after `job`/`cause` and a doc block (measured 467 chars
+    // upstream), so match a window rather than requiring adjacency.
+    pattern: /readonly type: 'settled'[\s\S]{0,800}readonly awaited: boolean/,
+  },
+  {
+    name: 'jobs list(caller) takes a SessionId',
     file: 'jobs',
-    pattern: /abstract list\(caller\?: Agent\): JobSnapshot\[\]/,
+    pattern: /abstract list\(caller\?: SessionId\): JobView\[\]/,
   },
   {
     name: 'message feedback put request keeps its fields',
@@ -74,7 +93,7 @@ const HOST_PATTERNS = [
   ['workflow/log declared structurally', /'workflow\/log'\(info: WorkflowRunInfoData, message: string\): void/],
   ['workflow/phase declared structurally', /'workflow\/phase'\(info: WorkflowRunInfoData, title: string\): void/],
   ['AgentStatusData mirrors { agent, status }', /readonly agent: \{ readonly id: string \}/],
-  ['HostJobs mirrors onJobDone', /onJobDone\(listener: HostJobDoneListener\): \(\) => void/],
+  ['HostJobs mirrors events.subscribe', /readonly events: HostJobEvents/],
   ['HostJobs mirrors list(caller)', /list\(caller\?: \{ readonly id: string \}\): readonly HostJobSnapshot\[\]/],
   ['HostMessageFeedback mirrors put', /put\(request: \{[\s\S]*readonly sessionId: string[\s\S]*readonly rating: 'positive' \| 'negative'/],
 ]

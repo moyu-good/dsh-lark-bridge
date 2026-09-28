@@ -14,6 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "contract-test": "node plugin-contract-test.mjs",
     "contract-drift": "node scripts/verify-dsh-contract.mjs",
+    "audit-host": "node scripts/audit-host-contract.mjs",
+    "verify-upgrade": "bash scripts/verify-upgrade.sh",
     "hygiene": "node scripts/check-repo-hygiene.mjs . --lib"
   },
   "main": "lib/index.js",

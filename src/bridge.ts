@@ -951,9 +951,16 @@ export function installBridge(
     const presetId = presets === undefined ? undefined : (await presets.resolve(sessionPresets.get(sessionId) ?? config.preset)).id
     // A roster keeps every tool off the global layer, so its standing key is
     // the view that can describe this agent's calls.
-    const toolScope = presets === undefined || presetId === undefined
+    // 0.1.7: `standingKeyFor` was replaced by `acquireScope`, which returns a
+    // disposable lease `{ key: ScopeKey } & AsyncDisposable` instead of a bare
+    // key. Sources: dsh-api-session-controller/lib/index.js:2324 (hands the
+    // lease to its caller) and dsh-webhook/lib/index.js:158 (holds it for the
+    // life of the using-scope). This scope lives as long as the session does,
+    // so the lease is kept and released with the session, never eagerly.
+    const toolScopeLease = presets === undefined || presetId === undefined
       ? undefined
-      : await presets.standingKeyFor(presetId)
+      : await presets.acquireScope(presetId)
+    const toolScope = toolScopeLease?.key
     return {
       ...presetId === undefined ? {} : { presetId },
       presentCall: createCallPresenter(ctx.get('tools') as HostTools | undefined, toolScope),
@@ -986,7 +993,15 @@ export function installBridge(
           }).catch(reportSendFailure)
         })
         const jobs = agentCtx.get('jobs') as HostJobs | undefined
-        jobs?.onJobDone((snapshot) => {
+        // dsh 0.1.7 removed `JobRegistry.onJobDone`; completions now arrive on
+        // the registry's event stream as a `settled` event carrying the job's
+        // projection. `awaited` marks settlements a live `wait()` already
+        // delivered, so only the unawaited ones are announced here — reporting
+        // the awaited ones too would duplicate what the caller already got.
+        jobs?.events?.subscribe({ owners: 'scope' }, (event) => {
+          if (event.type !== 'settled') return
+          if (event.awaited) return
+          const snapshot = event.job
           if (snapshot.status === 'running' || snapshot.status === 'stopping') return
           const binding = bySession.get(sessionId)
           if (binding === undefined) return
