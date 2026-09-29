@@ -9,7 +9,10 @@ describe('mid-turn followup (P141)', () => {
   it('sends a queued receipt when a message lands while the agent is running', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage({ content: 'task-a' }))
-    await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1) })
+    // Mounting the channel and composing the first agent reads the preset
+    // roster off disk; the repo lives on a /mnt mount, so that comfortably
+    // outruns vi.waitFor's 1s default and flakes the test on a slow box.
+    await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1) }, { timeout: 5_000, interval: 50 })
 
     const agent = harness.agents.created[0]!.agent
     Object.defineProperty(agent, 'status', { value: 'running', configurable: true })
@@ -28,7 +31,7 @@ describe('mid-turn followup (P141)', () => {
   it('does not send the receipt while the agent is idle', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage({ content: 'task-a' }))
-    await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(harness.agents.created[0]!.agent.followup).toHaveBeenCalledTimes(1) }, { timeout: 5_000, interval: 50 })
     const agent = harness.agents.created[0]!.agent
     Object.defineProperty(agent, 'status', { value: 'idle', configurable: true })
     const sent: Array<{ to: string; input: Record<string, unknown> }> = harness.fake.sent

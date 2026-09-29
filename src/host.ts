@@ -875,6 +875,27 @@ export interface HostJobSnapshot {
   readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
   readonly detail?: string
   readonly startedAt: number
+  /**
+   * The output ring's coordinates. The projection deliberately carries no
+   * text — a reader pulls bytes with `readAt` from `earliest` up to `total`.
+   */
+  readonly output?: {
+    readonly total: number
+    readonly earliest: number
+  }
+}
+
+/** One chunk of a job's output ring (subset of the host `JobChunk`). */
+export interface HostJobChunk {
+  readonly at: number
+  readonly text: string
+}
+
+/** Result of one non-consuming `JobRegistry.readAt`. */
+export interface HostJobOutputRead {
+  readonly chunks: readonly HostJobChunk[]
+  readonly next: number
+  readonly lossy: boolean
 }
 
 /** Completion listener shape of `JobRegistry.onJobDone`. */
@@ -914,6 +935,18 @@ export interface HostJobs {
   readonly events: HostJobEvents
   /** List caller-owned and unowned jobs in registration order. */
   list(caller?: { readonly id: string }): readonly HostJobSnapshot[]
+  /**
+   * Read retained ring output WITHOUT moving the model's cursor.
+   *
+   * This is the read a completion notice wants: `read()` consumes the ring and
+   * advances the cursor the agent pulls from, so a notice using it would steal
+   * output the agent still expects to see. `readAt` only observes.
+   *
+   * @param id - job to read.
+   * @param from - absolute byte offset (0, or the projection's `earliest`).
+   * @param caller - reading session, checked against the job's owner.
+   */
+  readAt(id: string, from: number, caller?: { readonly id: string }): HostJobOutputRead
 }
 
 /** The `messageFeedback` service (subset of the host `MessageFeedback`). */

@@ -44,7 +44,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostLoaderEntry, HostMessageFeedback, HostSessionQuery, HostSkills, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostJobSnapshot, HostLoaderEntry, HostMessageFeedback, HostSessionQuery, HostSkills, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
 import { isAssistantMessageEvent, isCompactionEndEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentCatalogEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent } from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
@@ -993,6 +993,25 @@ export function installBridge(
           }).catch(reportSendFailure)
         })
         const jobs = agentCtx.get('jobs') as HostJobs | undefined
+        /**
+         * The retained output of a settled job, for its completion notice.
+         *
+         * `readAt` is the non-consuming read: it leaves the cursor the agent
+         * pulls from exactly where it is, so announcing a completion never
+         * steals output the model still expects to see (a `read()` here would).
+         * A notice without its tail still beats no notice, so any failure
+         * degrades to "no tail" instead of throwing into the event stream.
+         */
+        const jobOutput = (job: HostJobSnapshot): string => {
+          const coords = job.output
+          if (jobs === undefined || coords === undefined || coords.total <= coords.earliest) return ''
+          try {
+            return jobs.readAt(job.id, coords.earliest, { id: sessionId })
+              .chunks.map((chunk) => chunk.text).join('')
+          } catch {
+            return ''
+          }
+        }
         // dsh 0.1.7 removed `JobRegistry.onJobDone`; completions now arrive on
         // the registry's event stream as a `settled` event carrying the job's
         // projection. `awaited` marks settlements a live `wait()` already
@@ -1005,18 +1024,21 @@ export function installBridge(
           if (snapshot.status === 'running' || snapshot.status === 'stopping') return
           const binding = bySession.get(sessionId)
           if (binding === undefined) return
+          const output = jobOutput(snapshot)
           const terminal: {
             readonly id: string
             readonly kind: string
             readonly label: string
             readonly status: 'completed' | 'killed' | 'failed'
             readonly detail?: string
+            readonly output?: string
           } = {
             id: snapshot.id,
             kind: snapshot.kind,
             label: snapshot.label,
             status: snapshot.status,
             ...snapshot.detail === undefined ? {} : { detail: snapshot.detail },
+            ...output === '' ? {} : { output },
           }
           void replay.send(binding.chatId, { markdown: jobDoneLine(terminal) }).catch(reportSendFailure)
         })

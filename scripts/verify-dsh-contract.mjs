@@ -80,6 +80,14 @@ const checks = [
     pattern: /abstract list\(caller\?: SessionId\): JobView\[\]/,
   },
   {
+    name: 'jobs readAt is the non-consuming read',
+    file: 'jobs',
+    // Completion notices pull output with this one: `read()` consumes the ring
+    // and advances the model cursor, so a notice using it would steal bytes the
+    // agent still expects to see.
+    pattern: /abstract readAt\(id: JobId, from: number, caller\?: SessionId\): JobOutputRead/,
+  },
+  {
     name: 'message feedback put request keeps its fields',
     file: 'feedback',
     pattern: /readonly sessionId: SessionId[\s\S]*readonly messageId: MessageId[\s\S]*readonly rating: MessageFeedbackRating[\s\S]*readonly ifVersion: MessageFeedbackVersion \| null/,
@@ -95,6 +103,8 @@ const HOST_PATTERNS = [
   ['AgentStatusData mirrors { agent, status }', /readonly agent: \{ readonly id: string \}/],
   ['HostJobs mirrors events.subscribe', /readonly events: HostJobEvents/],
   ['HostJobs mirrors list(caller)', /list\(caller\?: \{ readonly id: string \}\): readonly HostJobSnapshot\[\]/],
+  ['HostJobs mirrors readAt', /readAt\(id: string, from: number, caller\?: \{ readonly id: string \}\): HostJobOutputRead/],
+  ['HostJobSnapshot mirrors output coordinates', /readonly output\?: \{[\s\S]*readonly total: number[\s\S]*readonly earliest: number/],
   ['HostMessageFeedback mirrors put', /put\(request: \{[\s\S]*readonly sessionId: string[\s\S]*readonly rating: 'positive' \| 'negative'/],
 ]
 

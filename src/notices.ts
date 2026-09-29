@@ -77,17 +77,49 @@ export function subagentEndLine(info: {
   return `${mark} 子任务结束${detail} [${info.id}]`
 }
 
-/** A background job's terminal line (from `JobRegistry.onJobDone`). */
+/** Longest tail of job output a completion notice carries, in characters. */
+const JOB_OUTPUT_TAIL_LIMIT = 700
+
+/**
+ * The tail of a job's output, normalised for chat.
+ *
+ * The END of a run is where the answer lands — the head is usually setup noise
+ * and progress spam — so a long output is cut from the FRONT and says how much
+ * it dropped, rather than being truncated from the back into uselessness.
+ */
+export function outputTail(output: string | undefined): string {
+  if (output === undefined) return ''
+  const trimmed = output
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (trimmed === '') return ''
+  if (trimmed.length <= JOB_OUTPUT_TAIL_LIMIT) return trimmed
+  const dropped = trimmed.length - JOB_OUTPUT_TAIL_LIMIT
+  return `…（前 ${dropped} 字省略）\n${trimmed.slice(-JOB_OUTPUT_TAIL_LIMIT)}`
+}
+
+/**
+ * A background job's terminal line (from the registry's `settled` event).
+ *
+ * Naming only the command tells the reader nothing they did not already know
+ * when it started — the answer is the job's OUTPUT. The caller reads the
+ * retained tail off the ring and hands it in here.
+ */
 export function jobDoneLine(job: {
   readonly id: string
   readonly kind: string
   readonly label: string
   readonly status: 'completed' | 'killed' | 'failed'
   readonly detail?: string
+  readonly output?: string
 }): string {
   const mark = job.status === 'completed' ? '✅' : job.status === 'killed' ? '⏹️' : '❌'
   const detail = job.detail === undefined || job.detail === '' ? '' : `（${job.detail}）`
-  return `${mark} 后台任务完成：${job.label}${detail} [${job.id}]`
+  const head = `${mark} 后台任务完成：${job.label}${detail} [${job.id}]`
+  const tail = outputTail(job.output)
+  return tail === '' ? head : `${head}\n\`\`\`\n${tail}\n\`\`\``
 }
 
 /**

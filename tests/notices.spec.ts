@@ -53,6 +53,37 @@ describe('notice lines', () => {
     expect(jobDoneLine({ id: 'subagent-3', kind: 'subagent', label: '调研', status: 'failed', detail: 'exit code: 3' })).toContain('exit code: 3')
   })
 
+  it('carries the job output into the completion notice', () => {
+    // The command alone told the reader nothing they did not already know when
+    // the job started — the answer is the output.
+    const line = jobDoneLine({
+      id: 'bash-1',
+      kind: 'bash',
+      label: 'grep -rn foo',
+      status: 'completed',
+      output: 'src/a.ts:12: foo\nsrc/b.ts:40: foo\n',
+    })
+    expect(line).toContain('grep -rn foo')
+    expect(line).toContain('src/b.ts:40: foo')
+  })
+
+  it('omits the output block when the job produced nothing', () => {
+    const bare = jobDoneLine({ id: 'bash-1', kind: 'bash', label: 'noop', status: 'completed' })
+    expect(bare).not.toContain('```')
+    // Whitespace-only output is the same as none: an empty fence is noise.
+    const blank = jobDoneLine({ id: 'bash-1', kind: 'bash', label: 'noop', status: 'completed', output: '\n   \n\n\n' })
+    expect(blank).not.toContain('```')
+  })
+
+  it('keeps the tail of a long output, not the head', () => {
+    // The end of a run is where the answer lands; the head is setup noise.
+    const output = 'START-OF-RUN\n' + 'x'.repeat(2000) + '\nANSWER-AT-END'
+    const line = jobDoneLine({ id: 'bash-1', kind: 'bash', label: 'job', status: 'completed', output })
+    expect(line).toContain('ANSWER-AT-END')
+    expect(line).not.toContain('START-OF-RUN')
+    expect(line).toContain('省略')
+  })
+
   it('announces only the first retry', () => {
     // Silent while retries are in flight; loud only at the final attempt.
     expect(retryLine({ retry: 1, maxRetries: 3 })).toBeUndefined()
