@@ -90,6 +90,15 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
     on(name: 'reconnecting', handler: () => void): () => void;
     /** The long connection is live again. */
     on(name: 'reconnected', handler: () => void): () => void;
+    /**
+     * Read one message back as a normalized message.
+     *
+     * Optional on purpose: the transport is the only thing that can fetch one,
+     * and a test double that does not model the API must still satisfy the port.
+     * When absent, a reply-quoted message simply reaches the model without its
+     * quote — degraded, not broken.
+     */
+    fetchMessage?(messageId: string): Promise<NormalizedMessage | undefined>;
     /** Replace a sent card's content in place. */
     updateCard(messageId: string, card: object): Promise<void>;
     /** Add an emoji reaction to a message; resolves the platform reaction id. */
@@ -104,6 +113,24 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
  * @returns a frozen user message for `agent.followup()`.
  */
 export declare function chatUserMessage(msg: NormalizedMessage, images: CollectedImages): HostUserMessage;
+/**
+ * How much of a quoted message the model is shown.
+ *
+ * A quote can be an entire bot answer. Repeating it verbatim buys nothing the
+ * session history does not already hold, and a long one would push the actual
+ * question out of the model's attention — so the head, and a marker.
+ */
+/**
+ * Render the message a chat message quotes back, as a block to prepend.
+ *
+ * 飞书的「引用」不是正文的一部分：入站事件只带 `parent_id`，被引用的那条要
+ * 另外调 `im.v1.message.get` 才能读到。不取它，模型看到的就是一句「这个你再
+ * 改改」加一片空白——它只能猜「这个」是什么，而人会以为它当然看得见。
+ *
+ * @param quoted - the referenced message, already fetched.
+ * @returns the block and its trailing newline, or '' when there is nothing to show.
+ */
+export declare function quotedPrefix(quoted: NormalizedMessage | undefined, maxChars?: number): string;
 /** What one chat message becomes, and what the chat is told about it. */
 export interface BusyDelivery {
     /** The inbox boundary the message actually takes. */

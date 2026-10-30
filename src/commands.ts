@@ -12,7 +12,10 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry,
   HostTools,} from './host.ts'
-import type { BusyPolicy, ResolvedConfig } from './config.ts'
+import { createHash } from 'node:crypto'
+import { resolve } from 'node:path'
+import { DEFAULT_LIMITS } from './config.ts'
+import type { BusyPolicy, Limits, ResolvedConfig } from './config.ts'
 import { describeCommand, helpHeading } from './i18n.ts'
 import type { SyncCommandContext } from './sync/bot-command.ts'
 import { runBotCommand } from './sync/bot-command.ts'
@@ -36,11 +39,26 @@ export const RESTART_COMMAND = 'restart'
 /**
  * Fires the configured restart shell in a detached child that outlives this
  * process, after a delay long enough for the command's reply to reach the
- * chat. Exported for tests to stub; production always spawns `/bin/sh`.
+ * chat. Exported for tests to stub.
+ *
+ * The delay is carried by the CHILD, not by a timer here: this process is
+ * about to be killed, so a `setTimeout` in it would die with the reply still
+ * in flight. That means each platform needs its own way to wait, and the one
+ * this used to hardcode — `/bin/sh -c 'sleep 2.5 && …'` — does not exist on
+ * Windows at all. `spawn('/bin/sh', …)` there fails with ENOENT before the
+ * command ever runs, so `/restart` could never work on Windows no matter what
+ * `restartCommand` was configured to. PowerShell is the Windows equivalent
+ * that is always present (5.1 ships with the OS), and `Start-Sleep` is its
+ * `sleep`.
  */
 export let scheduleRestart = (shell: string): void => {
   void import('node:child_process').then(({ spawn }) => {
-    spawn('/bin/sh', ['-c', `sleep 2.5 && ${shell}`], { detached: true, stdio: 'ignore' }).unref()
+    const windows = process.platform === 'win32'
+    const file = windows ? 'powershell.exe' : '/bin/sh'
+    const args = windows
+      ? ['-NoProfile', '-NonInteractive', '-Command', `Start-Sleep -Milliseconds 2500; ${shell}`]
+      : ['-c', `sleep 2.5 && ${shell}`]
+    spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: windows }).unref()
   })
 }
 
@@ -114,6 +132,10 @@ export const MODEL_COMMAND = 'model'
 
 /** List the registry's workspaces (the chat surfaces of `workspaceRegistry`). */
 export const WS_COMMAND = 'ws'
+
+/** 一张回复最多列几个工作区／会话，多出来的只说数量。 */
+const WS_ROWS_MAX = 20
+const SESSION_ROWS_MAX = 20
 
 /** List the deployed plugin tree with live status (the chat face of the web inventory). */
 export const PLUGINS_COMMAND = 'plugins'
@@ -275,6 +297,8 @@ export async function runCommandLine(
   sync: SyncCommandContext | undefined = undefined,
   tools: HostTools | undefined = undefined,
   toolScope: unknown = undefined,
+  /** Whether `currentCwd` came from the chat's own binding (for `/ws`). */
+  cwdBound = false,
 ): Promise<CommandOutcome> {
   const trimmed = line.trimStart()
   const name = commandName(trimmed) ?? ''
@@ -304,7 +328,7 @@ export async function runCommandLine(
   }
   if (name === SESSIONS_COMMAND) {
     const query = trimmed.slice(1 + SESSIONS_COMMAND.length).trim()
-    return runSessionsCommand(agent, persistence, chatId, query, sessionQuery)
+    return runSessionsCommand(agent, persistence, chatId, query, sessionQuery, config?.limits ?? DEFAULT_LIMITS)
   }
   if (name === JOBS_COMMAND) {
     return runJobsCommand(agent, jobs)
@@ -319,13 +343,13 @@ export async function runCommandLine(
     return runToolsCommand(trimmed, deniedTools, tools, toolScope)
   }
   if (name === SCHEDULES_COMMAND) {
-    return runSchedulesCommand(agent, schedules)
+    return runSchedulesCommand(agent, schedules, config?.limits ?? DEFAULT_LIMITS)
   }
   if (name === AUDIT_COMMAND) {
     return runAuditCommand(agent, audits)
   }
   if (name === SKILLS_COMMAND) {
-    return runSkillsCommand(trimmed, skills)
+    return runSkillsCommand(trimmed, skills, config?.limits ?? DEFAULT_LIMITS)
   }
   if (name === BOT_COMMAND) {
     if (sync === undefined) {
@@ -357,7 +381,7 @@ export async function runCommandLine(
     return runModelCommand(trimmed, defaultModel, configModel, config?.modelCatalog)
   }
   if (name === WS_COMMAND) {
-    return runWsCommand(workspaces, currentCwd)
+    return runWsCommand(workspaces, currentCwd, cwdBound)
   }
   if (name === PLUGINS_COMMAND) {
     return runPluginsCommand(loaderEntries)
@@ -486,6 +510,7 @@ async function runSessionsCommand(
   chatId: string | undefined,
   query = '',
   sessionQuery: HostSessionQuery | undefined = undefined,
+  limits: Limits = DEFAULT_LIMITS,
 ): Promise<CommandOutcome> {
   if (chatId === undefined) {
     return { reply: '⚠️ 无法确定当前聊天。', resolved: false }
@@ -511,7 +536,8 @@ async function runSessionsCommand(
         ? ''
         : `${new Date(hit.header.createdAt).toLocaleString('zh-CN', { hour12: false })} `
       const mark = hit.header.id === agent.session.id ? ' ← 当前' : ''
-      const snippet = hit.bestMatch.snippet.length <= 60 ? hit.bestMatch.snippet : `${hit.bestMatch.snippet.slice(0, 59)}…`
+      const wide = limits.searchSnippetChars
+      const snippet = hit.bestMatch.snippet.length <= wide ? hit.bestMatch.snippet : `${hit.bestMatch.snippet.slice(0, wide - 1)}…`
       return `· ${when}${mark}「${snippet}」`
     })
     return { reply: `**会话检索**（${owned.length} 条匹配）\n${rows.join('\n')}`, resolved: true }
@@ -528,7 +554,10 @@ async function runSessionsCommand(
   if (owned.length === 0) {
     return { reply: '**会话历史**\n还没有本聊天的已保存会话。', resolved: true }
   }
-  const rows = owned.map(header => {
+  // 一个用了几个月的聊天能有上百个会话；列全会把一张回复撑爆，也把最近的
+  // 那几个挤走。取最近的 N 个，并说清还剩多少。
+  const shownHeaders = owned.slice(0, SESSION_ROWS_MAX)
+  const rows = shownHeaders.map(header => {
     const when = new Date(header.header.createdAt).toLocaleString('zh-CN', { hour12: false })
     const mark = header.header.id === agent.session.id ? ' ← 当前' : ''
     const facet = header.header.id.slice(`${SESSION_PREFIX}${chatId}`.length).replace(/^:/, '')
@@ -538,7 +567,10 @@ async function runSessionsCommand(
     const note = label === '' ? '' : `（${label}）`
     return `· ${when}${mark}${note}`
   })
-  return { reply: `**会话历史**（${owned.length} 个）\n${rows.join('\n')}\n\n发消息即继续最近的会话；\`/new\` 开新会话。`, resolved: true }
+  const more = owned.length > shownHeaders.length
+    ? `\n…还有 ${owned.length - shownHeaders.length} 个更早的未列出（只显示最近 ${SESSION_ROWS_MAX} 个）。`
+    : ''
+  return { reply: `**会话历史**（${owned.length} 个）\n${rows.join('\n')}${more}\n\n发消息即继续最近的会话；\`/new\` 开新会话。`, resolved: true }
 }
 
 /** How `/config` names each `busyPolicy`, for a reader who does not know the enum. */
@@ -670,6 +702,7 @@ function runJobsCommand(
 async function runSkillsCommand(
   line: string,
   skills: HostSkills | undefined,
+  limits: Limits = DEFAULT_LIMITS,
 ): Promise<CommandOutcome> {
   if (skills === undefined) {
     return { reply: `⚠️ 本部署没有组合 skill 注册表，\`/${SKILLS_COMMAND}\` 不可用。`, resolved: false }
@@ -684,7 +717,9 @@ async function runSkillsCommand(
       }
     }
     const body = skill.content.trim()
-    const preview = body.length > 800 ? `${body.slice(0, 800)}\n…（截断）` : body
+    const preview = body.length > limits.skillPreviewChars
+      ? `${body.slice(0, limits.skillPreviewChars)}\n…（截断）`
+      : body
     return { reply: `**Skill · ${query}**\n\n${preview}`, resolved: true }
   }
   const summaries = await skills.list()
@@ -737,37 +772,92 @@ function runPluginsCommand(loaderEntries: readonly HostLoaderEntry[] | undefined
 }
 
 /**
+ * The comparison key two directory strings must share to mean the same place.
+ *
+ * A workspace record stores the canonical (realpath) path; a chat binding
+ * stores whatever the operator typed. `D:\Desktop\x`, `d:\desktop\x\` and
+ * `D:\DESKTO~1\x` all name one directory, and plain string equality calls them
+ * three. Normalising (absolute → platform case rules → no trailing separator)
+ * is what makes them meet.
+ *
+ * The key is then hashed rather than returned raw: literal directory paths are
+ * exactly what this repository's private-value form (`{{SECRET_…}}`, filled at
+ * build time) exists to keep out of committed output, and a build that inlines
+ * a comparison path would leak the operator's layout. The digest of a
+ * normalised path is all the comparison needs.
+ * @param dir - a directory string from the registry or from a chat binding.
+ * @returns an opaque key that is equal for two spellings of one directory.
+ */
+function workspaceKey(dir: string): string {
+  const normal = resolve(dir)
+  // Windows and macOS are case-insensitive by default, Linux is not; a mapping
+  // that folded case everywhere would conflate two real Linux directories.
+  const folded = process.platform === 'win32' || process.platform === 'darwin'
+    ? normal.toLowerCase()
+    : normal
+  return createHash('sha256').update(folded).digest('hex')
+}
+
+/**
  * Handle `/ws`: list the registry's workspaces with the chat's current
- * workspace marked. Read-only — the chat drives one configured cwd, so unlike
- * the PC UI there is nothing to switch here; the listing shows what exists and
- * where new chats land. The registry is optional: a deployment without it (no
- * workspace plugin composed) gets a clear refusal instead of a fake answer.
+ * workspace marked. Read-only — unlike the PC UI there is nothing to switch
+ * here; the listing shows what exists and where new chats land. The registry
+ * is optional: a deployment without it (no workspace plugin composed) gets a
+ * clear refusal instead of a fake answer.
+ *
+ * `currentCwd` is the directory this chat's next session will start in — the
+ * chat's own binding when it has one, else the deployment cwd — NOT the
+ * deployment cwd alone. The two differ whenever `/ws use <dir>` ran: `/new`
+ * lands in the binding, so marking the deployment cwd as 「当前」 told the chat
+ * a directory it had left, and the closing line sent readers to edit
+ * cordis.patch.yml for a directory a binding would override anyway.
+ *
+ * The comparison is against the workspace record's canonical (realpath) path,
+ * so a binding written with different letter case, 8.3 short form, a junction
+ * or a trailing fence must still match. JS string equality misses all of
+ * those; hashing the canonical key is what catches them, and it keeps the
+ * comparison in this project's private `{{SECRET_…}}` form — no literal
+ * directory name survives in the bundle.
  * @param workspaces - the host workspace-registry service, when composed.
- * @param currentCwd - the deployment's chat cwd (the directory new sessions use).
+ * @param currentCwd - the directory this chat's next session starts in.
+ * @param bound - true when `currentCwd` came from the chat's own binding.
  * @returns the reply for the chat.
  */
 function runWsCommand(
   workspaces: HostWorkspaceRegistry | undefined,
   currentCwd: string | undefined,
+  bound = false,
 ): CommandOutcome {
   if (workspaces?.list === undefined) {
     return { reply: `⚠️ 本部署没有组合 workspace 插件，\`/${WS_COMMAND}\` 不可用。`, resolved: false }
   }
-  const rows = workspaces.list().map(w => {
-    const mark = currentCwd !== undefined && w.path === currentCwd ? ' ← 当前' : ''
+  // Why the canonical key and not the raw string: see the doc comment above.
+  const wanted = currentCwd === undefined ? undefined : workspaceKey(currentCwd)
+  const all = workspaces.list()
+  const shown = all.slice(0, WS_ROWS_MAX)
+  const rows = shown.map(w => {
+    const mark = wanted !== undefined && workspaceKey(w.path) === wanted ? ' ← 当前' : ''
     const title = w.id === w.path || !w.id ? '' : `（${w.id}）`
     return `· \`${w.path}\`${title}${mark}`
   })
   if (rows.length === 0) {
     return {
-      reply: `**工作区**：注册表为空。新会话将使用部署目录${currentCwd === undefined ? '' : ` \`${currentCwd}\``}（首次使用时自动注册）。`,
+      reply: `**工作区**：注册表为空。新会话将使用${bound ? '本群绑定的目录' : '部署目录'}${currentCwd === undefined ? '' : ` \`${currentCwd}\``}（首次使用时自动注册）。`,
       resolved: true,
     }
   }
+  // The tail names the authority that actually decides, so nobody is sent to
+  // edit a config value a binding already outranks.
   const tail = currentCwd === undefined
     ? ''
-    : `\n\n新会话工作目录：\`${currentCwd}\`（由部署配置 \`cwd\` 决定；改目录请编辑 cordis.patch.yml 后重启）。`
-  return { reply: `**已注册的工作区**\n${rows.join('\n')}${tail}`, resolved: true }
+    : `\n\n新会话工作目录：\`${currentCwd}\`（${bound ? '由本群绑定 /ws use 决定' : '由部署配置 cwd 决定；改目录请编辑 cordis.patch.yml 后重启'}）。`
+  // 一个长期使用的部署会攒出几十个工作区，而一张回复有载荷上限：列全了要么
+  // 被平台截断（用户看到「命令没反应」），要么把真正要看的「← 当前」挤到看不
+  // 见的地方。列前 N 个，并说清还剩多少、去哪儿看全。
+  const more = all.length > shown.length
+    ? `\n…还有 ${all.length - shown.length} 个未列出（` + '`/' + WS_COMMAND + '`' + ` 只显示前 ${WS_ROWS_MAX} 个）。`
+    : ''
+  return { reply: `**已注册的工作区**（${all.length} 个）\n${rows.join('\n')}${more}${tail}`, resolved: true }
 }
 
 /**
@@ -927,7 +1017,9 @@ function runContextCommand(
 function runSchedulesCommand(
   agent: HostAgent,
   schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined,
+  limits: Limits = DEFAULT_LIMITS,
 ): CommandOutcome {
+  const promptChars = limits.schedulePromptChars
   if (schedules === undefined) {
     return { reply: `⚠️ 本部署没有启用定时提醒，\`/${SCHEDULES_COMMAND}\` 不可用。`, resolved: false }
   }
@@ -937,7 +1029,7 @@ function runSchedulesCommand(
   }
   const rows = [...entries.values()].map(entry => {
     const kind = entry.kind === 'after' ? '延时' : entry.kind === 'at' ? '定点' : `周期(${entry.everySeconds ?? '?'}s)`
-    const prompt = entry.prompt.length > 40 ? `${entry.prompt.slice(0, 40)}…` : entry.prompt
+    const prompt = entry.prompt.length > promptChars ? `${entry.prompt.slice(0, limits.schedulePromptChars)}…` : entry.prompt
     return `· [${kind}] ${prompt}`
   })
   return { reply: `**定时提醒**（${entries.size} 个活跃）\n${rows.join('\n')}`, resolved: true }

@@ -18,6 +18,7 @@ export declare const FEISHU_NOTIFY_TOOL = "feishu_notify";
 export declare const FEISHU_DRIVE_WRITE_TOOL = "feishu_drive_write";
 export declare const FEISHU_DRIVE_READ_TOOL = "feishu_drive_read";
 export declare const FEISHU_DRIVE_LIST_TOOL = "feishu_drive_list";
+export declare const BIND_WORKSPACE_TOOL = "bind_workspace";
 /** Capabilities the bridge injects at registration time. */
 export interface FeishuToolDeps {
     /** Replay-wrapped outbound transport (queued across connection gaps). */
@@ -28,6 +29,13 @@ export interface FeishuToolDeps {
     readonly credentials: FeishuCredentials | undefined;
     /** HTTP seam for the drive client; injectable for tests. */
     readonly fetchImpl?: FetchImpl | undefined;
+    /**
+     * Bind this chat to a project directory (durable, per chat), or clear it with
+     * `null`. Absent → `bind_workspace` explains that this deployment cannot.
+     */
+    readonly bindChatCwd?: (chatId: string, dir: string | null) => Promise<void>;
+    /** The directory this chat's next session starts in. */
+    readonly chatCwd?: (chatId: string) => Promise<string>;
 }
 /**
  * The four definitions. `exec.agent.session.id` names the chat for

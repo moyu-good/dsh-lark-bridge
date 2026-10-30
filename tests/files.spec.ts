@@ -119,17 +119,43 @@ describe('deliverFile', () => {
       .rejects.toThrow(/不存在/)
   })
 
-  it('sends the caption as its own message, then the file alone', async () => {
+  it('sends the file first, then the caption as its own message', async () => {
     const file = tempFile('r.csv', 'a,b')
     const { port, sent } = fakePort()
     await deliverFile(port, 'oc_1', '/workspace', { path: file, caption: '这是结果' })
     expect(sent).toHaveLength(2)
     // SendInput is a union: file and markdown never share one message, or the
     // transport's markdown-first dispatch drops the file silently.
-    expect((sent[0]!.input as { markdown?: string }).markdown).toBe('这是结果')
-    expect('file' in sent[0]!.input).toBe(false)
-    expect('markdown' in sent[1]!.input).toBe(false)
-    expect((sent[1]!.input as { file: { fileName: string } }).file.fileName).toBe('r.csv')
+    expect((sent[0]!.input as { file: { fileName: string } }).file.fileName).toBe('r.csv')
+    expect('markdown' in sent[0]!.input).toBe(false)
+    // The caption follows the file: a refused media send must not leave the
+    // chat holding a caption for a file that never arrived.
+    expect('file' in sent[1]!.input).toBe(false)
+    expect((sent[1]!.input as { markdown?: string }).markdown).toBe('这是结果')
+  })
+
+  it('tells the chat when the transport refuses the media, and still rejects', async () => {
+    const file = tempFile('chart.png', 'binary')
+    const sent: { to: string; input: object }[] = []
+    const port = {
+      async send(to: string, input: object) {
+        // The exact refusal a deployment without outbound.allowedFileDirs gives.
+        if ('image' in input) throw new Error('local file source requires `outbound.allowedFileDirs` to be configured')
+        sent.push({ to, input })
+        return { messageId: `om_${sent.length}` }
+      },
+      async stream() { return { messageId: 'om_s' } },
+    } as never
+
+    await expect(deliverFile(port, 'oc_1', '/workspace', { path: file, caption: '看这张图' }))
+      .rejects.toThrow(/发送失败/)
+    // The failure notice — not the caption — is what the chat must see.
+    expect(sent).toHaveLength(1)
+    const notice = (sent[0]!.input as { markdown?: string }).markdown ?? ''
+    expect(notice).toContain('没有发出去')
+    expect(notice).toContain('chart.png')
+    expect(notice).toContain('allowedFileDirs')
+    expect(notice).not.toContain('看这张图')
   })
 
   it('omits the caption message when absent', async () => {

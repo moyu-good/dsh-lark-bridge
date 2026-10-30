@@ -172,8 +172,30 @@ describe('/sessions command', () => {
     expect(outcome.reply).not.toContain('oc_chat_2')
   })
 
-  it('reports an empty history', async () => {
+  // 一个用了几个月的聊天能攒出上百个会话：列全会撑爆一张回复的载荷上限，
+  // 也把最近的几个挤出视野。取最近的 N 个，剩下的只报数量。
+  it('caps a long history at the newest rows and says how many are left', async () => {
+    const headers = Array.from({ length: 45 }, (_, i) => ({
+      id: `feishu-oc_chat_1:r${String(i).padStart(4, '0')}`,
+      createdAt: 1_700_000_000_000 + i * 1_000,
+    }))
     const outcome = await runCommandLine(
+      `/${SESSIONS_COMMAND}`,
+      fakeAgent(),
+      undefined,
+      new AbortController().signal,
+      undefined,
+      fakeStore(headers),
+      'oc_chat_1',
+    )
+    expect(outcome.reply).toContain('45 个')
+    expect(outcome.reply).toContain('还有 25 个更早的未列出')
+    // 列表行以 `·` 开头，前面的标题与提示不算。
+    const rows = outcome.reply.split('\n').filter(line => line.startsWith('·'))
+    expect(rows).toHaveLength(20)
+  })
+
+  it('reports an empty history', async () => {    const outcome = await runCommandLine(
       `/${SESSIONS_COMMAND}`,
       fakeAgent(),
       undefined,
@@ -1090,9 +1112,10 @@ describe('/ws command', () => {
     expect(noList.resolved).toBe(false)
   })
 
-  async function runWs(workspaces: unknown, currentCwd: string | undefined) {
+  async function runWs(workspaces: unknown, currentCwd: string | undefined, bound = false) {
     // runCommandLine's trailing params: indexes 20/21 = (…, workspaces, currentCwd);
-    // 16 undefineds fill presets(4) … configModel(19).
+    // 16 undefineds fill presets(4) … configModel(19). `cwdBound` trails
+    // loaderEntries/sync/tools/toolScope, all of which `/ws` never reads.
     return await runCommandLine(
       `/${WS_COMMAND}`,
       fakeAgent(),
@@ -1104,8 +1127,67 @@ describe('/ws command', () => {
       undefined, undefined, undefined, undefined, // 16-19
       workspaces as never,
       currentCwd,
+      undefined, undefined, undefined, undefined, // 22-25
+      bound,
     ) as unknown as { resolved: boolean; reply: string }
   }
+
+  // 2026-10-30 的现象：本群 `/ws use` 绑到了项目目录，`/new` 也确实落在
+  // 项目目录，但 `/ws` 的「← 当前」还挂在部署目录上，尾巴还写着「由部署配置
+  // cwd 决定」——因为它拿到的是 config.cwd，不是本群生效目录。
+  it('marks the chat\'s bound directory, not the deployment default', async () => {
+    // 中性路径：仓库的卫生检查会把真实的用户目录当作隐私泄漏拦下来，而这条
+    // 用例要证明的是「两个目录谁被标」，与它们叫什么无关。
+    const outcome = await runWs(
+      fakeRegistry([
+        { id: 'ws_root', path: '/srv' },
+        { id: 'ws_project', path: '/srv/proj' },
+      ]) as never,
+      '/srv/proj',
+      true,
+    )
+    const lines = outcome.reply.split('\n')
+    expect(lines.find(line => line.includes('ws_project'))).toContain('← 当前')
+    // 部署目录也注册过，但它不是本群生效目录，绝不能被标成「当前」。
+    expect(lines.find(line => line.includes('ws_root'))).not.toContain('← 当前')
+    expect(outcome.reply).toContain('由本群绑定')
+    expect(outcome.reply).not.toContain('cordis.patch.yml')
+  })
+
+  it('says the deployment cwd decides when the chat has no binding', async () => {
+    const outcome = await runWs(
+      fakeRegistry([{ id: 'ws_work', path: '/srv/work' }]) as never,
+      '/srv/work',
+    )
+    expect(outcome.reply).toContain('← 当前')
+    expect(outcome.reply).toContain('cordis.patch.yml')
+  })
+
+  // 绑定里存的是人手敲的串，注册表存的是 realpath：大小写、尾部分隔符、
+  // 相对写法都能指向同一个目录，纯字符串相等会把它们判成不匹配。
+  it('treats two spellings of one directory as the same workspace', async () => {
+    const marker = process.platform === 'win32' ? 'C:\\srv\\Proj' : '/srv/Proj'
+    const spelled = process.platform === 'win32' ? 'c:\\srv\\proj\\' : '/srv/proj/'
+    const same = await runWs(fakeRegistry([{ id: 'ws_p', path: marker }]) as never, spelled, true)
+    expect(same.reply).toContain('← 当前')
+  })
+
+  // 2026-10-30：`/ws` 之前能吐回整棵注册表，注册表大、路径长时一张回复就能
+  // 撑爆平台载荷上限，整条消息发不出去——用户看到的是「命令没反应」。现在
+  // 列出前 N 个，并明说还剩多少，链接回 `/sessions` 那种可继续查的地方。
+  it('bounds a large registry and says how many are left', async () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      id: `ws_${i}`,
+      path: `/srv/really-long-workspace-name-for-scrollback-${i}`,
+    }))
+    const outcome = await runWs(fakeRegistry(many) as never, undefined)
+    expect(outcome.resolved).toBe(true)
+    const shown = outcome.reply.split('\n').filter(line => line.startsWith('·'))
+    expect(shown.length).toBeLessThan(many.length)
+    expect(outcome.reply).toContain('还有')
+    // 被点名的目录仍是真实条目，不是编出来的。
+    expect(outcome.reply).toMatch(/really-long-workspace-name-for-scrollback-\d+/)
+  })
 })
 
 

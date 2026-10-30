@@ -29,8 +29,13 @@
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+// `URL.pathname` keeps the leading slash on Windows (`/D:/…`), so joining it to
+// a relative path yields `D:\D:\…` and every read fails with ENOENT — the gate
+// then reported "cannot check" instead of checking. `fileURLToPath` knows about
+// drive letters.
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '')
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8')
 
 let failed = 0

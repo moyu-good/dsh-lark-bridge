@@ -66,6 +66,25 @@ export function rotatedSessionId(
   return `${baseSessionId}:r${now.toString(36)}${suffix}`
 }
 
+/** The stamp-plus-tail a rotation appends, so {@link baseSessionIdOf} can strip it. */
+const ROTATION_SUFFIX = /:r[0-9a-z]+$/
+
+/**
+ * The conversation id a session id was derived from: the inverse of
+ * {@link rotatedSessionId} for the ids it produces, and the identity for every
+ * other id.
+ *
+ * `/new` creates the rotated id, but anything keyed by the conversation — the
+ * per-chat cwd binding, for one — was registered under the BASE id before the
+ * rotation. Callers that only ever see the session id need this to find it.
+ * @param sessionId - any session id.
+ * @returns the base id, or the input when it carries no rotation suffix.
+ */
+export function baseSessionIdOf(sessionId: string): string {
+  const suffix = ROTATION_SUFFIX.exec(sessionId)?.[0]
+  return suffix === undefined ? sessionId : sessionId.slice(0, -suffix.length)
+}
+
 /**
  * A JSON-backed {@link RotationStore}, cached in memory. A missing or
  * unparsable file reads as "no rotations"; writes go through a rename so a

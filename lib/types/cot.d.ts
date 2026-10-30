@@ -10,6 +10,7 @@
  * @module dsh-lark-bridge/cot
  */
 import type { OutboundRenderer, ToolPresentation } from './outbound.ts';
+import type { Limits } from './config.ts';
 /** One AG-UI event, as the write API takes it. */
 export interface CotEvent {
     readonly event_type: string;
@@ -37,9 +38,10 @@ export interface CotPort {
  * Summarise one tool call's arguments for the chat.
  *
  * @param argumentsJson - the arguments as the host delivered them.
+ * @param maxValueChars - how much of one kept value to show.
  * @returns a short description of what the call was for.
  */
-export declare function summariseArguments(argumentsJson: string): string;
+export declare function summariseArguments(argumentsJson: string, maxValueChars?: number): string;
 /** Options for {@link createCotRenderer}. */
 export interface CotRendererOptions {
     /** Whether the agent's reasoning and tool calls appear at all. */
@@ -52,6 +54,8 @@ export interface CotRendererOptions {
     readonly onFailure: (error: unknown) => void;
     /** Renders the answer itself; the thinking process deliberately carries none. */
     readonly answer: OutboundRenderer;
+    /** Elision budgets for reasoning, arguments and results; defaults when absent. */
+    readonly limits?: Limits;
 }
 /**
  * Renderer that shows the process as a native CoT message and leaves the answer

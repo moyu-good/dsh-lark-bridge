@@ -25,7 +25,17 @@ export declare const RESTART_COMMAND = "restart";
 /**
  * Fires the configured restart shell in a detached child that outlives this
  * process, after a delay long enough for the command's reply to reach the
- * chat. Exported for tests to stub; production always spawns `/bin/sh`.
+ * chat. Exported for tests to stub.
+ *
+ * The delay is carried by the CHILD, not by a timer here: this process is
+ * about to be killed, so a `setTimeout` in it would die with the reply still
+ * in flight. That means each platform needs its own way to wait, and the one
+ * this used to hardcode — `/bin/sh -c 'sleep 2.5 && …'` — does not exist on
+ * Windows at all. `spawn('/bin/sh', …)` there fails with ENOENT before the
+ * command ever runs, so `/restart` could never work on Windows no matter what
+ * `restartCommand` was configured to. PowerShell is the Windows equivalent
+ * that is always present (5.1 ships with the OS), and `Start-Sleep` is its
+ * `sleep`.
  */
 export declare let scheduleRestart: (shell: string) => void;
 /** Test seam: replace the restart scheduler. Returns the previous one. */
@@ -145,5 +155,7 @@ export declare function helpText(commands: HostCommands | undefined, agent: Host
 export declare function runCommandLine(line: string, agent: HostAgent, commands: HostCommands | undefined, signal: AbortSignal, presets?: HostAgentPresets | undefined, persistence?: HostSessionPersistence | undefined, chatId?: string | undefined, deniedTools?: ReadonlySet<string> | undefined, schedules?: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined, audits?: ReadonlyMap<string, AuditStats> | undefined, config?: ResolvedConfig | undefined, sessionPresets?: Map<string, string> | undefined, sessionQuery?: HostSessionQuery | undefined, jobs?: HostJobs | undefined, feedback?: HostMessageFeedback | undefined, lastAssistantMessageId?: string | undefined, tokenMeter?: HostTokenMeter | undefined, skills?: HostSkills | undefined, defaultModel?: HostDefaultModel | undefined, configModel?: {
     readonly provider?: string;
     readonly model?: string;
-} | undefined, workspaces?: HostWorkspaceRegistry | undefined, currentCwd?: string | undefined, loaderEntries?: readonly HostLoaderEntry[] | undefined, sync?: SyncCommandContext | undefined, tools?: HostTools | undefined, toolScope?: unknown): Promise<CommandOutcome>;
+} | undefined, workspaces?: HostWorkspaceRegistry | undefined, currentCwd?: string | undefined, loaderEntries?: readonly HostLoaderEntry[] | undefined, sync?: SyncCommandContext | undefined, tools?: HostTools | undefined, toolScope?: unknown, 
+/** Whether `currentCwd` came from the chat's own binding (for `/ws`). */
+cwdBound?: boolean): Promise<CommandOutcome>;
 //# sourceMappingURL=commands.d.ts.map

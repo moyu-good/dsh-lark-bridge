@@ -1159,6 +1159,44 @@ export declare function isTeamMessageDeliveredEvent(event: HostSessionEvent): ev
     readonly data: TeamMessageDeliveredEventData;
 };
 /**
+ * A message the human at the chat typed.
+ *
+ * A message sent while a turn is already running is not recorded when it
+ * arrives: it goes into the agent's inbox and is appended to the session log
+ * at the step boundary where the driver admits it, so its `seq` sits between
+ * two `step/start` events of the turn it redirected. That is what makes it
+ * findable at all — by the time it appears, the turn it changed is known.
+ *
+ * The payload IS the message: `id`, `role`, `content`, `source`. Other message
+ * shapes on this event (a teammate's relay) nest the message under `message`,
+ * which is why the guard accepts both.
+ */
+export interface UserChatMessageData {
+    readonly id: string;
+    readonly role?: string;
+    readonly content: readonly {
+        readonly type: string;
+        readonly text?: string;
+    }[];
+    readonly source?: {
+        readonly kind?: string;
+    };
+}
+/**
+ * Narrow a session event to a message the human at the chat typed.
+ *
+ * Only the human's own words qualify. The same event carries instruction,
+ * context, goal and reminder messages the host writes itself — all of them
+ * `source.kind` values other than `user` — and none of them are something a
+ * reader of the thinking process would recognise as their own sentence.
+ *
+ * @param event - any session event.
+ * @returns whether the event is a message the human sent.
+ */
+export declare function isUserChatMessageEvent(event: HostSessionEvent): event is HostSessionEvent & {
+    readonly data: UserChatMessageData;
+};
+/**
  * A message that came from another agent in a team.
  *
  * The team package does not record a mailbox event when a member messages

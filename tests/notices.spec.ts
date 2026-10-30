@@ -116,11 +116,20 @@ describe('notice lines', () => {
 
   it('keeps the tail of a long output, not the head', () => {
     // The end of a run is where the answer lands; the head is setup noise.
-    const output = 'START-OF-RUN\n' + 'x'.repeat(2000) + '\nANSWER-AT-END'
+    // Long enough to exceed the default tail budget, so the cut is exercised.
+    const output = 'START-OF-RUN\n' + 'x'.repeat(4000) + '\nANSWER-AT-END'
     const line = jobDoneLine({ id: 'bash-1', kind: 'bash', label: 'job', status: 'completed', output })
     expect(line).toContain('ANSWER-AT-END')
     expect(line).not.toContain('START-OF-RUN')
     expect(line).toContain('省略')
+  })
+
+  it('honours a caller-set tail budget', () => {
+    const output = 'START-OF-RUN\n' + 'x'.repeat(300) + '\nANSWER-AT-END'
+    const line = jobDoneLine({ id: 'bash-1', kind: 'bash', label: 'job', status: 'completed', output }, 40)
+    expect(line).toContain('ANSWER-AT-END')
+    expect(line).toContain('省略')
+    expect(line).not.toContain('START-OF-RUN')
   })
 
   it('announces only the first retry', () => {

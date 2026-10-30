@@ -106,8 +106,27 @@ export type DurationProbe =
 /** Measures one file's duration. Replaceable: measuring shells out to a tool. */
 export type MeasureDuration = (path: string) => Promise<DurationProbe>;
 /**
+ * The line the chat gets when a delivery is refused.
+ *
+ * The tool result carries the error to the model, and the log carries it to the
+ * operator — but the person who asked for the file is looking at the chat, and
+ * without this line they see nothing at all. Silence there reads as "the agent
+ * forgot", which is the wrong fix to go looking for.
+ * @param fileName - the file that did not go out.
+ * @param detail - the transport's own message.
+ * @returns the notice to send into the chat.
+ */
+export declare function sendFailureNotice(fileName: string, detail: string): string;
+/**
  * Deliver a file to a chat through the outbound transport. Resolves with the
  * delivered file name, or rejects with a message the tool turns into a result.
+ *
+ * The media goes first and the caption second. The other order was a trap: the
+ * caption is a message of its own (a union `SendInput` cannot carry both), so a
+ * media send the transport refuses — a path outside `outbound.allowedFileDirs`
+ * is the usual one — left the chat holding a friendly line about a file that
+ * never arrived. Sending media first means a failure has nothing to contradict
+ * it, and the chat gets an explicit notice instead of a dangling caption.
  * @param port - the outbound transport (replay-wrapped by the bridge).
  * @param chatId - the target chat.
  * @param cwd - workspace root, for resolving relative paths.

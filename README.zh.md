@@ -54,7 +54,7 @@
 
 ### 它想什么，你看得见
 
-reasoning 渲染成飞书原生的「思考中」消息。工具调用带图标进来，结果只显示头几行，完整输出留在会话记录里。每轮结束时固定一行收束——用了几次工具、花了多久。不需要凭感觉相信。
+reasoning 渲染成飞书原生的「思考中」消息。工具调用带图标进来，结果默认显示前 10 行、1600 字（`limits` 可调），完整输出留在会话记录里。每轮结束时固定一行收束——用了几次工具、花了多久。不需要凭感觉相信。跑到一半插话，你说的那句话也会落进思考区，就排在它让 Agent 改方向的那一步前面。
 
 ### 长任务不是「发完就等」
 
@@ -192,6 +192,7 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 | `chronicleEndpoint` | `''` | 可选：每条被受理的入站用户消息 POST 一次 |
 | `announceSubagents` | `true` | 派出子代理时在聊天里播报一行 |
 | `autoResumeGoals` | `false` | 重启后自动续跑活跃 goal——默认关，要自己打开 |
+| `restartCommand` | 未配置 → `/restart` 不可用 | 重启宿主的命令；2.5 秒后在脱离父进程的子进程里执行（POSIX 用 `sh`，Windows 用 PowerShell） |
 
 凭据三层解析（后者覆盖前者）：bundle patch 配置 → settings 文档插件区 → 首次扫码注册。
 
@@ -331,13 +332,13 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 
 ```sh
 pnpm hygiene                    # 仓库卫生（部署专有词只留在本机）
-pnpm test                       # 593 条测试 / 59 个 spec 文件
+pnpm test                       # 631 条测试 / 65 个 spec 文件
 pnpm contract-test              # 43 条宿主契约检查
 pnpm contract-drift             # 对上游 dsh master 的漂移检查
 node scripts/check-readme-parity.mjs   # 两份 README 保持同构
 ```
 
-测试在 `tests/` —— vitest 套件（59 个），含 harness 注入式假件。升级引擎前后各跑一次 `pnpm contract-drift`——桥所镜像的宿主接缝一旦挪位，它会红。
+测试在 `tests/` —— vitest 套件（65 个），含 harness 注入式假件。升级引擎前后各跑一次 `pnpm contract-drift`——桥所镜像的宿主接缝一旦挪位，它会红。
 
 ## 🤝 参与
 

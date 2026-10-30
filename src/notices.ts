@@ -10,6 +10,8 @@
  * @module dsh-lark-bridge/notices
  */
 
+import { DEFAULT_LIMITS } from './config.ts'
+
 /** The `subagent/descriptor` payload fields this module renders. */
 export interface SubagentNotice {
   readonly mode: 'one-shot' | 'continuable'
@@ -77,8 +79,6 @@ export function subagentEndLine(info: {
   return `${mark} 子任务结束${detail} [${info.id}]`
 }
 
-/** Longest tail of job output a completion notice carries, in characters. */
-const JOB_OUTPUT_TAIL_LIMIT = 700
 
 /**
  * The tail of a job's output, normalised for chat.
@@ -87,7 +87,7 @@ const JOB_OUTPUT_TAIL_LIMIT = 700
  * and progress spam — so a long output is cut from the FRONT and says how much
  * it dropped, rather than being truncated from the back into uselessness.
  */
-export function outputTail(output: string | undefined): string {
+export function outputTail(output: string | undefined, limit: number = DEFAULT_LIMITS.jobTailChars): string {
   if (output === undefined) return ''
   const trimmed = output
     .replace(/\r\n?/g, '\n')
@@ -95,9 +95,9 @@ export function outputTail(output: string | undefined): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   if (trimmed === '') return ''
-  if (trimmed.length <= JOB_OUTPUT_TAIL_LIMIT) return trimmed
-  const dropped = trimmed.length - JOB_OUTPUT_TAIL_LIMIT
-  return `…（前 ${dropped} 字省略）\n${trimmed.slice(-JOB_OUTPUT_TAIL_LIMIT)}`
+  if (trimmed.length <= limit) return trimmed
+  const dropped = trimmed.length - limit
+  return `…（前 ${dropped} 字省略）\n${trimmed.slice(-limit)}`
 }
 
 /**
@@ -145,13 +145,13 @@ export function jobDoneLine(job: {
   readonly detail?: string
   readonly durationMs?: number
   readonly output?: string
-}): string {
+}, tailChars: number = DEFAULT_LIMITS.jobTailChars): string {
   const mark = job.status === 'completed' ? '✅' : job.status === 'killed' ? '⏹️' : '❌'
   const detail = job.detail === undefined || job.detail === '' ? '' : `（${job.detail}）`
   const label = labelLine(job.label)
   const took = durationLine(job.durationMs)
   const head = `${mark} 后台任务完成：${label === '' ? job.kind : label}${detail}${took} [${job.id}]`
-  const tail = outputTail(job.output)
+  const tail = outputTail(job.output, tailChars)
   return tail === '' ? head : `${head}\n\`\`\`\n${tail}\n\`\`\``
 }
 

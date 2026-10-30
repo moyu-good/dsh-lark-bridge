@@ -39,7 +39,7 @@ export declare function subagentEndLine(info: {
  * and progress spam — so a long output is cut from the FRONT and says how much
  * it dropped, rather than being truncated from the back into uselessness.
  */
-export declare function outputTail(output: string | undefined): string;
+export declare function outputTail(output: string | undefined, limit?: number): string;
 export declare function jobDoneLine(job: {
     readonly id: string;
     readonly kind: string;
@@ -48,7 +48,7 @@ export declare function jobDoneLine(job: {
     readonly detail?: string;
     readonly durationMs?: number;
     readonly output?: string;
-}): string;
+}, tailChars?: number): string;
 /**
  * A model-call retry line. Transient upstream failures self-heal through the
  * retry policy in the vast majority of cases — announcing the first retry

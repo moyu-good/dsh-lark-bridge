@@ -92,6 +92,10 @@ export function createFakePort() {
   }[] = []
   /** Downloadable resources, by file key, as the transport would serve them. */
   const resourceBytes = new Map<string, { buffer: Uint8Array; contentType?: string }>()
+  /** Messages a test declared readable by id, as `fetchMessage` serves them. */
+  const quotedById = new Map<string, NormalizedMessage>()
+  /** Ids passed to `fetchMessage`, in call order. */
+  const fetched: string[] = []
   const state = {
     connects: 0,
     disconnects: 0,
@@ -187,6 +191,12 @@ export function createFakePort() {
       if (stored === undefined) throw new Error(`no such resource ${fileKey} on ${messageId} (fake)`)
       return stored
     },
+    async fetchMessage(messageId) {
+      fetched.push(messageId)
+      // The real transport answers `undefined` for a message it cannot read;
+      // throwing here would hide the degradation path behind a fake-only shape.
+      return quotedById.get(messageId)
+    },
     async listSlashCommands() {
       if (state.failPanelList) throw new Error('no permission to list commands (fake)')
       return panelCommands.map((c, index) => ({ command: c, commandId: `cmd_${index}` }))
@@ -233,6 +243,8 @@ export function createFakePort() {
     panelCreated,
     panelDeleted,
     resourceBytes,
+    quotedById,
+    fetched,
     cots,
     state,
     /** Deliver one inbound chat message to every subscribed handler. */

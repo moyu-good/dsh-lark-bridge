@@ -262,6 +262,105 @@ export interface Config {
     /** Total-token threshold that triggers the warning (default 120000). */
     threshold?: number
   }
+  /**
+   * How much of a long thing the chat shows before eliding it.
+   *
+   * These are editorial budgets, not platform limits: a card is meant to be
+   * read, and a value too small loses the one line that explains a failure. A
+   * chat used as a workstation wants them larger than a chat used for a
+   * glance, so every one is configurable. The single real platform bound —
+   * one thinking-process event is capped at 4096 characters — is enforced
+   * separately and does not move.
+   */
+  limits?: LimitsConfig
+}
+
+/** Elision budgets as configured; an absent field takes its default. */
+export interface LimitsConfig {
+  /** Lines of one tool result shown in the thinking area. */
+  toolResultLines?: number
+  /** Characters of one tool result shown in the thinking area. */
+  toolResultChars?: number
+  /** Characters per kept tool-call argument value in the thinking area. */
+  toolArgChars?: number
+  /** Characters of a mid-turn message shown in the thinking area. */
+  userMessageChars?: number
+  /** Characters of a quoted message prepended to the model's own input. */
+  quoteChars?: number
+  /** Characters of a background job's output carried by its completion notice. */
+  jobTailChars?: number
+  /** Characters of a tool call's arguments shown on an approval card. */
+  approvalArgChars?: number
+  /** Characters of a skill body shown by `/skills <name>`. */
+  skillPreviewChars?: number
+  /** Characters of one retrieval snippet shown by `/sessions <关键词>`. */
+  searchSnippetChars?: number
+  /** Characters of one session's opening prompt shown by `/sessions`. */
+  sessionPromptChars?: number
+  /** Characters of one scheduled reminder's prompt shown by `/schedules`. */
+  schedulePromptChars?: number
+}
+
+/** Elision budgets after defaults are applied. */
+export interface Limits {
+  readonly toolResultLines: number
+  readonly toolResultChars: number
+  readonly toolArgChars: number
+  readonly userMessageChars: number
+  readonly quoteChars: number
+  readonly jobTailChars: number
+  readonly approvalArgChars: number
+  readonly skillPreviewChars: number
+  readonly searchSnippetChars: number
+  readonly sessionPromptChars: number
+  readonly schedulePromptChars: number
+}
+
+/**
+ * Default elision budgets, sized for a session someone is working in.
+ *
+ * The earlier fixed values (3 lines / 240 chars for a result, 120 chars per
+ * argument, 700 for a job tail) were tuned for a chat read in passing, and lost
+ * exactly the lines that answer "why did it fail": the last lines of a build
+ * log, the middle of a command. The caps still exist — a 10k-line log must not
+ * turn one card into a wall — they are just far enough out to keep the useful
+ * part. `userMessageChars` stays under the 4096-character event bound.
+ */
+export const DEFAULT_LIMITS: Limits = {
+  toolResultLines: 10,
+  toolResultChars: 1600,
+  toolArgChars: 400,
+  userMessageChars: 3000,
+  quoteChars: 6000,
+  jobTailChars: 2500,
+  approvalArgChars: 1000,
+  skillPreviewChars: 2000,
+  // 「这条是不是我要找的那条」，一个片段 60 字常常答不出来——刚好停在
+  // 有信息量的那一段之前。给到一整句到两句话的长度。
+  searchSnippetChars: 200,
+  sessionPromptChars: 120,
+  schedulePromptChars: 120,
+}
+
+/**
+ * Apply defaults to a configured set of elision budgets.
+ * @param config - the configured budgets, when any.
+ * @returns every budget, with defaults filled in.
+ */
+export function resolveLimits(config: LimitsConfig | undefined): Limits {
+  return {
+    toolResultLines: config?.toolResultLines ?? DEFAULT_LIMITS.toolResultLines,
+    toolResultChars: config?.toolResultChars ?? DEFAULT_LIMITS.toolResultChars,
+    toolArgChars: config?.toolArgChars ?? DEFAULT_LIMITS.toolArgChars,
+    userMessageChars: config?.userMessageChars ?? DEFAULT_LIMITS.userMessageChars,
+    quoteChars: config?.quoteChars ?? DEFAULT_LIMITS.quoteChars,
+    jobTailChars: config?.jobTailChars ?? DEFAULT_LIMITS.jobTailChars,
+    approvalArgChars: config?.approvalArgChars ?? DEFAULT_LIMITS.approvalArgChars,
+    skillPreviewChars: config?.skillPreviewChars ?? DEFAULT_LIMITS.skillPreviewChars,
+    searchSnippetChars: config?.searchSnippetChars ?? DEFAULT_LIMITS.searchSnippetChars,
+    sessionPromptChars: config?.sessionPromptChars ?? DEFAULT_LIMITS.sessionPromptChars,
+    schedulePromptChars: config?.schedulePromptChars ?? DEFAULT_LIMITS.schedulePromptChars,
+  }
 }
 
 /** Configuration after defaults have been resolved; credentials may still be pending onboarding. */
@@ -315,6 +414,8 @@ export interface ResolvedConfig {
     intervalMs: number
     threshold: number
   }
+  /** Elision budgets after defaults are applied. */
+  limits: Limits
 }
 
 /** Loader-visible configuration schema and defaults. */
@@ -359,6 +460,19 @@ export const Config: z<Config> = z.object({
     enabled: z.boolean(),
     intervalMs: z.number().min(60_000),
     threshold: z.number().min(1),
+  }),
+  limits: z.object({
+    toolResultLines: z.number().min(1),
+    toolResultChars: z.number().min(1),
+    toolArgChars: z.number().min(1),
+    userMessageChars: z.number().min(1),
+    quoteChars: z.number().min(1),
+    jobTailChars: z.number().min(1),
+    approvalArgChars: z.number().min(1),
+    skillPreviewChars: z.number().min(1),
+    searchSnippetChars: z.number().min(1),
+    sessionPromptChars: z.number().min(1),
+    schedulePromptChars: z.number().min(1),
   }),
 })
 
@@ -414,5 +528,6 @@ export function resolveConfig(config: Config): ResolvedConfig {
       intervalMs: config.tokenPressure?.intervalMs ?? 600_000,
       threshold: config.tokenPressure?.threshold ?? 120_000,
     },
+    limits: resolveLimits(config.limits),
   }
 }

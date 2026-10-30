@@ -53,6 +53,45 @@ describe('thinking process (CoT)', () => {
     await harness.dispose()
   })
 
+  it('gives each reasoning block its own id, so a thought stays where it happened', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+    // One agentic step: think, run a tool, think again. The second thought
+    // belongs AFTER the call — reusing one id for the whole turn made the
+    // client treat it as an edit of the first block, so every thought piled up
+    // at the top of the thinking area, away from the call it explains.
+    emit('assistant/chunk', { turn: 1, chunk: { type: 'reasoning-delta', text: '先读日志' } })
+    emit('tool/call', { turn: 1, callId: 'c1', name: 'bash', arguments: '{}' })
+    emit('tool/result', {
+      turn: 1,
+      message: { source: { callId: 'c1' }, content: [{ type: 'text', text: 'ok', toolCallId: 'c1' }] },
+    })
+    emit('assistant/chunk', { turn: 1, chunk: { type: 'reasoning-delta', text: '日志里没写，换个地方' } })
+
+    await vi.waitFor(() => {
+      expect(events(harness).filter((e) => e.type === 'REASONING_MESSAGE_CONTENT')).toHaveLength(2)
+    })
+    const written = events(harness)
+    const starts = written
+      .filter((e) => e.type === 'REASONING_MESSAGE_START')
+      .map((e) => e.content.messageId as string)
+    expect(starts).toHaveLength(2)
+    expect(new Set(starts).size).toBe(2)
+    // Each delta carries the id of the block it belongs to.
+    const contents = written
+      .filter((e) => e.type === 'REASONING_MESSAGE_CONTENT')
+      .map((e) => e.content.messageId as string)
+    expect(contents).toEqual(starts)
+    // And the second block opens after the tool call closed, not before it.
+    const callEnd = written.findIndex((e) => e.type === 'TOOL_CALL_END')
+    const secondStart = written.findIndex(
+      (e) => e.type === 'REASONING_MESSAGE_START' && e.content.messageId === starts[1],
+    )
+    expect(callEnd).toBeGreaterThanOrEqual(0)
+    expect(secondStart).toBeGreaterThan(callEnd)
+    await harness.dispose()
+  })
+
   it('renders a whole reasoning block when the adapter delivers block-end, not deltas', async () => {
     const harness = await mountChannel()
     const emit = await chat(harness)
@@ -348,6 +387,89 @@ describe('mid-turn re-aim (P141)', () => {
     await vi.waitFor(() => {
       expect(harness.fake.sent.some(s => String((s.input as { markdown?: string }).markdown ?? '').includes('answer-b'))).toBe(true)
     })
+    await harness.dispose()
+  })
+})
+
+describe('mid-turn messages (steering)', () => {
+  /** Bind one chat and return an emitter for its session events. */
+  async function chat(harness: Awaited<ReturnType<typeof mountChannel>>) {
+    await harness.fake.emitMessage(fakeMessage())
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
+    const session = harness.agents.created[0]!.agent.session
+    return (type: string, data: unknown) => { harness.ctx.emit('session/event', session, { type, data }) }
+  }
+
+  it('shows a message sent mid-turn, at the step that admitted it', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+
+    emit('step/start', { turn: 1, step: 1 })
+    emit('tool/call', { turn: 1, callId: 'c1', name: 'read', arguments: '{"file_path":"a.ts"}' })
+    await vi.waitFor(() => { expect(harness.fake.cots).toHaveLength(1) })
+
+    // 用户在中途插话。宿主不立刻记录：它先进收件箱，在下一个 step 边界被
+    // 接纳时才以 `user/message` 追加进会话日志——所以它夹在两步之间。
+    emit('user/message', {
+      id: 'um_1',
+      role: 'user',
+      content: [{ type: 'text', text: '改成先看测试' }],
+      source: { kind: 'user' },
+    })
+    emit('step/start', { turn: 1, step: 2 })
+
+    await vi.waitFor(() => {
+      expect(harness.fake.cots[0]!.events.map(e => e.type)).toContain('TEXT_MESSAGE_CONTENT')
+    })
+    const list = harness.fake.cots[0]!.events
+    const start = list.findIndex(e => e.type === 'TEXT_MESSAGE_START')
+    expect(list[start]!.content).toMatchObject({ role: 'user' })
+    expect(list[start + 1]!.content).toMatchObject({ delta: '改成先看测试' })
+    expect(list[start + 2]!.type).toBe('TEXT_MESSAGE_END')
+    // 它必须排在插话之前那次工具调用之后，才看得出「因为这句话才转向」。
+    const lastTool = list.map(e => e.type).lastIndexOf('TOOL_CALL_END')
+    expect(lastTool).toBeLessThan(start)
+    await harness.dispose()
+  })
+
+  it('leaves the message that opened the turn to the chat', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+
+    // 开轮的那条消息在聊天里有自己的气泡，不该在思考区重复一遍。
+    emit('user/message', {
+      id: 'um_0',
+      role: 'user',
+      content: [{ type: 'text', text: '开轮的第一条' }],
+      source: { kind: 'user' },
+    })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(harness.fake.cots).toEqual([])
+    await harness.dispose()
+  })
+
+  it('ignores the messages the host writes to itself', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+
+    emit('step/start', { turn: 1, step: 1 })
+    await vi.waitFor(() => { expect(harness.fake.cots).toHaveLength(1) })
+
+    // goal / 指令 / 上下文都是宿主自己写的，读者不会认成自己的话。
+    emit('user/message', {
+      id: 'um_goal',
+      role: 'user',
+      content: [{ type: 'text', text: '继续推进目标' }],
+      source: { kind: 'goal' },
+    })
+    emit('user/message', {
+      id: 'um_inst',
+      role: 'user',
+      content: [{ type: 'text', text: '<system-reminder>' }],
+      source: { kind: 'agent-instructions' },
+    })
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(harness.fake.cots[0]!.events.map(e => e.type)).not.toContain('TEXT_MESSAGE_START')
     await harness.dispose()
   })
 })

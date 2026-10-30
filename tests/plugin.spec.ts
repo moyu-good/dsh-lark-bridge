@@ -1598,7 +1598,8 @@ describe('dsh-lark-bridge', () => {
       const harness = await mountChannel()
       const { card } = await escalation(harness, `{"command":"${'x'.repeat(2000)}"}`)
       const shown = elementsOf(card).find((e) => e.text?.content.startsWith('{"command":"xxx'))
-      expect(shown!.text!.content.length).toBeLessThanOrEqual(600)
+      // The budget is the deployment's (default 1000 characters), not a fixed 600.
+      expect(shown!.text!.content.length).toBeLessThanOrEqual(1000)
       expect(shown!.text!.content.endsWith('…')).toBe(true)
       await harness.dispose()
     })
