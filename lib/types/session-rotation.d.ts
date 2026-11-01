@@ -47,6 +47,18 @@ export declare function rotationPath(home?: string): string;
  */
 export declare function rotatedSessionId(baseSessionId: string, now?: number, suffix?: string): string;
 /**
+ * The conversation id a session id was derived from: the inverse of
+ * {@link rotatedSessionId} for the ids it produces, and the identity for every
+ * other id.
+ *
+ * `/new` creates the rotated id, but anything keyed by the conversation — the
+ * per-chat cwd binding, for one — was registered under the BASE id before the
+ * rotation. Callers that only ever see the session id need this to find it.
+ * @param sessionId - any session id.
+ * @returns the base id, or the input when it carries no rotation suffix.
+ */
+export declare function baseSessionIdOf(sessionId: string): string;
+/**
  * A JSON-backed {@link RotationStore}, cached in memory. A missing or
  * unparsable file reads as "no rotations"; writes go through a rename so a
  * crash mid-write cannot truncate the map.

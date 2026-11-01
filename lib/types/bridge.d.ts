@@ -63,6 +63,7 @@ interface StreamChunkLike {
         readonly text?: string;
     };
 }
+export { messageTimeStamp } from './clock.ts';
 /**
  * The transport surface the bridge drives. `LarkChannel` from
  * `@larksuite/channel` satisfies it structurally; tests substitute a fake.
@@ -90,6 +91,15 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
     on(name: 'reconnecting', handler: () => void): () => void;
     /** The long connection is live again. */
     on(name: 'reconnected', handler: () => void): () => void;
+    /**
+     * Read one message back as a normalized message.
+     *
+     * Optional on purpose: the transport is the only thing that can fetch one,
+     * and a test double that does not model the API must still satisfy the port.
+     * When absent, a reply-quoted message simply reaches the model without its
+     * quote — degraded, not broken.
+     */
+    fetchMessage?(messageId: string): Promise<NormalizedMessage | undefined>;
     /** Replace a sent card's content in place. */
     updateCard(messageId: string, card: object): Promise<void>;
     /** Add an emoji reaction to a message; resolves the platform reaction id. */
@@ -104,6 +114,38 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
  * @returns a frozen user message for `agent.followup()`.
  */
 export declare function chatUserMessage(msg: NormalizedMessage, images: CollectedImages): HostUserMessage;
+/**
+ * How long the chat was quiet before this turn, as a phrase for the model.
+ *
+ * Only the GAP comes from here. The absolute time belongs to the message
+ * stamp beside it (`showMessageTime`), and saying the same instant twice put
+ * two timestamps three seconds apart at the top of every message — which
+ * leaves the model to guess which one is "now". One line, one time, one gap:
+ * the gap is the part the stamp cannot carry, and it is the part that
+ * actually changes behaviour. A model resuming after eight hours should
+ * re-check state it assumed; one resuming after three minutes should not
+ * spend a turn doing it.
+ * @param sessionId - the session this turn belongs to.
+ * @param now - epoch milliseconds at turn start.
+ * @returns the phrase (e.g. `4 分钟前`), or '' when the gap is unknown or
+ *   too small to be worth a word.
+ */
+export declare function sessionGapPhrase(sessionId: string, now: number): string;
+/**
+ * Render the message a chat message quotes back, as a block to prepend.
+ *
+ * 飞书的「引用」不是正文的一部分：入站事件只带 `parent_id`，被引用的那条要
+ * 另外调 `im.v1.message.get` 才能读到。不取它，模型看到的就是一句「这个你再
+ * 改改」加一片空白——它只能猜「这个」是什么，而人会以为它当然看得见。
+ *
+ * @param quoted - the referenced message, already fetched.
+ * @param maxChars - how much of its text to keep.
+ * @param showTime - whether to stamp when the quoted message was sent. A quote
+ *   read without its time turns "你引用的那条" into "whatever that was" — the
+ *   model cannot tell a reply to a two-minute-old message from a six-hour one.
+ * @returns the block and its trailing newline, or '' when there is nothing to show.
+ */
+export declare function quotedPrefix(quoted: NormalizedMessage | undefined, maxChars?: number, showTime?: boolean): string;
 /** What one chat message becomes, and what the chat is told about it. */
 export interface BusyDelivery {
     /** The inbox boundary the message actually takes. */
@@ -142,5 +184,4 @@ export declare function busyDelivery(busy: boolean, policy: BusyPolicy, agent: P
  * @param port - the transport to drive; production passes the real Lark channel.
  */
 export declare function installBridge(ctx: Context, config: ResolvedConfig, port: ChannelPort, notify: (line: string) => void, authorization: Authorization): void;
-export {};
 //# sourceMappingURL=bridge.d.ts.map

@@ -176,14 +176,14 @@ describe('media is delivered in a shape the chat can actually carry', () => {
     expect(result).toEqual({ fileName: 'report.html' })
   })
 
-  it('keeps the caption as its own message before the media', async () => {
+  it('keeps the caption as its own message after the media', async () => {
     const { port, sent } = fakePort()
     const path = tempFile('note.ogg', 'binary')
     await deliverFile(port, 'oc_1', '/tmp', { path, caption: '今天这段' }, measuring(3000))
 
     expect(sent).toHaveLength(2)
-    expect((sent[0]!.input as { markdown?: string }).markdown).toBe('今天这段')
-    expect(shapeOf(sent[1]!.input).audio).toBeDefined()
+    expect(shapeOf(sent[0]!.input).audio).toBeDefined()
+    expect((sent[1]!.input as { markdown?: string }).markdown).toBe('今天这段')
   })
 })
 

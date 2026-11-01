@@ -54,7 +54,7 @@ One `pnpm dlx` command installs the plugin and boots the host; a QR code is the 
 
 ### You can see what it's thinking
 
-Reasoning renders as Feishu's own *thinking* message. Tool calls arrive with their icon and the first lines of their result; the full output stays in the session log. Every turn closes with one plain line — how many tool calls it made, how long it took. Nothing has to be taken on faith.
+Reasoning renders as Feishu's own *thinking* message. Tool calls arrive with their icon and the first lines of their result; the full output stays in the session log. Every turn closes with one plain line — how many tool calls it made, how long it took. Nothing has to be taken on faith. A message you send mid-turn lands in there too, right before the step it redirected.
 
 ### A long task is not "fire and forget"
 
@@ -127,6 +127,8 @@ Daily ops: run `pnpm dlx @deepseek-ai/dsh web` again (subsequent runs hit the pn
 | 🧰 **Capability inventory** | `/tools` lists what this deployment can actually do — the visible tools and the MCP servers it talks to |
 | 🎙️ **Media delivered in kind** | An ogg/opus recording arrives as a voice note, an mp4/m4v clip as a video — playable in the chat, not a download link |
 | 🖼️ **Image input (opt-in)** | `attachImages` passes chat images to the model |
+| 🕐 **Message timestamps** | showMessageTime (default on) stamps each inbound message and each quoted message with its local send time; set it to `false` to leave the text alone |
+| ⏱️ **Time is visible, both ways** | Every tool call in the thinking process carries the clock time it started and every result over 1s carries its elapsed time; the closing line names the slowest step. The model is told each turn's current time and how long the chat had been quiet — so "继续" after eight hours and "继续" after three minutes are not the same instruction |
 | 📎 **File delivery** | Agent `send_file` delivers artifacts with caption (default-deny local dirs) |
 | 🔒 **Authorization narrowing** | `senderAllowlist` / `groupAllowlist` / `approvers` |
 | ⏰ **Scheduled reminders** | `/schedules` view (compose `@deepseek-ai/dsh-schedule` for the model-side tools) |
@@ -151,10 +153,12 @@ Type `/help` in the chat for the live list.
 | `/new` | Start a new session (`/clear` is an alias) |
 | `/manual` | The full user guide (start here if you're new) |
 | `/sessions` | Search this chat's session history |
+| `/session` | Everything about the session this chat is talking to: id, directory, the model route actually used, log size, context tokens and distance to the warning line, preset and busy policy |
 | `/balance` | DeepSeek API balance, with the live peak/off-peak phase |
 | `/tools` | View / deny / allow tools at runtime |
 | `/skills` | List skills, or peek at one |
-| `/model` | View / switch the default model |
+| `/model` | View / switch the default model (reaches sessions created after the switch) |
+| `/think` | View / change THIS session's reasoning effort — applies to the next request |
 | `/config` | The bridge's live configuration |
 | `/plugins` | List deployed plugins and status |
 | `/ws` | List registered workspaces |
@@ -192,6 +196,7 @@ Set `locale: zh|en` to pin the slash-panel and help wording; otherwise it follow
 | `chronicleEndpoint` | `''` | Optional external ledger: one POST per accepted inbound user message |
 | `announceSubagents` | `true` | Announce a delegation in the chat when it is made |
 | `autoResumeGoals` | `false` | Re-arm an active goal after a restart — off unless you turn it on |
+| `restartCommand` | unset → `/restart` unavailable | Command that restarts the host; runs in a detached child after 2.5 s (POSIX `sh`, Windows PowerShell) |
 
 Credentials resolve in three layers: bundle patch config → settings document plugin section → first-boot QR registration.
 
@@ -314,7 +319,8 @@ Sessions resume from their logs; permission and preset choices ride with the ses
 - **Transport-level config is read once at startup.** Credentials, `requireMention` and allowlists need a restart; other config edits hot-reload via dsh's Config-only HMR (`/config` shows live values).
 - **Events during a long-connection outage are not replayed** (no cursor); outbound sends are queued by the replay port.
 - **`schedule_*` model tools** need `@deepseek-ai/dsh-schedule` composed in your profile.
-- **File sending is deny-by-default** — directories must be listed in `outbound.allowedFileDirs` first.
+- **File sending is deny-by-default** — directories must be listed in outbound.allowedFileDirs first. A refused send now says so in the chat instead of leaving only a caption behind.
+- **How much of a long thing reaches the chat is a budget, not a constant** — tool results, tool arguments, mid-turn messages, quotes, job-output tails, approval-card arguments and /skills previews all read from the limits section; the defaults are sized for a working session, and every cap is adjustable.
 - **Two processes sharing one endpoint key will both answer.** Arbitration compares the endpoint key (`deviceId` + `form` + `profile`); a `dsh web` process and a bare CLI process on the same machine and profile produce the same key, so neither sees the other as a rival. Run one host process per profile.
 
 </details>
@@ -331,13 +337,13 @@ Repo map, the branch/MR flow and the version policy live in **[CONTRIBUTING.md](
 
 ```sh
 pnpm hygiene                    # repo hygiene (deployment terms stay local)
-pnpm test                       # 593 tests in 59 spec files
+pnpm test                       # 704 tests in 70 spec files
 pnpm contract-test              # 43 host-contract checks
 pnpm contract-drift             # drift check against upstream dsh master
 node scripts/check-readme-parity.mjs   # the two READMEs stay in step
 ```
 
-The suite lives in `tests/` — vitest suites (59), including harness-based fakes. Upgrading the harness: run `pnpm contract-drift` before and after — it fails when a host seam the bridge mirrors has moved.
+The suite lives in `tests/` — vitest suites (70), including harness-based fakes. Upgrading the harness: run `pnpm contract-drift` before and after — it fails when a host seam the bridge mirrors has moved.
 
 ## 🤝 Contributing
 

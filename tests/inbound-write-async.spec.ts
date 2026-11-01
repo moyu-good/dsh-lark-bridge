@@ -102,7 +102,11 @@ describe('saveInboundFiles writes asynchronously', () => {
     expect(saved.paths).toEqual([])
     expect(saved.notes).toHaveLength(1)
     expect(saved.notes[0]).toContain('📎 文件 报告.pdf 保存失败')
-    expect(saved.notes[0]).toContain('ENOTDIR')
+    // ENOTDIR is the POSIX code; Windows reports ENOENT for the same shape (a
+    // file stands where the directory should be). What this locks is that the
+    // failure is named in the note rather than swallowed — the exact code is
+    // the platform's business, and pinning one made the suite red on Windows.
+    expect(saved.notes[0]).toMatch(/ENOTDIR|ENOENT/)
   })
 
   it('still numbers a later arrival of the same name instead of overwriting it', async () => {

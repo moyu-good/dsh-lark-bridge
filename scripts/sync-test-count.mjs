@@ -14,8 +14,12 @@
  */
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+// `URL.pathname` keeps the leading slash on Windows (`/D:/…`), and joining that
+// to a relative path yields `D:\D:\…` — the script then cannot find `tests/` at
+// all. `fileURLToPath` is the conversion that knows about drive letters.
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '')
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8')
 
 let tests = 0
@@ -24,7 +28,10 @@ for (const file of readdirSync(join(ROOT, 'tests'))) {
   if (!file.endsWith('.spec.ts')) continue
   suites += 1
   const source = readFileSync(join(ROOT, 'tests', file), 'utf8')
-  tests += [...source.matchAll(/\bit(?:\.each)?\s*\(/g)].length
+  // No `\s*` between the name and the paren: prose like "upgrade the harness to
+  // open it (raw log: …)" inside a string literal is not a test call, and
+  // counting it made this script write a number the docs gate then rejected.
+  tests += [...source.matchAll(/\bit(?:\.each)?\(/g)].length
 }
 
 const FILES = ['README.md', 'README.zh.md']
@@ -34,6 +41,11 @@ const EDITS = [
   [/vitest 套件（\d+ 个）/g, `vitest 套件（${suites} 个）`],
   [/# (\d+) unit\/integration tests/g, `# ${tests} unit/integration tests`],
   [/# (\d+) 单测\/集成/g, `# ${tests} 单测/集成`],
+  // The quality-gate comment changed shape after these two patterns were
+  // written, and the count gate went on accepting the stale number because
+  // nothing rewrote it. Both current shapes are handled here.
+  [/# (\d+) tests in (\d+) spec files/g, `# ${tests} tests in ${suites} spec files`],
+  [/# (\d+) 条测试 \/ (\d+) 个 spec 文件/g, `# ${tests} 条测试 / ${suites} 个 spec 文件`],
 ]
 
 for (const file of FILES) {

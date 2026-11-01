@@ -3,7 +3,7 @@ import type { HostSession, HostTokenMeter } from '../src/host.ts'
 import { tokenPressureLine } from '../src/notices.ts'
 import { fakeMessage, mountChannel } from './harness.ts'
 
-const THRESHOLD = 120_000
+const THRESHOLD = 3_000
 /** The schema floor; polls run on the production cadence, driven by fake timers. */
 const INTERVAL_MS = 60_000
 
@@ -38,10 +38,18 @@ function createFakeTokenMeter() {
   return { service, priced }
 }
 
-/** The context-pressure warnings this run posted, in send order. */
+/**
+ * The context-pressure warnings this run posted, in send order.
+ *
+ * Matched on the advice tail rather than a nickname. The old matcher looked for
+ * the words 「上下文压力」, which were also the message's opening — when the
+ * wording was rewritten to say what the number is made of, the matcher stopped
+ * matching, and the test failed for a text change it was never about. The tail
+ * is the part every variant keeps.
+ */
 function pressureWarnings(harness: Awaited<ReturnType<typeof mountChannel>>) {
   return harness.fake.sent.filter(
-    sent => 'markdown' in sent.input && sent.input.markdown.includes('上下文压力'),
+    sent => 'markdown' in sent.input && sent.input.markdown.includes('/compact'),
   )
 }
 
@@ -83,7 +91,7 @@ describe('context-pressure polling', () => {
     vi.useFakeTimers()
     try {
       const { harness, meter, session, events } = await mountWithLiveSession()
-      // 145,000 tokens over two events: a context past the 120,000 advice line.
+      // Two events well past the advice line, with only a sliver of it being聊 content: the warning must repeat the numbers it measured.
       events.push({ tokens: 90_000, surface: 4_000 }, { tokens: 55_000, surface: 1_200 })
 
       await vi.advanceTimersByTimeAsync(INTERVAL_MS)
@@ -123,7 +131,13 @@ describe('context-pressure polling', () => {
       // A fresh climb warns again.
       events.push({ tokens: 130_000, surface: 2_000 })
       await vi.advanceTimersByTimeAsync(INTERVAL_MS)
+      // 她只被提醒两次：一次在 token 涨过线，一次在压缩后重新涨过线。
       await waitForWarnings(harness, 2)
+      // 掉回线下不算"再次跨线"：等待期间不重复提醒，重新爬上来才算。
+      events.push({ tokens: 20_000, surface: 500 })
+      await vi.advanceTimersByTimeAsync(INTERVAL_MS)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(pressureWarnings(harness)).toHaveLength(2)
 
       await harness.dispose()
     } finally {
@@ -135,7 +149,7 @@ describe('context-pressure polling', () => {
     vi.useFakeTimers()
     try {
       const { harness, events } = await mountWithLiveSession()
-      events.push({ tokens: 60_000, surface: 1_000 })
+      events.push({ tokens: 2_000, surface: 1_000 })
 
       await vi.advanceTimersByTimeAsync(INTERVAL_MS)
       await vi.advanceTimersByTimeAsync(INTERVAL_MS)

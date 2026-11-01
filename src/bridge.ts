@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readDeviceState, ensureDeviceId } from './sync/migrate.ts'
 import { arbitrationForInbound, claimIfActiveStale, isActiveEndpoint, accountUseByName, accountForgetByName } from './sync/bot-command.ts'
@@ -20,6 +20,7 @@ import type {
   RejectEvent,
   SendResult,
 } from '@larksuite/channel'
+import { DEFAULT_LIMITS } from './config.ts'
 import type { BusyPolicy, ResolvedConfig } from './config.ts'
 import type {
   HostAgent,
@@ -31,6 +32,7 @@ import type {
   HostApprovalOutcome,
   HostApprovalRequest,
   HostDefaultModel,
+  HostLlm,
   HostLoader,
   HostSessionEvent,
   HostSessionPersistence,
@@ -44,7 +46,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostJobSnapshot, HostLoaderEntry, HostMessageFeedback, HostSession, HostSessionQuery, HostSkills, HostTokenMeter, SubagentEndData, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostJobSnapshot, HostLoaderEntry, HostMessageFeedback, HostSession, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleChangeData, SubagentEndData, WorkflowRunInfoData } from './host.ts'
 import { isAssistantMessageEvent, isTeamRelayMessageEvent, isCompactionEndEvent, isPresentedEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentCatalogEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent ,
   isTeamMemberEvent,
   isTeamTaskEvent,
@@ -52,6 +54,7 @@ import { isAssistantMessageEvent, isTeamRelayMessageEvent, isCompactionEndEvent,
   isTeamMessageDeliveredEvent} from './host.ts'
 import { createCotRenderer } from './cot.ts'
 import type { CotPort } from './cot.ts'
+import { readChatWorkspaces, writeChatWorkspace } from './chat-workspace.ts'
 import { createMessageRenderer, createStreamRenderer } from './outbound.ts'
 import type { OutboundPort, OutboundRenderer, ReplyTarget, ToolPresentation } from './outbound.ts'
 import { refuseApprovalClick, refuseMessage } from './authorization.ts'
@@ -79,12 +82,15 @@ import {
   RESTART_COMMAND,
   runCommandLine,
   SCHEDULES_COMMAND,
+  SESSION_COMMAND,
   SESSIONS_COMMAND,
   SKILLS_COMMAND,
   STOP_COMMAND,
+  THINK_COMMAND,
   TOOLS_COMMAND,
   WS_COMMAND,
 } from './commands.ts'
+import { EffortOverrides } from './think.ts'
 import { getSyncContext } from './sync/bot-command.ts'
 import { collectImages } from './images.ts'
 import { saveInboundFiles } from './files.ts'
@@ -93,9 +99,9 @@ import type { CollectedImages, ImagePort } from './images.ts'
 import { syncSlashPanel } from './slash-panel.ts'
 import type { SlashPanelPort } from './slash-panel.ts'
 import { describeCommand } from './i18n.ts'
-import { ConversationSessions } from './session.ts'
+import { ConversationSessions, conversationKey, sessionIdFor } from './session.ts'
 import type { SessionLadder } from './session.ts'
-import { createRotationStore } from './session-rotation.ts'
+import { baseSessionIdOf, createRotationStore } from './session-rotation.ts'
 import { createReactionTracker } from './reaction.ts'
 import type { ReactionTracker } from './reaction.ts'
 import { createQuestionProvider } from './questions.ts'
@@ -167,6 +173,12 @@ import { createSendFileTool, deliverFile } from './files.ts'
 import { createFeishuTools, feishuToolsPromptSection, FEISHU_NOTIFY_TOOL } from './feishu-tools.ts'
 import { FeishuCloud } from './sync/feishu-cloud.ts'
 import { pricingPromptLine } from './pricing.ts'
+// `messageTimeStamp` used to be defined here. It moved to `clock.ts` so the
+// thinking process renders the same instant the same way without `cot.ts`
+// importing this module (which imports `cot.ts`); re-exported so every
+// existing caller — and the tests that pin its exact form — is unchanged.
+import { elapsedPhrase, messageTimeStamp } from './clock.ts'
+export { messageTimeStamp } from './clock.ts'
 
 /**
  * The transport surface the bridge drives. `LarkChannel` from
@@ -198,6 +210,15 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
   on(name: 'reconnecting', handler: () => void): () => void
   /** The long connection is live again. */
   on(name: 'reconnected', handler: () => void): () => void
+  /**
+   * Read one message back as a normalized message.
+   *
+   * Optional on purpose: the transport is the only thing that can fetch one,
+   * and a test double that does not model the API must still satisfy the port.
+   * When absent, a reply-quoted message simply reaches the model without its
+   * quote — degraded, not broken.
+   */
+  fetchMessage?(messageId: string): Promise<NormalizedMessage | undefined>
   /** Replace a sent card's content in place. */
   updateCard(messageId: string, card: object): Promise<void>
   /** Add an emoji reaction to a message; resolves the platform reaction id. */
@@ -245,7 +266,7 @@ interface AgentComposition {
    */
   readonly toolScope?: unknown
   /** Creation-time composition: the preset join plus this channel's own rows. */
-  readonly setup: (agentCtx: Context) => Promise<void>
+  readonly setup: (agentCtx: Context, agent?: HostAgent) => Promise<void>
 }
 
 /**
@@ -270,7 +291,7 @@ interface DurableAgentRegistry extends HostAgentRegistry {
   resume(options: {
     readonly resumeSessionId: string
     readonly agentOptions?: HostAgentOptions
-    readonly setup?: (agentCtx: Context) => Promise<void>
+    readonly setup?: (agentCtx: Context, agent?: HostAgent) => Promise<void>
   }): Promise<HostAgentHandle>
 }
 
@@ -285,8 +306,7 @@ interface PendingApproval {
   settle(outcome: HostApprovalOutcome): void
 }
 
-/** How much of a pending call's arguments the approval card shows. */
-const CARD_ARGUMENTS_MAX_CHARS = 600
+
 
 /** Marker distinguishing this plugin's approval buttons from other card actions. */
 const APPROVAL_ACTION = 'dsh-lark-bridge/approval'
@@ -457,10 +477,10 @@ function createCallPresenter(tools: HostTools | undefined, scope: unknown): Tool
  * @param text - raw tool arguments as the model produced them.
  * @returns the value, ellipsized when it exceeds the card's budget.
  */
-function boundCardText(text: string): string {
-  return text.length <= CARD_ARGUMENTS_MAX_CHARS
+function boundCardText(text: string, maxChars: number = DEFAULT_LIMITS.approvalArgChars): string {
+  return text.length <= maxChars
     ? text
-    : `${text.slice(0, CARD_ARGUMENTS_MAX_CHARS - 1)}…`
+    : `${text.slice(0, maxChars - 1)}…`
 }
 
 /**
@@ -627,6 +647,87 @@ export function chatUserMessage(msg: NormalizedMessage, images: CollectedImages)
   })
 }
 
+/**
+ * How much of a quoted message the model is shown.
+ *
+ * A quote can be an entire bot answer. Repeating it verbatim buys nothing the
+ * session history does not already hold, and a long one would push the actual
+ * question out of the model's attention — so the head, and a marker.
+ */
+
+
+/**
+ * How long this chat had been quiet before the current turn started.
+ *
+ * Keyed by session id and held for the life of the process. A restart forgets
+ * it, which is the honest behaviour: after a restart the agent genuinely
+ * cannot say how long the chat was quiet, and inventing "刚刚" would be a lie
+ * the model then reasons from. Read-and-write in one call so the gap is always
+ * measured from the previous turn, never from this one.
+ */
+const lastTurnStarted = new Map<string, number>()
+
+/**
+ * How long the chat was quiet before this turn, as a phrase for the model.
+ *
+ * Only the GAP comes from here. The absolute time belongs to the message
+ * stamp beside it (`showMessageTime`), and saying the same instant twice put
+ * two timestamps three seconds apart at the top of every message — which
+ * leaves the model to guess which one is "now". One line, one time, one gap:
+ * the gap is the part the stamp cannot carry, and it is the part that
+ * actually changes behaviour. A model resuming after eight hours should
+ * re-check state it assumed; one resuming after three minutes should not
+ * spend a turn doing it.
+ * @param sessionId - the session this turn belongs to.
+ * @param now - epoch milliseconds at turn start.
+ * @returns the phrase (e.g. `4 分钟前`), or '' when the gap is unknown or
+ *   too small to be worth a word.
+ */
+export function sessionGapPhrase(sessionId: string, now: number): string {
+  const previous = lastTurnStarted.get(sessionId)
+  lastTurnStarted.set(sessionId, now)
+  if (previous === undefined) return ''
+  const gap = elapsedPhrase(now - previous)
+  // "刚刚" on a message that already carries its own time is noise.
+  return gap === '刚刚' ? '' : gap
+}
+
+/**
+ * Render the message a chat message quotes back, as a block to prepend.
+ *
+ * 飞书的「引用」不是正文的一部分：入站事件只带 `parent_id`，被引用的那条要
+ * 另外调 `im.v1.message.get` 才能读到。不取它，模型看到的就是一句「这个你再
+ * 改改」加一片空白——它只能猜「这个」是什么，而人会以为它当然看得见。
+ *
+ * @param quoted - the referenced message, already fetched.
+ * @param maxChars - how much of its text to keep.
+ * @param showTime - whether to stamp when the quoted message was sent. A quote
+ *   read without its time turns "你引用的那条" into "whatever that was" — the
+ *   model cannot tell a reply to a two-minute-old message from a six-hour one.
+ * @returns the block and its trailing newline, or '' when there is nothing to show.
+ */
+export function quotedPrefix(
+  quoted: NormalizedMessage | undefined,
+  maxChars: number = DEFAULT_LIMITS.quoteChars,
+  showTime = false,
+): string {
+  if (quoted === undefined) return ''
+  const body = quoted.content.trim()
+  const who = quoted.senderName ?? quoted.senderId
+  const when = showTime ? messageTimeStamp(quoted.createTime) : undefined
+  // A quote with no text is usually an image or a file: say so, rather than
+  // presenting an empty quote that reads as a bug.
+  const text = body !== ''
+    ? body.length > maxChars
+      ? `${body.slice(0, maxChars)}…（引用内容过长，已截断）`
+      : body
+    : quoted.resources.length > 0
+      ? '（这是一条图片/文件消息，没有文字内容）'
+      : '（这条被引用的消息没有文字内容）'
+  const head = when === undefined ? `[引用 · ${who}]` : `[引用 · ${who} · ${when}]`
+  return `${head}\n${text}\n[/引用]\n`
+}
+
 /** What one chat message becomes, and what the chat is told about it. */
 export interface BusyDelivery {
   /** The inbox boundary the message actually takes. */
@@ -745,6 +846,10 @@ export function installBridge(
   const feishuTools = createFeishuTools({
     port: replay,
     chatOfSession: (sessionId) => bySession.get(sessionId)?.chatId,
+    // Lazy arrows, not direct references: this factory runs before the binding
+    // helpers below are initialised, and the tools only call them at use time.
+    bindChatCwd: (chatId, dir) => bindChatCwd(chatId, dir),
+    chatCwd: (chatId) => chatCwd(chatId),
     credentials: config.appId !== undefined && config.appSecret !== undefined
       ? { appId: config.appId, appSecret: config.appSecret, ...(config.domain !== undefined ? { domain: config.domain } : {}) }
       : undefined,
@@ -774,10 +879,103 @@ export function installBridge(
   // /tools. Every chat agent's guard reads this same object, so a switch takes
   // effect on the next tool call without a restart.
   const runtimeDeniedTools = new Set<string>(config.denyTools)
-  // Active schedules seen this process, keyed by session id then schedule id.
-  // Rebuilt from schedule/change events as they stream in; a restart starts
-  // empty (the schedules themselves survive in the session log).
+  // Active schedules seen for this process, keyed by session id then schedule
+  // id. Fed by schedule/change events as they stream in, and rebuilt from the
+  // schedule plugin itself the first time a session is asked about (see
+  // seedScheduleRegistry) — a restart otherwise starts empty, and a reminder
+  // created by an earlier process would never be reported again.
   const scheduleRegistry = new Map<string, Map<string, ScheduleEntry>>()
+  /** One schedule record as the plugin's own `list` reports it. */
+  interface ScheduleRecordLike {
+    readonly id: string
+    readonly kind: 'after' | 'at' | 'every'
+    readonly prompt: string
+    readonly everySeconds?: number
+  }
+  /** Sessions whose registry was already rebuilt from their own log. */
+  const seededSchedules = new Set<string>()
+  /**
+   * Apply one `schedule/change` payload to a session's registry.
+   *
+   * `create` records, `delete` forgets, `dispatch` fires a one-shot (drop it)
+   * or ticks a repeating schedule (keep it for the next round). Split out of
+   * the event handler so the log replay below applies exactly the same rules —
+   * two implementations of "what is still scheduled" is how the two drift.
+   *
+   * @param byId - the session's registry.
+   * @param data - the event payload.
+   */
+  const applyScheduleChange = (byId: Map<string, ScheduleEntry>, data: ScheduleChangeData): void => {
+    const id = data.schedule?.id ?? data.id
+    if (id === undefined) return
+    if (data.operation === 'create' && data.schedule !== undefined) {
+      byId.set(id, {
+        id,
+        kind: data.schedule.kind,
+        prompt: data.schedule.prompt,
+        ...data.schedule.everySeconds === undefined ? {} : { everySeconds: data.schedule.everySeconds },
+        createdAt: Date.now(),
+      })
+      return
+    }
+    if (data.operation === 'delete') byId.delete(id)
+    // A one-shot reminder dispatched once is done.
+    else if (data.operation === 'dispatch' && data.schedule?.kind === 'after') byId.delete(id)
+  }
+  /**
+   * Rebuild one session's schedule registry from its own log, once.
+   *
+   * The registry is fed by live `schedule/change` events, so a restart starts
+   * empty — and a reminder created before this process booted never announces
+   * itself again. That is not a corner case: a long-running deployment creates
+   * reminders in one process and answers `/schedules` in the next, and the
+   * command then reports "none" for reminders that are still firing.
+   *
+   * The schedule plugin owns the truth: its `list` is what actually fires, and
+   * it survives restarts. The session log is only a fallback — it carries the
+   * change events that happened to be appended, and a reminder created before
+   * this process booted has none, which is exactly the case that broke.
+   *
+   * Either way the replay is silent on purpose: someone asking what is
+   * scheduled must not be told again about every reminder ever created.
+   *
+   * @param session - the session to restore.
+   */
+  const seedScheduleRegistry = async (session: HostSession): Promise<void> => {
+    if (seededSchedules.has(session.id)) return
+    seededSchedules.add(session.id)
+    const byId = scheduleRegistry.get(session.id) ?? new Map<string, ScheduleEntry>()
+    // Authoritative first. `list` is the query the scheduler itself answers
+    // with, so whatever it returns IS what will fire.
+    const store = ctx.get('schedule') as
+      | { list?: (query: { sessionId: string }) => Promise<readonly ScheduleRecordLike[]> }
+      | undefined
+    if (store?.list !== undefined) {
+      try {
+        const records = await store.list({ sessionId: session.id })
+        for (const record of records) {
+          byId.set(record.id, {
+            id: record.id,
+            kind: record.kind,
+            prompt: record.prompt,
+            ...record.everySeconds === undefined ? {} : { everySeconds: record.everySeconds },
+            createdAt: Date.now(),
+          })
+        }
+        if (byId.size > 0) scheduleRegistry.set(session.id, byId)
+        return
+      } catch {
+        // A deployment without the schedule service (or a version whose
+        // `list` moved) still deserves the log fallback below.
+      }
+    }
+    for (let seq = 0; seq < session.seq; seq++) {
+      const event = session.eventAt(seq) as HostSessionEvent | undefined
+      if (event === undefined || !isScheduleChangeEvent(event)) continue
+      applyScheduleChange(byId, event.data)
+    }
+    if (byId.size > 0) scheduleRegistry.set(session.id, byId)
+  }
   /**
    * Call ids whose declared files were already delivered, per session.
    *
@@ -790,6 +988,16 @@ export function installBridge(
   // Per-session preset choice made via /preset. Process-local: a restart
   // falls back to the configured default, which the /config command states.
   const sessionPresets = new Map<string, string>()
+  /**
+   * Per-session reasoning effort chosen via /think.
+   *
+   * Unlike the preset choice above this one survives a restart: it is recorded
+   * as a durable `model/selection` event on the session itself, and restored
+   * when the agent is composed. The choice belongs to the session — `/sessions`
+   * can bring that session back, and it must come back at the effort it was
+   * left at.
+   */
+  const effortOverrides = new EffortOverrides(ctx)
   const subagentTrackers = new Map<string, subCard.SubagentCardState>()
   /** One team card per chat, with the message id it updates in place. */
   const teamTrackers = new Map<string, { state: teamCard.TeamCardState; messageId?: string; updatedAt?: number; sending?: boolean; pending?: boolean }>()
@@ -834,6 +1042,54 @@ export function installBridge(
   /** The last token total seen for a session, so the poll log only speaks when it changed. */
   const lastMeasured = new Map<string, number>()
   const cwd = resolve(config.cwd ?? process.cwd())
+  /**
+   * Per-chat cwd overrides, loaded once and kept in step with writes.
+   *
+   * A chat that ran `/ws use <dir>` keeps that directory across restarts and
+   * across `/new`: the binding is the chat's, not the session's, because the
+   * whole point is that the next conversation starts in the same project.
+   */
+  let chatBindingsPromise: Promise<Record<string, string>> | undefined
+  const chatBindings = (): Promise<Record<string, string>> => {
+    chatBindingsPromise ??= readChatWorkspaces()
+    return chatBindingsPromise
+  }
+  /**
+   * The directory a chat's next session should start in.
+   *
+   * Bound chats win; everything else falls back to the deployment `cwd`. The
+   * result is canonicalised because the workspace registry validates a session
+   * header against a realpath, and an uncanonicalized variant is rejected.
+   *
+   * @param chatId - the chat asking.
+   * @returns the absolute directory for its next session.
+   */
+  const chatCwd = async (chatId: string): Promise<string> => {
+    const bindings = await chatBindings()
+    const bound = bindings[chatId]
+    return bound === undefined ? cwd : resolve(bound)
+  }
+  /**
+   * Bind one chat to a directory (or clear it with `null`) and drop the cached
+   * workspace promise, so the next session resolves the new directory.
+   *
+   * @param chatId - the chat being rebound.
+   * @param dir - absolute directory, or `null` to fall back to the deployment cwd.
+   */
+  const bindChatCwd = async (chatId: string, dir: string | null): Promise<void> => {
+    await writeChatWorkspace(chatId, dir)
+    const bindings = await chatBindings()
+    if (dir === null) delete bindings[chatId]
+    else bindings[chatId] = dir
+  }
+  /**
+   * The directory each session id must start in, seeded before the ladder runs.
+   *
+   * `SessionLadder.create` receives only the session id — the chat it came from
+   * is not part of the contract — so the bound directory is handed over here,
+   * keyed by the id the acquire path is about to ask for.
+   */
+  const pendingSessionCwd = new Map<string, string>()
 
   /**
    * Multi-agent panel plumbing — ONE updatable card per chat, keyed by the
@@ -1135,19 +1391,32 @@ export function installBridge(
    * directory when no record exists keeps chat sessions out of that bucket
    * instead of orphaning every one of them.
    */
-  let workspacePromise: Promise<HostWorkspace | undefined> | undefined
-  const chatWorkspace = (): Promise<HostWorkspace | undefined> => {
-    workspacePromise ??= (async () => {
+  /**
+   * Resolve (or register) the workspace record for one directory.
+   *
+   * Cached by DIRECTORY, not by chat: two chats in the same project share one
+   * lookup, and a chat rebound to another project simply asks under a new key —
+   * so a rebind can never be served by a stale promise.
+   *
+   * @param dir - the canonical directory a session starts in.
+   * @returns the workspace record, or undefined when no registry is composed.
+   */
+  const workspacePromises = new Map<string, Promise<HostWorkspace | undefined>>()
+  const chatWorkspace = (dir: string): Promise<HostWorkspace | undefined> => {
+    const existing = workspacePromises.get(dir)
+    if (existing !== undefined) return existing
+    const pending = (async () => {
       const registry = ctx.get('workspaceRegistry') as HostWorkspaceRegistry | undefined
       if (registry === undefined) return undefined
-      return (await registry.resolveByPath(cwd)) ?? await registry.create(cwd)
+      return (await registry.resolveByPath(dir)) ?? await registry.create(dir)
     })().catch((error: unknown) => {
       // Grouping is presentation: a chat must still work in a deployment whose
       // registry refuses this directory.
-      notify(`dsh-lark-bridge: workspace lookup failed for ${cwd}: ${String(error)}`)
+      notify(`dsh-lark-bridge: workspace lookup failed for ${dir}: ${String(error)}`)
       return undefined
     })
-    return workspacePromise
+    workspacePromises.set(dir, pending)
+    return pending
   }
 
   // Operator-facing, so it goes to the process stream as well as the logger:
@@ -1275,9 +1544,23 @@ export function installBridge(
       ...presetId === undefined ? {} : { presetId },
       ...toolScope === undefined ? {} : { toolScope },
       presentCall: createCallPresenter(ctx.get('tools') as HostTools | undefined, toolScope),
-      setup: async (agentCtx: Context) => {
+      setup: async (agentCtx: Context, agent?: HostAgent) => {
         if (presets !== undefined && presetId !== undefined) await presets.mount(agentCtx, presetId)
         composeChatAgent(agentCtx, config, [sendFileTool, ...feishuTools], runtimeDeniedTools, identityClause)
+        // `/think` has two edges, and both belong to this session's scope: the
+        // choice recorded in the session's own log (so a resumed session comes
+        // back at the effort its human left it at, not the deployment default),
+        // and the request hook that applies it (so a change lands on the next
+        // step instead of the next session). The hook reads the table by
+        // session id, so one agent's choice can never move another's.
+        //
+        // Guarded on the agent: the host hands it over, but a host old enough
+        // to omit the second argument must still get a composed agent — a
+        // missing `/think` is a smaller failure than a chat that cannot start.
+        if (agent !== undefined) {
+          effortOverrides.restore(agent.session)
+          effortOverrides.install(agentCtx, agent.session.id)
+        }
         // Background jobs: a registered under this agent scope sees exactly the
         // jobs its owner starts. Announce terminals so a long-running task's
         // completion is visible in the chat instead of silent until asked.
@@ -1368,7 +1651,7 @@ export function installBridge(
             ...durationMs === undefined ? {} : { durationMs },
             ...output === '' ? {} : { output },
           }
-          void replay.send(binding.chatId, { markdown: jobDoneLine(terminal) }).catch(reportSendFailure)
+          void replay.send(binding.chatId, { markdown: jobDoneLine(terminal, config.limits.jobTailChars) }).catch(reportSendFailure)
         })
       },
     }
@@ -1420,13 +1703,25 @@ export function installBridge(
     },
     create: async (sessionId) => {
       const composition = await compositionFor(sessionId)
-      // The workspace's own canonical path, so `attachSession` finds the header
-      // cwd it validates against rather than an uncanonicalized variant of it.
-      const workspace = await chatWorkspace()
+      // The directory this session starts in: the chat's binding when it has
+      // one, else the deployment cwd. The workspace's own canonical path is
+      // used so `attachSession` finds the header cwd it validates against
+      // rather than an uncanonicalized variant of it.
+      //
+      // `/new` reaches this rung with the ROTATED id (`<base>:r<stamp><tail>`),
+      // while the binding was seeded under the conversation's BASE id — the
+      // acquire that triggered the rotation only knew that one. Without the
+      // base lookup a rotation silently started in the deployment cwd and
+      // `/ws use` looked like it had done nothing.
+      const baseSessionId = baseSessionIdOf(sessionId)
+      const dir = pendingSessionCwd.get(sessionId) ?? pendingSessionCwd.get(baseSessionId) ?? cwd
+      pendingSessionCwd.delete(sessionId)
+      pendingSessionCwd.delete(baseSessionId)
+      const workspace = await chatWorkspace(dir)
       const handle = await agents.create({
         sessionId,
         meta: {
-          cwd: workspace?.path ?? cwd,
+          cwd: workspace?.path ?? dir,
           ...composition.presetId === undefined ? {} : { agentPreset: composition.presetId },
         },
         agentOptions: modelSelection(),
@@ -1512,6 +1807,7 @@ export function installBridge(
       presentCall,
       onFailure: reportSendFailure,
       answer: createMessageRenderer(port, chatId, reportSendFailure),
+      limits: config.limits,
     })
   }
 
@@ -1552,6 +1848,7 @@ export function installBridge(
   const channelCommands = (locale: Locale): Array<{ name: string; description: string }> => [
     { name: PRESET_COMMAND, description: describeCommand(PRESET_COMMAND, locale, 'View or switch mode') },
     { name: SESSIONS_COMMAND, description: describeCommand(SESSIONS_COMMAND, locale, 'View session history') },
+    { name: SESSION_COMMAND, description: describeCommand(SESSION_COMMAND, locale, 'Inspect the current session') },
     { name: TOOLS_COMMAND, description: describeCommand(TOOLS_COMMAND, locale, 'View, deny, or allow tools') },
     { name: SCHEDULES_COMMAND, description: describeCommand(SCHEDULES_COMMAND, locale, 'View scheduled reminders') },
     { name: JOBS_COMMAND, description: describeCommand(JOBS_COMMAND, locale, 'View background jobs') },
@@ -1564,6 +1861,7 @@ export function installBridge(
     { name: CONTEXT_COMMAND, description: describeCommand(CONTEXT_COMMAND, locale, 'View context pressure') },
     { name: SKILLS_COMMAND, description: describeCommand(SKILLS_COMMAND, locale, 'List / inspect discoverable skills') },
     { name: MODEL_COMMAND, description: describeCommand(MODEL_COMMAND, locale, 'View or switch the default model') },
+    { name: THINK_COMMAND, description: describeCommand(THINK_COMMAND, locale, 'View or change this session’s reasoning effort') },
     { name: WS_COMMAND, description: describeCommand(WS_COMMAND, locale, 'List registered workspaces') },
     { name: PLUGINS_COMMAND, description: describeCommand(PLUGINS_COMMAND, locale, 'List deployed plugins and status') },
     { name: CONFIG_COMMAND, description: describeCommand(CONFIG_COMMAND, locale, 'View current configuration') },
@@ -1746,6 +2044,13 @@ export function installBridge(
     // or fails the turn (contract in src/chronicle.ts).
     postChronicle(config.chronicleEndpoint, { source: config.chronicleSource, text: msg.content, chatId: msg.chatId }, notify)
     try {
+      // The ladder only sees the session id — the chat it came from is not part
+      // of its contract — so the directory this session must start in is handed
+      // over here, before the acquire that may create it.
+      pendingSessionCwd.set(
+        sessionIdFor(conversationKey(config.sessionScope ?? 'chat', msg)),
+        await chatCwd(msg.chatId),
+      )
       const opened = await stage(msg.messageId, 'session-acquire', () => sessions.acquire(msg))
       const binding = await stage(msg.messageId, 'session-bind', () => bindingFor(opened.handle.agent.session.id, msg, opened.handle.agent.session))
       // The reaction lifecycle follows this session's current trigger.
@@ -1758,6 +2063,47 @@ export function installBridge(
         opened.handle.agent.cancel('user-requested')
         notify(`dsh-lark-bridge: preemptive /stop for session ${opened.handle.agent.session.id}`)
         await port.send(msg.chatId, { markdown: '⏹ 已停止当前任务' }).catch(reportSendFailure)
+        return
+      }
+      // `/ws use <dir>` binds THIS chat to a project directory, durably.
+      //
+      // The binding is the chat's, not the session's, because `/new` in this
+      // chat must land in the same project again — that is the whole point. A
+      // project's memory lives in its AGENTS.md, and that file only loads when
+      // the session's cwd is inside that directory. Switching therefore takes
+      // effect on the NEXT session; the running one keeps the directory it was
+      // created in, because moving files under a working agent is worse than
+      // asking for a `/new`.
+      const wsUse = /^\/ws\s+use(?:\s+(.+))?$/i.exec(msg.content.trim())
+      if (wsUse !== null) {
+        const asked = (wsUse[1] ?? '').trim().replace(/^["']|["']$/g, '')
+        if (asked === '') {
+          const current = await chatCwd(msg.chatId)
+          await port.send(msg.chatId, {
+            markdown: `📁 本会话绑定：\`${current}\`\n\n\`/ws use <目录>\` 切换 · \`/ws use default\` 解除绑定 · 切换后发 \`/new\` 开新对话生效`,
+          }).catch(reportSendFailure)
+          return
+        }
+        if (asked.toLowerCase() === 'default') {
+          await bindChatCwd(msg.chatId, null)
+          await port.send(msg.chatId, {
+            markdown: `📁 已解除绑定，本会话回到部署目录 \`${cwd}\`。发 \`/new\` 生效。`,
+          }).catch(reportSendFailure)
+          return
+        }
+        const target = resolve(asked)
+        let isDirectory = false
+        try { isDirectory = statSync(target).isDirectory() } catch { /* missing or denied */ }
+        if (!isDirectory) {
+          await port.send(msg.chatId, {
+            markdown: `⚠️ 目录不存在或不是目录：\`${target}\`\n\n绑定未改动。`,
+          }).catch(reportSendFailure)
+          return
+        }
+        await bindChatCwd(msg.chatId, target)
+        await port.send(msg.chatId, {
+          markdown: `📁 本会话已绑定到 \`${target}\`。\n\n发 \`/new\` 开新对话，之后就在这个项目里工作——该目录的 \`AGENTS.md\` 会被加载。`,
+        }).catch(reportSendFailure)
         return
       }
       // `/new` (and its alias `/clear`) rotates the conversation onto a fresh
@@ -1792,6 +2138,11 @@ export function installBridge(
         // The command path therefore owns its own error surface.
         let outcome: Awaited<ReturnType<typeof runCommandLine>>
         try {
+          // A slash command may ask what is scheduled. Rebuild the registry
+          // first: a reminder created by an earlier process never announced
+          // itself to this one, and /schedules would report "none" for
+          // something that is still firing.
+          await seedScheduleRegistry(opened.handle.agent.session)
           outcome = await runCommandLine(
             msg.content,
             opened.handle.agent,
@@ -1817,11 +2168,26 @@ export function installBridge(
               ...config.model === undefined ? {} : { model: config.model },
             },
             ctx.get('workspaceRegistry') as HostWorkspaceRegistry | undefined,
-            cwd,
+            // The chat's effective directory, not the deployment default: a
+            // `/ws use` binding outranks `config.cwd` for the next session, so
+            // `/ws` must report the same directory `/new` will land in.
+            await chatCwd(msg.chatId),
             loaderEntries(),
             getSyncContext(),
             ctx.get('tools') as HostTools | undefined,
             (await compositionFor(sessionId)).toolScope,
+            // `cwdBound` trails the whole signature, so it is last here even
+            // though it describes the cwd two arguments up.
+            (await chatBindings())[msg.chatId] !== undefined,
+            // Seams added after the positional list stopped growing.
+            {
+              llm: ctx.get('llm') as HostLlm | undefined,
+              efforts: effortOverrides,
+              ctx,
+              sessionCwd: await chatCwd(msg.chatId),
+              sessionCwdBound: (await chatBindings())[msg.chatId] !== undefined,
+              sessionPreset: sessionPresets.get(sessionId),
+            },
           )
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error)
@@ -1915,13 +2281,43 @@ export function installBridge(
         // sync and the file may live on a bridged filesystem, so wrap it: a
         // stall then names its stage instead of freezing the loop silently.
         const prefix = await stage(msg.messageId, 'briefing', async () => briefingPrefix(config.briefingFile, opened.handle.agent.session.id, notify))
+      // 引用回复（消息 → 回复）：飞书只把 `parent_id` 放进事件，被引用那条的
+      // 正文要另外读一次。不读，用户发的是「这个再改改」，模型看到的就只剩
+      // 这五个字——它只能猜「这个」指什么。
+      //
+      // 话题群是例外：那里 `parent_id` 指的是话题根，不是用户主动引用的一条，
+      // 拿它当引用会让每条消息都背上一段历史，把真正的提问挤出注意力。
+      const quoted = await stage(msg.messageId, 'quote', async () => {
+        const parentId = msg.replyToMessageId
+        if (parentId === undefined || parentId === '' || parentId === msg.messageId) return ''
+        if (msg.threadId !== undefined && parentId === msg.threadId) return ''
+        const fetchOne = port.fetchMessage
+        if (typeof fetchOne !== 'function') return ''
+        try {
+          return quotedPrefix(await fetchOne.call(port, parentId), config.limits.quoteChars, config.showMessageTime)
+        } catch (error) {
+          // A quote the app cannot read must not cost the whole message: the
+          // user's own words still reach the model, minus the quote.
+          notify(`dsh-lark-bridge: quoted message ${parentId} unreadable: ${error instanceof Error ? error.message : String(error)}`)
+          return ''
+        }
+      })
       // Append file notes to the user's text so the agent knows what arrived.
       // (`chatUserMessage` folds `images.notes` into the text itself — adding
       // them here as well made every image note reach the model twice.)
       const allNotes = [...fileNotes]
-      const spoken = allNotes.length > 0
-        ? msg.content + '\n' + allNotes.join('\n')
-        : msg.content
+      // 用户这条什么时候发的。模型拿到的是正文，看不到任何时间——判断「刚才
+      // 那个是不是没成」时，它只能去翻进程启动时间和文件修改时间，而且经常
+      // 翻错。行首给一个时间戳，比事后按日志倒推便宜得多。
+      const sentAt = config.showMessageTime ? messageTimeStamp(msg.createTime) : undefined
+      // 「距上一轮多久」拼在发送时刻那一行里，不另起一行。模型需要的是间隔
+      // 这个它推不出来的事实；绝对时刻上面已经有了，再说一遍只会让两行时间戳
+      // 相差三秒，模型还得猜哪个才是「现在」。
+      const gap = config.showMessageTime ? sessionGapPhrase(opened.handle.agent.session.id, Date.now()) : ''
+      const stamped = sentAt === undefined
+        ? msg.content
+        : `${gap === '' ? `[${sentAt}]` : `[${sentAt} · 距上一轮 ${gap}]`}\n${msg.content}`
+      const spoken = [quoted, stamped, ...allNotes].filter(part => part !== '').join('\n')
       const turn = chatUserMessage({ ...msg, content: spoken }, images)
       let content = prefix === ''
         ? turn.content
@@ -1984,7 +2380,7 @@ export function installBridge(
         card: approvalCard(
           request.toolName,
           request.reason,
-          command === undefined ? undefined : boundCardText(command),
+          command === undefined ? undefined : boundCardText(command, config.limits.approvalArgChars),
           id,
         ),
       })
@@ -2599,35 +2995,15 @@ export function installBridge(
         ...event.data.schedule === undefined ? {} : { kind: event.data.schedule.kind, prompt: event.data.schedule.prompt },
       })
       if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
-      // Track active schedules for /schedules. `create` records, `delete`
-      // forgets, `dispatch` fires a one-shot (drop it) or ticks a repeating
-      // schedule (keep it for the next round).
-      const id = event.data.schedule?.id ?? event.data.id
+      // Keep /schedules in step with the live stream. A session whose log was
+      // already replayed (seedScheduleRegistry) starts from that state; one
+      // that was not yet starts from what this event says, and the replay
+      // later re-applies it — applyScheduleChange is idempotent by design.
       const sessionId = session.id
-      if (id !== undefined) {
-        let byId = scheduleRegistry.get(sessionId)
-        if (event.data.operation === 'create' && event.data.schedule !== undefined) {
-          if (byId === undefined) {
-            byId = new Map()
-            scheduleRegistry.set(sessionId, byId)
-          }
-          byId.set(id, {
-            id,
-            kind: event.data.schedule.kind,
-            prompt: event.data.schedule.prompt,
-            ...event.data.schedule.everySeconds === undefined ? {} : { everySeconds: event.data.schedule.everySeconds },
-            createdAt: Date.now(),
-          })
-        } else if (byId !== undefined) {
-          if (event.data.operation === 'delete') {
-            byId.delete(id)
-          } else if (event.data.operation === 'dispatch' && event.data.schedule?.kind === 'after') {
-            // A one-shot reminder dispatched once is done.
-            byId.delete(id)
-          }
-          if (byId.size === 0) scheduleRegistry.delete(sessionId)
-        }
-      }
+      const byId = scheduleRegistry.get(sessionId) ?? new Map<string, ScheduleEntry>()
+      applyScheduleChange(byId, event.data)
+      if (byId.size === 0) scheduleRegistry.delete(sessionId)
+      else scheduleRegistry.set(sessionId, byId)
     }
     if (isWebSearchRequestEvent(event)) {
       const nowMs = Date.now()

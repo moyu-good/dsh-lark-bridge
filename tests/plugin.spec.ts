@@ -86,7 +86,14 @@ describe('dsh-lark-bridge', () => {
     const first = created.agent.followup.mock.calls[0]![0]
     expect(first.role).toBe('user')
     expect(first.source).toEqual({ kind: 'user' })
-    expect(first.content).toEqual([{ type: 'text', text: 'first' }])
+    // 正文前有一行发送时间（`showMessageTime`，默认开）。断言"正文以原文结尾"，
+    // 而不是写死那个时间戳：缝在 harness 里给的是 `createTime: 1`，但这里要
+    // 验的是"用户的话原样到了"，不是时钟。
+    expect(first.content).toHaveLength(1)
+    const firstText = (first.content[0] as { type: string; text: string })
+    expect(firstText.type).toBe('text')
+    expect(firstText.text.endsWith('\nfirst')).toBe(true)
+    expect(firstText.text.startsWith('[')).toBe(true)
 
     // The same chat reuses its agent; a new chat gets its own.
     await harness.fake.emitMessage(fakeMessage({ content: 'second' }))
@@ -112,6 +119,18 @@ describe('dsh-lark-bridge', () => {
     await harness.dispose()
   })
 
+  it('drops the timestamp when showMessageTime is off', async () => {
+    // The switch has to be a switch: a deployment that wants the raw prompt gets
+    // it back verbatim, not "the same line with a shorter prefix".
+    const harness = await mountChannel({ showMessageTime: false })
+    await harness.fake.emitMessage(fakeMessage({ content: 'first' }))
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
+    const followup = harness.agents.created[0]!.agent.followup
+    await vi.waitFor(() => { expect(followup).toHaveBeenCalledTimes(1) })
+    expect(followup.mock.calls[0]![0].content).toEqual([{ type: 'text', text: 'first' }])
+    await harness.dispose()
+  })
+
   it('prefixes group messages with the sender', async () => {
     const harness = await mountChannel()
     await harness.fake.emitMessage(fakeMessage({ chatType: 'group', senderName: 'Alice', content: 'hi all' }))
@@ -119,7 +138,12 @@ describe('dsh-lark-bridge', () => {
     const followup = harness.agents.created[0]!.agent.followup
     await vi.waitFor(() => { expect(followup).toHaveBeenCalledTimes(1) })
     const block = followup.mock.calls[0]![0].content[0]!
-    expect(block.type === 'text' && block.text).toBe('Alice: hi all')
+    // 群名前置与时间戳并存：发送者行是调用方拼上去的，时间戳跟在这一条消息
+    // 自己的行首。两者都不能丢——丢了发送者就不知道谁在说话，丢了时间就不知道
+    // 何时说的。
+    const text = block.type === 'text' ? block.text : ''
+    expect(text.startsWith('Alice: [')).toBe(true)
+    expect(text.endsWith('\nhi all')).toBe(true)
     await harness.dispose()
   })
 
@@ -679,7 +703,9 @@ describe('dsh-lark-bridge', () => {
       await vi.waitFor(() => { expect(followup).toHaveBeenCalledTimes(1) })
 
       const content = followup.mock.calls[0]![0].content
-      expect(content[0]).toEqual({ type: 'text', text: '这个报错怎么回事' })
+      const text = content[0] as { type: string; text: string }
+      expect(text.type).toBe('text')
+      expect(text.text.endsWith('\n这个报错怎么回事')).toBe(true)
       // An opaque reference the attachment store owns, never a path or a URL.
       expect(content[1]).toEqual({
         type: 'image',
@@ -1598,7 +1624,8 @@ describe('dsh-lark-bridge', () => {
       const harness = await mountChannel()
       const { card } = await escalation(harness, `{"command":"${'x'.repeat(2000)}"}`)
       const shown = elementsOf(card).find((e) => e.text?.content.startsWith('{"command":"xxx'))
-      expect(shown!.text!.content.length).toBeLessThanOrEqual(600)
+      // The budget is the deployment's (default 1000 characters), not a fixed 600.
+      expect(shown!.text!.content.length).toBeLessThanOrEqual(1000)
       expect(shown!.text!.content.endsWith('…')).toBe(true)
       await harness.dispose()
     })

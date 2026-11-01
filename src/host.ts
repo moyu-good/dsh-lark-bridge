@@ -29,6 +29,34 @@ export interface HostSession {
   readonly seq: number
   /** The event stored at one exact sequence number, or undefined past the tail. */
   eventAt(seq: number): unknown
+  /**
+   * Append one durable event to this session's log, when the host exposes it.
+   *
+   * `/think` records a per-session model selection through this seam so the
+   * choice outlives the process. A host without it keeps the choice in memory
+   * for the life of the bridge, which is a smaller promise the reply states
+   * rather than a silently different behaviour.
+   */
+  append?(type: string, data: unknown): unknown
+  /**
+   * The envelope of the most recent request this session recorded, when the
+   * host exposes it.
+   *
+   * `config.reasoningEffort` is what that request actually sent. Its absence
+   * means the adapter's own default applied — a different fact from "the
+   * request asked for nothing", which is why `/think` reads the header rather
+   * than guessing from the configured default.
+   */
+  requestHeader?(): HostRequestHeader | undefined
+}
+
+/** The parts of one recorded request envelope the bridge reads. */
+export interface HostRequestHeader {
+  readonly config: {
+    readonly provider: string
+    readonly model: string
+    readonly reasoningEffort?: string | undefined
+  }
 }
 
 /** Durable metadata for one stored image, from {@link HostAttachments.saveImage}. */
@@ -120,6 +148,16 @@ export interface HostAgentHandle {
 export interface HostAgentOptions {
   readonly provider?: string | undefined
   readonly model?: string | undefined
+  /**
+   * Adapter-owned reasoning effort for this agent's requests.
+   *
+   * The host reads it as an AgentOptions field, and the loop prefers it over
+   * anything recorded on the session, so a value here is what the session runs
+   * until something changes the request envelope. `/think` therefore treats
+   * the configured default as the floor and overrides per request instead of
+   * rewriting this.
+   */
+  readonly reasoningEffort?: string | undefined
 }
 
 /** One persisted session's header, as this plugin's lookup reads it. */
@@ -152,7 +190,13 @@ export interface HostAgentRegistry {
   resume(options: {
     readonly resumeSessionId: string
     readonly agentOptions?: HostAgentOptions
-    readonly setup?: (agentCtx: Context) => Promise<void>
+    /**
+     * Composition of the resumed agent's scoped world, awaited before it is
+     * published. The host passes BOTH the agent's context and the agent
+     * itself — the second argument is what a seam that needs the session
+     * (its log, its id) reads, since the context alone cannot name it.
+     */
+    readonly setup?: (agentCtx: Context, agent?: HostAgent) => Promise<void>
   }): Promise<HostAgentHandle>
   create(options: {
     readonly sessionId: string
@@ -162,8 +206,11 @@ export interface HostAgentRegistry {
      * Creation-time composition of the agent's scoped world, awaited before
      * the session and agent are published. A rejection rolls the whole
      * creation back, so a broken composition never yields a half-built session.
+     *
+     * The host passes both the agent's context and the agent; see
+     * {@link HostAgentRegistry.resume}.
      */
-    readonly setup?: (agentCtx: Context) => Promise<void>
+    readonly setup?: (agentCtx: Context, agent?: HostAgent) => Promise<void>
   }): Promise<HostAgentHandle>
 }
 
@@ -331,6 +378,35 @@ export interface HostLoaderEntry {
   disabled?: boolean
   /** Live root fiber; undefined when not mounted (disabled or failed to load). */
   fiber?: { readonly state: number } | undefined
+}
+
+/**
+ * The `llm` runtime, narrowed to what an effort chooser needs.
+ *
+ * The selectable levels are adapter-owned facts: one route may offer
+ * `off/low/high/max`, another only `off`, and hardcoding a list in the bridge
+ * would offer levels the provider rejects. `resolveModelInfo` is the same call
+ * the host's own model picker uses, so both surfaces agree.
+ */
+export interface HostLlm {
+  /**
+   * Resolve one exact route's metadata.
+   * @param provider - registered provider route.
+   * @param model - exact model id passed to the adapter.
+   * @param signal - optional cancellation.
+   * @returns the route's identity plus any reasoning metadata it declares.
+   */
+  resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<HostLlmModelInfo>
+}
+
+/** The reasoning facts one adapter publishes for one route. */
+export interface HostLlmModelInfo {
+  /** Selectable efforts, least to greatest; absent means the route declares none. */
+  readonly reasoning?: {
+    readonly efforts: readonly { readonly id: string; readonly name?: string }[]
+    /** Adapter-configured default materialized when a caller omits an effort. */
+    readonly defaultEffort?: string
+  } | undefined
 }
 
 /** The `agentDefaultModel` service (subset of `AgentDefaultModelConfig`). */
@@ -1283,6 +1359,51 @@ export function isTeamMessageDeliveredEvent(
     && typeof data.teamId === 'string'
     && typeof data.messageId === 'string'
     && typeof data.targetId === 'string'
+}
+
+/**
+ * A message the human at the chat typed.
+ *
+ * A message sent while a turn is already running is not recorded when it
+ * arrives: it goes into the agent's inbox and is appended to the session log
+ * at the step boundary where the driver admits it, so its `seq` sits between
+ * two `step/start` events of the turn it redirected. That is what makes it
+ * findable at all — by the time it appears, the turn it changed is known.
+ *
+ * The payload IS the message: `id`, `role`, `content`, `source`. Other message
+ * shapes on this event (a teammate's relay) nest the message under `message`,
+ * which is why the guard accepts both.
+ */
+export interface UserChatMessageData {
+  readonly id: string
+  readonly role?: string
+  readonly content: readonly { readonly type: string; readonly text?: string }[]
+  readonly source?: { readonly kind?: string }
+}
+
+/**
+ * Narrow a session event to a message the human at the chat typed.
+ *
+ * Only the human's own words qualify. The same event carries instruction,
+ * context, goal and reminder messages the host writes itself — all of them
+ * `source.kind` values other than `user` — and none of them are something a
+ * reader of the thinking process would recognise as their own sentence.
+ *
+ * @param event - any session event.
+ * @returns whether the event is a message the human sent.
+ */
+export function isUserChatMessageEvent(
+  event: HostSessionEvent,
+): event is HostSessionEvent & { readonly data: UserChatMessageData } {
+  if (event.type !== 'user/message') return false
+  const raw = event.data as
+    | (Partial<UserChatMessageData> & { readonly message?: Partial<UserChatMessageData> })
+    | undefined
+  if (raw === undefined || raw === null) return false
+  const message = raw.message ?? raw
+  if (typeof message.id !== 'string') return false
+  if (!Array.isArray(message.content)) return false
+  return message.source?.kind === 'user'
 }
 
 /**

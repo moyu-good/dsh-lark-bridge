@@ -12,6 +12,8 @@
  * @module dsh-lark-bridge/feishu-tools
  */
 
+import { statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { OutboundPort } from './outbound.ts'
 import { FeishuCloud } from './sync/feishu-cloud.ts'
 import type { FeishuCredentials, FetchImpl } from './sync/feishu-cloud.ts'
@@ -21,6 +23,7 @@ export const FEISHU_NOTIFY_TOOL = 'feishu_notify'
 export const FEISHU_DRIVE_WRITE_TOOL = 'feishu_drive_write'
 export const FEISHU_DRIVE_READ_TOOL = 'feishu_drive_read'
 export const FEISHU_DRIVE_LIST_TOOL = 'feishu_drive_list'
+export const BIND_WORKSPACE_TOOL = 'bind_workspace'
 
 /** Capabilities the bridge injects at registration time. */
 export interface FeishuToolDeps {
@@ -32,6 +35,13 @@ export interface FeishuToolDeps {
   readonly credentials: FeishuCredentials | undefined
   /** HTTP seam for the drive client; injectable for tests. */
   readonly fetchImpl?: FetchImpl | undefined
+  /**
+   * Bind this chat to a project directory (durable, per chat), or clear it with
+   * `null`. Absent → `bind_workspace` explains that this deployment cannot.
+   */
+  readonly bindChatCwd?: (chatId: string, dir: string | null) => Promise<void>
+  /** The directory this chat's next session starts in. */
+  readonly chatCwd?: (chatId: string) => Promise<string>
 }
 
 interface NotifyArgs {
@@ -62,6 +72,14 @@ interface DriveResult {
   readonly error?: string
 }
 
+interface BindResult {
+  readonly ok: boolean
+  readonly dir?: string
+  readonly unbind?: boolean
+  readonly note?: string
+  readonly error?: string
+}
+
 const asText = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 /**
@@ -81,6 +99,67 @@ export function createFeishuTools(deps: FeishuToolDeps): object[] {
   }
 
   return [
+    {
+      name: BIND_WORKSPACE_TOOL,
+      description:
+        'Bind THIS Feishu chat to a project directory, durably. The next `/new` in this '
+        + 'chat starts there, so that directory\'s AGENTS.md is loaded — this is how a chat '
+        + 'switches project memory. The running conversation keeps the directory it was '
+        + 'created in, so tell the human to send /new. Pass dir="default" to unbind and fall '
+        + 'back to the deployment directory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dir: {
+            type: 'string',
+            description: 'Absolute project directory, or "default" to unbind',
+          },
+        },
+        required: ['dir'],
+      },
+      // 工具层强制要求 output：缺了它注册会抛
+      // "must declare output { schema, render, presentationMeta? }"，
+      // 而 composeChatAgent 把注册异常吞成一行 stderr，工具就静默消失。
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            ok: { type: 'boolean' },
+            dir: { type: 'string' },
+            unbind: { type: 'boolean' },
+            note: { type: 'string' },
+            error: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+        render: (_args: unknown, value: BindResult): object[] => [
+          { type: 'text', text: value.ok ? (value.note ?? `已绑定到 \`${value.dir ?? '?'}\`。`) : `绑定失败：${value.error ?? '未知错误'}` },
+        ],
+      },
+      async execute(args: unknown, exec: unknown): Promise<BindResult> {
+        const chatId = resolveChat(exec, undefined)
+        if (chatId === undefined) return { ok: false, error: 'cannot resolve this chat' }
+        if (deps.bindChatCwd === undefined) {
+          return { ok: false, error: 'this deployment cannot rebind a chat workspace' }
+        }
+        const raw = asText((args as { dir?: unknown }).dir).trim().replace(/^["']|["']$/g, '')
+        if (raw === '') return { ok: false, error: 'dir is required' }
+        if (raw.toLowerCase() === 'default') {
+          await deps.bindChatCwd(chatId, null)
+          return { ok: true, unbind: true, note: '已解除绑定：下一个 /new 回到部署目录。' }
+        }
+        const target = resolve(raw)
+        let isDirectory = false
+        try { isDirectory = statSync(target).isDirectory() } catch { /* missing or denied */ }
+        if (!isDirectory) return { ok: false, error: `目录不存在或不是目录：${target}` }
+        await deps.bindChatCwd(chatId, target)
+        return {
+          ok: true,
+          dir: target,
+          note: `已绑定到 ${target}：发 /new 开新对话，之后就在这个项目里工作。`,
+        }
+      },
+    },
     {
       name: FEISHU_NOTIFY_TOOL,
       description:
@@ -254,5 +333,9 @@ export function feishuToolsPromptSection(): string {
     + 'proactive pings from long or scheduled work, not as a substitute for your reply. '
     + '`feishu_drive_write` / `feishu_drive_read` / `feishu_drive_list` store and fetch text '
     + 'files in the Feishu app\'s own cloud space, which survives across devices and '
-    + 'machines — use them for handoff notes and state that must outlive this workspace.'
+    + 'machines — use them for handoff notes and state that must outlive this workspace. '
+    + '`bind_workspace` binds THIS chat to a project directory durably: the next `/new` starts '
+    + 'there and loads that directory\'s AGENTS.md, which is how a chat switches project '
+    + 'memory. Call it when the human asks to move this conversation to another project; then '
+    + 'tell them to send `/new`, because the running conversation keeps its directory.'
 }

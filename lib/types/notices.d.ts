@@ -39,7 +39,7 @@ export declare function subagentEndLine(info: {
  * and progress spam — so a long output is cut from the FRONT and says how much
  * it dropped, rather than being truncated from the back into uselessness.
  */
-export declare function outputTail(output: string | undefined): string;
+export declare function outputTail(output: string | undefined, limit?: number): string;
 export declare function jobDoneLine(job: {
     readonly id: string;
     readonly kind: string;
@@ -48,7 +48,7 @@ export declare function jobDoneLine(job: {
     readonly detail?: string;
     readonly durationMs?: number;
     readonly output?: string;
-}): string;
+}, tailChars?: number): string;
 /**
  * A model-call retry line. Transient upstream failures self-heal through the
  * retry policy in the vast majority of cases — announcing the first retry
@@ -81,18 +81,40 @@ export declare function compactionPruneLine(data: {
     readonly shadowedTokenCount: number;
 }): string;
 /**
- * A proactive token-pressure warning: the session's context has climbed past
- * the compaction advice threshold. Unlike the compaction notices (which fire
- * after the fact), this is a heads-up the bridge polls for while a long task
- * is running, so the chat hears about pressure before the model degrades.
- * @param total - current measured total tokens.
- * @param surface - the session-surface portion of the total.
- * @param threshold - the configured warning threshold.
- * @returns the markdown line for the chat.
+ * 上下文占用的预警文案。
+ *
+ * 原来写的是「总量 X tokens / 会话表面 Y」——「会话表面」是宿主字段
+ * `surfaceTokens` 的直译，读者从中看不出它指的是"你俩聊过的内容"，更看不出
+ * 总量与它之间的差额是工具说明这类常驻开销。差额恰恰是关键：真正超线时，
+ * 压历史能降的是前半段，压不掉的是后半段。
+ * @param data - 当前总量、其中的聊天内容、以及预警线。
+ * @returns 发到聊天里的那一段。
  */
 export declare function tokenPressureLine(data: {
     readonly total: number;
     readonly surface: number;
     readonly threshold: number;
+}): string;
+/** 上下文占用的构成，来自宿主的 `contextBreakdown` 投影。 */
+export interface ContextBreakdown {
+    /** 存活消息（一轮轮对话本身）。 */
+    readonly messageTokens: number;
+    /** 系统提示。 */
+    readonly systemTokens: number;
+    /** 工具定义。 */
+    readonly toolsTokens: number;
+}
+/**
+ * `/context` 的回复：占用多少，以及占在哪。
+ *
+ * 一行总数对"要不要压缩"够用，对"压了有没有用"不够：一台挂满 MCP 的机器，
+ * 工具说明就能占掉小一半，这时压历史是白费力气。所以有分组就摊开说。
+ * @param data - 总量、聊天内容、可选的三段拆分。
+ * @returns 回复正文（markdown）。
+ */
+export declare function contextPressureLine(data: {
+    readonly total: number;
+    readonly surface: number;
+    readonly breakdown?: ContextBreakdown | undefined;
 }): string;
 //# sourceMappingURL=notices.d.ts.map
