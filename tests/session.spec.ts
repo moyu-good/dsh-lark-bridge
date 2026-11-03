@@ -32,6 +32,13 @@ interface LadderBehavior {
   race?: string[]
   /** Session ids whose every `resume` says plainly that nothing is stored. */
   absent?: string[]
+  /**
+   * Session ids this chat already wrote under ANOTHER project directory: the
+   * host refuses to list its sessions at all while the duplicate exists, so
+   * both `resume` (nothing stored here) and `create` (id taken elsewhere)
+   * reject — the deadlock behind "无法启动会话".
+   */
+  duplicate?: string[]
   /** Reject `create` instead of producing an agent. */
   failCreate?: boolean
   /** Reject every produced agent's `dispose`. */
@@ -79,6 +86,17 @@ function existsError(sessionId: string): Error {
 }
 
 /**
+ * The same id is stored under two project directories, which the host refuses
+ * to enumerate at all — measured from `listArtifacts` in
+ * `dsh-session-persistence-jsonl`, raised the moment two headers agree on id.
+ * @param sessionId - the id that turned up twice.
+ * @returns the rejection the host would raise.
+ */
+function duplicateError(sessionId: string): Error {
+  return new Error(`duplicate JSONL session id "${sessionId}" appears in multiple project directories`)
+}
+
+/**
  * An in-memory {@link SessionLadder} over stub agents, recording every rung,
  * report line, and disposal. Needs no Cordis mount.
  * @param behavior - which rungs answer; by default only `create` does.
@@ -99,6 +117,7 @@ function createFakeLadder(behavior: LadderBehavior = {}) {
     || behavior.foreign?.includes(sessionId) === true
     || behavior.denied?.includes(sessionId) === true
     || behavior.race?.includes(sessionId) === true
+    || behavior.duplicate?.includes(sessionId) === true
 
   /** One stub agent per session id, so a second rung yields the same handle. */
   const handleFor = (sessionId: string): HostAgentHandle => {
@@ -132,6 +151,9 @@ function createFakeLadder(behavior: LadderBehavior = {}) {
       // first attempt still sees nothing stored.
       if (behavior.race?.includes(sessionId) === true && attempt === 1) throw absentError(sessionId)
       if (behavior.absent?.includes(sessionId) === true) throw absentError(sessionId)
+      // The duplicate lives in another project directory, so nothing is stored
+      // HERE — resuming this cwd cannot reach it.
+      if (behavior.duplicate?.includes(sessionId) === true) throw absentError(sessionId)
       if (behavior.resumable?.includes(sessionId) !== true && behavior.race?.includes(sessionId) !== true) {
         throw new Error(`no stored session (fake): ${sessionId}`)
       }
@@ -140,6 +162,9 @@ function createFakeLadder(behavior: LadderBehavior = {}) {
     async create(sessionId) {
       calls.push({ rung: 'create', sessionId })
       if (behavior.failCreate === true) throw new Error(`create rejected (fake): ${sessionId}`)
+      // Creating under a duplicated id is refused before any log is touched:
+      // the host cannot tell which copy is meant.
+      if (behavior.duplicate?.includes(sessionId) === true) throw duplicateError(sessionId)
       // The host's create refuses an id whose log is already on disk, whatever
       // shape that log is in — this is the answer that buried the damage.
       if (stored(sessionId)) throw existsError(sessionId)
@@ -379,6 +404,39 @@ describe('conversation sessions', () => {
       const again = await restarted.acquire(fakeMessage())
       expect(again.handle.agent.session.id).toBe(moved)
       expect(again.handle.agent.session.id).not.toBe(sessionId)
+      await restarted.close()
+    })
+
+    it('moves a conversation off an id duplicated across project directories', async () => {
+      const sessionId = sessionIdFor('oc_chat_1')
+      // The chat was pointed at a new cwd: the same id is now stored under two
+      // project directories, so the host refuses to list or create it.
+      const host = createFakeLadder({ duplicate: [sessionId] })
+      const home = mkdtempSync(join(tmpdir(), 'dsh-duplicate-'))
+      const sessions = new ConversationSessions('chat', host.ladder, createRotationStore(home))
+
+      const failure = await sessions.acquire(fakeMessage()).then(() => undefined, (error: unknown) => error as Error)
+
+      // The chat reads a plain explanation, not the raw host refusal.
+      expect(failure?.message).toContain('换过工作目录')
+      expect(failure?.message).toContain('原样保留')
+      expect(failure?.message).not.toContain('already exists')
+      expect(failure?.message).not.toContain('duplicate JSONL session id')
+      expect(host.reports.join('\n')).toContain(`session ${sessionId} cannot be opened (duplicate)`)
+
+      // The escape: the conversation lives on a fresh id and works again — the
+      // old copy is left where it is, still addressable.
+      const opened = await sessions.acquire(fakeMessage())
+      const moved = opened.handle.agent.session.id
+      expect(moved).not.toBe(sessionId)
+      expect(moved.startsWith(`${sessionId}:r`)).toBe(true)
+      expect(host.asked('create')).toEqual([sessionId, moved])
+      await sessions.close()
+
+      // A restart reads the move back, so the duplicate cannot deadlock it.
+      const restarted = new ConversationSessions('chat', host.ladder, createRotationStore(home))
+      const again = await restarted.acquire(fakeMessage())
+      expect(again.handle.agent.session.id).toBe(moved)
       await restarted.close()
     })
 

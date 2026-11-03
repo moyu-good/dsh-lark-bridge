@@ -54,10 +54,22 @@ const CORRUPT_LOG_PHRASES = ['stored log is corrupt', 'corrupt session log', 'fa
 const UNREADABLE_FORMAT_PHRASES = ['unknown to this harness', 'upgrade the harness', 'log format v']
 
 /**
- * Why an existing stored session cannot be opened: damage, a log format this
- * build does not read, or a refusal that named neither.
+ * The host refuses to LIST its sessions when one id turns up under two project
+ * directories: `/switch` (or `/ws use`) points a chat at a new cwd, and the
+ * session derived for that chat is then created there while the original copy
+ * stays in the old cwd. Nothing about the log is damaged — the same id simply
+ * exists twice — but the host's listing throws, so every boot reports it and
+ * no conversation on that id can be opened.
  */
-type ArchiveFailure = 'corrupt' | 'format' | 'unreadable'
+const DUPLICATE_LOG_PHRASES = ['appears in multiple project directories']
+const DUPLICATE_LOG_CLASS = 'duplicate'
+
+/**
+ * Why an existing stored session cannot be opened: damage, a log format this
+ * build does not read, an id duplicated across project directories, or a
+ * refusal that named neither.
+ */
+type ArchiveFailure = 'corrupt' | 'format' | 'duplicate' | 'unreadable'
 
 /**
  * Every class name and message reachable from one rejection, outermost first.
@@ -101,6 +113,7 @@ function classifyArchive(error: unknown): ArchiveFailure | undefined {
   const text = messages.join('\n')
   if (names.includes(CORRUPT_LOG_NAME) || CORRUPT_LOG_PHRASES.some(phrase => text.includes(phrase))) return 'corrupt'
   if (names.includes(UNREADABLE_FORMAT_NAME) || UNREADABLE_FORMAT_PHRASES.some(phrase => text.includes(phrase))) return 'format'
+  if (DUPLICATE_LOG_PHRASES.some(phrase => text.includes(phrase))) return DUPLICATE_LOG_CLASS
   return undefined
 }
 
@@ -145,6 +158,10 @@ function archiveNotice(failure: ArchiveFailure, error: unknown): string {
   // The line number is reported on its own, so drop the wrapper repeating it.
   if (line !== undefined) detail = detail.replace(new RegExp(`^.*?line ${line}[:：]\\s*`), '')
   if (detail.length > 180) detail = `${detail.slice(0, 179)}…`
+  if (failure === 'duplicate') {
+    return '这个聊天换过工作目录，同一个会话编号在两处各存了一份，宿主不肯列出来。'
+      + '已经换到一个新会话继续，旧的两份原样保留、没动过；把刚才的话再发一次就行。'
+  }
   const why = failure === 'corrupt'
     ? '会话存档损坏'
     : failure === 'format'
@@ -535,6 +552,15 @@ export class ConversationSessions {
     try {
       return { handle: await this.ladder.create(sessionId), owned: true }
     } catch (error) {
+      // A duplicated id is neither `already exists` (that answer means the
+      // archive is right here and resumable) nor a failure worth surfacing:
+      // the id is taken in ANOTHER project directory, so resuming it here
+      // cannot work and every later message would replay the same refusal.
+      // Move the conversation off the id exactly as a damaged archive would —
+      // the stray copy stays untouched and addressable.
+      if (classifyArchive(error) === DUPLICATE_LOG_CLASS) {
+        throw this.quarantine(key, sessionId, DUPLICATE_LOG_CLASS, error)
+      }
       // Any other create failure is the truth as it stands.
       if (!isExistingSession(error)) throw error
       // `already exists` is the one answer that proves an archive is there. If
