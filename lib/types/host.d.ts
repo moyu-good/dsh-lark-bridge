@@ -173,6 +173,13 @@ export interface HostSessionHeader {
         readonly id: string;
         /** Unix epoch milliseconds; the newest header for a chat is the one to resume. */
         readonly createdAt: number;
+        /**
+         * 会话创建时的工作目录。
+         *
+         * `/resume` 用它告诉读者「这个历史会话是在哪个项目里跑的」——同一段对话
+         * 可能在 `/ws use` 换过目录，光看时间分不清哪个才是当前项目。
+         */
+        readonly cwd?: string;
     };
 }
 /**

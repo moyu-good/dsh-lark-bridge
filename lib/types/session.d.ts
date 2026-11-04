@@ -133,11 +133,38 @@ export declare class ConversationSessions {
         readonly persisted: boolean;
     }>;
     /**
+     * 把一条对话切到本聊天已有的某个历史会话：`/resume` 的执行体。
+     *
+     * 和 {@link rotate} 共用同一套 rebind 与旧 agent 处置，区别只在会话从哪来：
+     * `/new` 新建一个，这里把磁盘上已经存在的那个重新打开。所以切换之后
+     * `/sessions`、`/session` 以及重启后的恢复看到的都是同一份映射，不会出现
+     * 「切过去了但重启又跳回来」。
+     *
+     * 目标必须属于本对话：会话 id 是 `feishu-<key>`，分叉再挂一个 `:r<stamp><rand>`。
+     * 前缀对不上就说明那是别的聊天（或别的线程）的会话，放行等于让一个群读到
+     * 另一个群的对话，所以这里直接拒绝。
+     *
+     * @param msg - 要求切换的那条消息（决定 conversation key）。
+     * @param targetSessionId - 要切过去的历史会话 id。
+     * @returns 切过去之后的会话，以及这次切换有没有写进轮换记录。
+     * @throws 目标不属于本对话、会话打不开、或本 store 已关闭时。
+     */
+    attach(msg: NormalizedMessage, targetSessionId: string): Promise<OpenedSession & {
+        readonly persisted: boolean;
+    }>;
+    /**
      * The body of {@link rotate}, serialized per conversation by its caller.
      * @param key - the conversation key to rotate.
      * @returns the fresh session plus whether the mapping reached disk.
      */
     private performRotate;
+    /**
+     * The body of {@link attach}, serialized per conversation by its caller.
+     * @param key - the conversation key to move.
+     * @param targetSessionId - the stored session to open and bind.
+     * @returns the bound session plus whether the mapping reached disk.
+     */
+    private performAttach;
     /**
      * Stop accepting new work and dispose every owned agent. The bindings are
      * dropped before the first await, so a second call disposes nothing twice.

@@ -70,6 +70,15 @@ export declare const SESSIONS_COMMAND = "sessions";
 export declare const SESSION_COMMAND = "session";
 /** Start a fresh session for this conversation; `/clear` is an alias. */
 export declare const NEW_COMMAND = "new";
+/**
+ * 切回本聊天的某个历史会话。
+ *
+ * `/sessions` 只能看、`/new` 只能往前走，两样都补不上「回到上周那个会话接着聊」
+ * 这个动作——那个动作以前只能靠重启后自动落到最近会话，或者根本做不到。
+ * 名字叫 resume 而不是 switch，是因为语义就是「重新打开一个已存的会话」：
+ * 会话本身不动，变的是这条对话指向谁。
+ */
+export declare const RESUME_COMMAND = "resume";
 /** Bridge dual-end status, settings, and plugin sync. */
 export declare const BOT_COMMAND = "bot";
 /** Query the DeepSeek platform balance the deployment bills through. */

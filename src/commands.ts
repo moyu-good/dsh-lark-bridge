@@ -112,6 +112,16 @@ export const SESSION_COMMAND = 'session'
 /** Start a fresh session for this conversation; `/clear` is an alias. */
 export const NEW_COMMAND = 'new'
 
+/**
+ * 切回本聊天的某个历史会话。
+ *
+ * `/sessions` 只能看、`/new` 只能往前走，两样都补不上「回到上周那个会话接着聊」
+ * 这个动作——那个动作以前只能靠重启后自动落到最近会话，或者根本做不到。
+ * 名字叫 resume 而不是 switch，是因为语义就是「重新打开一个已存的会话」：
+ * 会话本身不动，变的是这条对话指向谁。
+ */
+export const RESUME_COMMAND = 'resume'
+
 /** Bridge dual-end status, settings, and plugin sync. */
 export const BOT_COMMAND = 'bot'
 
@@ -275,6 +285,7 @@ export function helpText(
     // Listed only when the deployment wired a restart command, matching the panel.
     ...(config?.restartCommand ? [`\`/${RESTART_COMMAND}\` — ${describeCommand(RESTART_COMMAND, locale, 'Restart the host process')}`] : []),
     `\`/${NEW_COMMAND}\` — ${describeCommand(NEW_COMMAND, locale, 'Start a new session')}`,
+    `\`/${RESUME_COMMAND}\` — ${describeCommand(RESUME_COMMAND, locale, 'Switch to a stored session')}`,
     `\`/${PRESET_COMMAND}\` — ${describeCommand(PRESET_COMMAND, locale, 'View or switch mode')}`,
     `\`/${SESSIONS_COMMAND}\` — ${describeCommand(SESSIONS_COMMAND, locale, 'View session history')}`,
     `\`/${SESSION_COMMAND}\` — ${describeCommand(SESSION_COMMAND, locale, 'Inspect the current session')}`,

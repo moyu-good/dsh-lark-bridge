@@ -59,6 +59,7 @@ export const COMMAND_DESCRIPTIONS: Record<string, BilingualText> = {
   // Commonly encountered host commands, in case other bundles add them.
   clear: { zh: '清空当前上下文', en: 'Clear the current context' },
   new: { zh: '新开会话', en: 'Start a new session' },
+  resume: { zh: '切回本聊天的历史会话', en: 'Switch this chat to a stored session' },
   settings: { zh: '查看/修改设置', en: 'View or change settings' },
   permission: { zh: '查看权限模式', en: 'View permission mode' },
   schedule: { zh: '管理定时提醒', en: 'Manage scheduled reminders' },

@@ -716,6 +716,127 @@ describe('session rotation', () => {
   })
 })
 
+describe('resuming a stored session', () => {
+  /** An in-memory rotation store, shared across store instances like the file. */
+  function memoryStore() {
+    const map = new Map<string, string>()
+    return {
+      map,
+      store: {
+        current: (key: string): string | undefined => map.get(key),
+        record: (key: string, sessionId: string): boolean => { map.set(key, sessionId); return true },
+      },
+    }
+  }
+
+  it('切到一个已存会话：换绑、旧 agent 被处置、映射落盘', async () => {
+    const target = 'feishu-oc_chat_a1:r1'
+    const host = createFakeLadder({ resumable: [target] })
+    const { map, store } = memoryStore()
+    const sessions = new ConversationSessions('chat', host.ladder, store)
+    const msg = fakeMessage({ chatId: 'oc_chat_a1' })
+
+    const first = await sessions.acquire(msg)
+    expect(first.handle.agent.session.id).toBe(sessionIdFor('oc_chat_a1'))
+
+    const attached = await sessions.attach(msg, target)
+    expect(attached.handle.agent.session.id).toBe(target)
+    expect(attached.persisted).toBe(true)
+    expect(map.get('oc_chat_a1')).toBe(target)
+    // 旧会话是本 store 自己开的，切换后必须由它关掉，否则 agent 泄漏。
+    expect(host.disposals).toContain(sessionIdFor('oc_chat_a1'))
+
+    const again = await sessions.acquire(msg)
+    expect(again.handle.agent.session.id).toBe(target)
+  })
+
+  it('拒绝切到别的对话的会话', async () => {
+    const host = createFakeLadder({ resumable: ['feishu-oc_other:r1'] })
+    const sessions = new ConversationSessions('chat', host.ladder, memoryStore().store)
+    const msg = fakeMessage({ chatId: 'oc_chat_a2' })
+    await sessions.acquire(msg)
+
+    await expect(sessions.attach(msg, 'feishu-oc_other:r1')).rejects.toThrow('不属于本对话')
+    // 前缀不对的 id 连 resume 都不该试，否则等于替别的聊天打开它的日志。
+    expect(host.asked('resume')).not.toContain('feishu-oc_other:r1')
+  })
+
+  it('切到当前会话时什么都不做', async () => {
+    const host = createFakeLadder()
+    const sessions = new ConversationSessions('chat', host.ladder, memoryStore().store)
+    const msg = fakeMessage({ chatId: 'oc_chat_a3' })
+    const first = await sessions.acquire(msg)
+
+    const same = await sessions.attach(msg, first.handle.agent.session.id)
+    expect(same.handle).toBe(first.handle)
+    expect(same.persisted).toBe(true)
+    expect(host.disposals).toHaveLength(0)
+  })
+
+  it('目标已被别人拉起时借用，不接管处置', async () => {
+    const target = 'feishu-oc_chat_a4:r1'
+    const host = createFakeLadder({ live: [target] })
+    const sessions = new ConversationSessions('chat', host.ladder, memoryStore().store)
+    const msg = fakeMessage({ chatId: 'oc_chat_a4' })
+    await sessions.acquire(msg)
+
+    const attached = await sessions.attach(msg, target)
+    expect(attached.handle.agent.session.id).toBe(target)
+    expect(attached.owned).toBe(false)
+    expect(host.disposals).not.toContain(target)
+  })
+
+  it('目标会话打不开时报错，旧绑定保留', async () => {
+    const target = 'feishu-oc_chat_a5:r1'
+    const host = createFakeLadder({ corrupt: [target] })
+    const { map, store } = memoryStore()
+    const sessions = new ConversationSessions('chat', host.ladder, store)
+    const msg = fakeMessage({ chatId: 'oc_chat_a5' })
+    const first = await sessions.acquire(msg)
+
+    await expect(sessions.attach(msg, target)).rejects.toThrow()
+    const again = await sessions.acquire(msg)
+    expect(again.handle.agent.session.id).toBe(first.handle.agent.session.id)
+    expect(map.has('oc_chat_a5')).toBe(false)
+  })
+
+  it('切换记录写失败时仍完成切换，只是标成未落盘', async () => {
+    const target = 'feishu-oc_chat_a6:r1'
+    const host = createFakeLadder({ resumable: [target] })
+    const sessions = new ConversationSessions('chat', host.ladder, {
+      current: () => undefined,
+      record: () => false,
+    })
+    const msg = fakeMessage({ chatId: 'oc_chat_a6' })
+    await sessions.acquire(msg)
+
+    const attached = await sessions.attach(msg, target)
+    expect(attached.persisted).toBe(false)
+    expect(attached.handle.agent.session.id).toBe(target)
+  })
+
+  it('第一次切换还没完成时拒绝第二次', async () => {
+    const first = 'feishu-oc_chat_a7:r1'
+    const second = 'feishu-oc_chat_a7:r2'
+    const host = createFakeLadder({ resumable: [first, second] })
+    const sessions = new ConversationSessions('chat', host.ladder, memoryStore().store)
+    const msg = fakeMessage({ chatId: 'oc_chat_a7' })
+    await sessions.acquire(msg)
+
+    // 让 resume 慢一点，好让第二次切换正好落在第一次的窗口里。
+    const original = host.ladder.resume.bind(host.ladder)
+    host.ladder.resume = async (sessionId: string): Promise<HostAgentHandle> => {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      return original(sessionId)
+    }
+
+    const pending = sessions.attach(msg, first)
+    await expect(sessions.attach(msg, second)).rejects.toThrow('还在进行中')
+    const attached = await pending
+    expect(attached.handle.agent.session.id).toBe(first)
+  })
+})
+
 describe('rotation store (file-backed)', () => {
   it('round-trips a mapping through the file, surviving a restart', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-rot-'))
