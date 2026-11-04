@@ -144,9 +144,12 @@ export interface Config {
     /**
      * Whether a delegation is announced in the chat when it is made.
      *
-     * A child that is announced only in the panel card is invisible to a
-     * reader looking at the chat, so this is on by default. Turn it off for
-     * a chat that would rather see the panel alone.
+     * This covers ONLY the one-line opening (`🔀 派出子代理 · label`). A child's
+     * individual steps are never posted to the chat — they live in the panel
+     * card, which updates in place. Posting each step was the old behaviour and
+     * it flooded long fan-outs: six concurrent children at one message per child
+     * per 30s put up to twelve fragments a minute into the chat. A settled child
+     * still reports once, with what it produced, regardless of this setting.
      */
     announceSubagents?: boolean;
     /** Auto-save inbound file messages into the agent workspace. Default true. */

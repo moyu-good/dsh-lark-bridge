@@ -46,6 +46,25 @@ export interface SubagentCardState {
   messageId?: string
   /** Epoch ms of the last in-place card update (throttling). */
   updatedAt?: number
+  /**
+   * Whether a send/update is in flight.
+   *
+   * The panel is the ONLY place a child's progress is visible once the chat
+   * stops echoing each step, so two concurrent writes that both read the same
+   * pre-update state must not race: the later one would overwrite the earlier
+   * with a stale render, and Feishu would see duplicate updates in one window.
+   */
+  sending?: boolean
+  /** An update requested while one was in flight; sent once it settles. */
+  pending?: boolean
+  /**
+   * Consecutive failed updates.
+   *
+   * The card is the sole channel now, so a silent stall means the reader sees
+   * a frozen panel and no way to know it stopped moving. Counting lets the
+   * caller say so out loud instead of failing quietly.
+   */
+  failures?: number
 }
 
 export function createTracker(): SubagentCardState {

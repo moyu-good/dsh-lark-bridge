@@ -1003,17 +1003,6 @@ export function installBridge(
   const teamTrackers = new Map<string, { state: teamCard.TeamCardState; messageId?: string; updatedAt?: number; sending?: boolean; pending?: boolean }>()
   /** 外勤会话镜像 (P141)：未绑定且非子会话的独立会话，按会话节流推一行进度。 */
   const externalMirrorAt = new Map<string, number>()
-  /**
-   * When each child's last progress line reached the chat, per chat+child.
-   *
-   * A child's work is worth saying out loud, but every one of its tool
-   * calls is not: a child that reads twenty files would otherwise put
-   * twenty lines into the chat between the question and the answer. One
-   * line per child per window is what a reader can actually use.
-   */
-  const childProgressAt = new Map<string, number>()
-  /** How often one child's progress reaches the chat, in milliseconds. */
-  const CHILD_PROGRESS_WINDOW_MS = 30_000
   /** childId → chatId. 0.1.5 runs every child in its OWN session — the id
    * `subagent/catalog` reports as `childId` IS that session id (verified against
    * this install: each of the 20 catalog ids had a matching session directory),
@@ -1124,14 +1113,44 @@ export function installBridge(
   ): Promise<void> => {
     const now = Date.now()
     if (!force && tracker.updatedAt !== undefined && now - tracker.updatedAt < CARD_UPDATE_MIN_MS) return
-    tracker.updatedAt = now
-    const card = subCard.render(tracker, now)
-    if (tracker.messageId === undefined) {
-      const sent = await replay.send(chatId, { card })
-      tracker.messageId = sent.messageId
+    // Serialize writes. The panel is now the only place a child's progress
+    // shows, and six children settling inside one window used to fire six
+    // overlapping updates: each rendered from the state it read before the
+    // previous write landed, so the last writer could publish a stale panel,
+    // and the burst brushed Feishu's per-chat update limit.
+    if (tracker.sending === true) {
+      tracker.pending = true
       return
     }
-    await port.updateCard(tracker.messageId, card)
+    tracker.sending = true
+    tracker.updatedAt = now
+    try {
+      const card = subCard.render(tracker, now)
+      if (tracker.messageId === undefined) {
+        const sent = await replay.send(chatId, { card })
+        tracker.messageId = sent.messageId
+      } else {
+        await port.updateCard(tracker.messageId, card)
+      }
+      tracker.failures = 0
+    } catch (error) {
+      tracker.failures = (tracker.failures ?? 0) + 1
+      // One failure is a blip; a run of them means the panel is frozen and the
+      // chat no longer narrates children anywhere else, so say it out loud
+      // once rather than letting the card quietly stop moving.
+      if (tracker.failures === 3) {
+        void replay.send(chatId, {
+          markdown: '⚠️ 多代理执行面板更新连续失败，面板上的进展可能已停止刷新；子代理仍在运行，结束时仍会汇报。',
+        }).catch(reportSendFailure)
+      }
+      reportSendFailure(error)
+    } finally {
+      tracker.sending = false
+    }
+    if (tracker.pending === true) {
+      tracker.pending = false
+      await flushSubagentCard(chatId, tracker, true)
+    }
   }
 
   /**
@@ -1231,20 +1250,14 @@ export function installBridge(
     if (streamDebug) notify(`dsh-lark-bridge: child ${childId}: ${line.slice(0, 60)}`)
     // The first thing a child does is worth an immediate redraw — otherwise the
     // row sits at「进行中」with no detail until the throttle window passes.
+    //
+    // The panel is the only channel. This used to ALSO post one chat message
+    // per child per 30s (`🔀 label · step`), and the window was per child, so
+    // six concurrent children produced up to twelve messages a minute: a long
+    // fan-out buried the chat in `🔀 … write {…}` fragments that said less
+    // than the row they duplicated. Progress lives in the card now; the chat
+    // speaks once, when a child settles (see the `subagent/end` handler).
     void flushSubagentCard(chatId, tracker, entry.chunks <= 1).catch(reportSendFailure)
-    // And one line of it reaches the chat, on a window: the delegation was
-    // announced there, so the progress belongs there too. Without it the
-    // chat says a child was sent and then goes quiet until the answer.
-    if (config.announceSubagents === false) return
-    const key = `${chatId}|${childId}`
-    const now = Date.now()
-    const last = childProgressAt.get(key)
-    if (last !== undefined && now - last < CHILD_PROGRESS_WINDOW_MS) return
-    childProgressAt.set(key, now)
-    const label = entry.label.trim() === '' ? '子代理' : entry.label
-    void replay.send(chatId, {
-      markdown: `🔀 ${label} · ${line.trim()}`,
-    }).catch(reportSendFailure)
   }
 
   /**
@@ -2896,12 +2909,15 @@ export function installBridge(
     // stays silent (a schedule firing is noise), retry announces once.
     if (isSubagentDescriptorEvent(event)) {
       // Multi-agent progress card: one updatable card per chat.
-      let tracker = subagentTrackers.get(binding.chatId)
-      if (tracker === undefined) { tracker = subCard.createTracker(); subagentTrackers.set(binding.chatId, tracker) }
-      const childKey = `child-${tracker.entries.size + 1}-${Date.now()}`
-      subCard.addEntry(tracker, childKey, event.data)
-      const card = subCard.render(tracker)
-      void replay.send(binding.chatId, { card }).catch(reportSendFailure)
+      //
+      // This used to `replay.send` a fresh card on every descriptor — a second
+      // panel next to the one `subagent/catalog` maintains, and one more per
+      // delivery. The descriptor also arrives inside the CHILD's session in
+      // 0.1.5, so this branch mostly fired for a card nobody could attribute.
+      // Rows belong to the catalog path below; this only refreshes what is
+      // already there.
+      const tracker = subagentTrackers.get(binding.chatId)
+      if (tracker !== undefined) void flushSubagentCard(binding.chatId, tracker, true).catch(reportSendFailure)
     }
     if (isSubagentCatalogEvent(event)) {
       // Durable child record on the PARENT session — the reachable event in

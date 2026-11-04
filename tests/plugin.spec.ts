@@ -237,8 +237,15 @@ describe('dsh-lark-bridge', () => {
     const session = harness.agents.created[0]!.agent.session
     const emit = (type: string, data: unknown) => harness.ctx.emit('session/event', session, { type, data })
 
+    // A bare `subagent/descriptor` no longer posts a card of its own: it used
+    // to send a fresh panel on every delivery, next to the one `subagent/catalog`
+    // maintains, and it mostly fired for a child the chat could not attribute
+    // (0.1.5 appends the descriptor inside the CHILD's session). Rows come from
+    // the catalog; this only refreshes a panel that already exists.
+    const sentBeforeDescriptor = harness.fake.sent.length
     emit('subagent/descriptor', { version: 2, mode: 'one-shot', provider: 'test', label: '爬虫' })
-    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'card' in m.input)).toBe(true) })
+    await new Promise((r) => setTimeout(r, 300))
+    expect(harness.fake.sent.slice(sentBeforeDescriptor).some(m => 'card' in m.input)).toBe(false)
     emit('schedule/change', { version: 1, operation: 'create', schedule: { id: 's1', kind: 'every', prompt: '每日简报' } })
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('周期任务'))).toBe(true) })
     emit('web/deepseek-search-llm-request', {})
