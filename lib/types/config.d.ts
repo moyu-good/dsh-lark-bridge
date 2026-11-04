@@ -118,6 +118,19 @@ export interface Config {
      */
     syncSlashCommands?: boolean;
     /**
+     * How long a long-connection gap must last before the chat is told about it,
+     * in ms. `0` disables the notice entirely.
+     *
+     * The transport has no cursor: events arriving while the socket is down are
+     * lost, and the chat cannot tell "the bot is busy" from "the bot never saw
+     * it". After a gap the bridge therefore reads the chat's server-side
+     * history back and speaks only when user messages actually fell inside the
+     * window — a gap that lost nothing stays silent. This floor only filters
+     * out sub-second reconnects, so it can stay low; the read-back is one API
+     * call per bound chat per gap.
+     */
+    gapNoticeMinMs?: number;
+    /**
      * Fire-and-forget ingest endpoint for an external full-transcript ledger.
      * When set, every accepted inbound user message is POSTed as JSON
      * `{source, text, chatId}`; failures are logged and never affect handling.
@@ -361,6 +374,8 @@ export interface ResolvedConfig {
     hideProcessWhenDone: boolean;
     showMessageTime: boolean;
     syncSlashCommands: boolean;
+    /** Floor for the post-gap notice; 0 disables it. See `Config.gapNoticeMinMs`. */
+    gapNoticeMinMs: number;
     /** Ingest endpoint for the external chronicle ledger; '' disables it. */
     chronicleEndpoint: string;
     /** Briefing file prepended to first message per session; '' disables. */

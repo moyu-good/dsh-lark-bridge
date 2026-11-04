@@ -32,6 +32,7 @@ import type {
   HostUserMessage,
 } from '../src/host.ts'
 import type { RegisterAppPort } from '../src/onboarding.ts'
+import type { FetchImpl } from '../src/sync/feishu-cloud.ts'
 
 /**
  * How many inbound subscriptions `installBridge` opens: `message`,
@@ -567,6 +568,8 @@ export async function mountChannel(
      * `get`/`resume` record what the bridge does.
      */
     goals?: object
+    /** HTTP seam for the post-gap history read-back; a fake keeps tests offline. */
+    fetchImpl?: FetchImpl
   } = {},
 ) {
   // The rotation store persists under DSH_HOME, and the live service shares
@@ -614,6 +617,7 @@ export async function mountChannel(
   const originalCreatePort = internals.createPort
   const originalRegisterApp = internals.registerApp
   const originalNotify = internals.notify
+  const originalFetchImpl = internals.fetchImpl
   const portAuthorizations: {
     directSenders: string[]
     groups: string[]
@@ -631,6 +635,7 @@ export async function mountChannel(
   internals.registerApp = services.registerApp
     ?? (() => Promise.reject(new Error('registerApp not faked for this test')))
   internals.notify = (line) => { notices.push(line) }
+  internals.fetchImpl = services.fetchImpl
   // A re-issued QR code waits out the production floor, which a test must not.
   internals.reissueFloorMs = 0
   const merged = {
@@ -669,6 +674,7 @@ export async function mountChannel(
         internals.createPort = originalCreatePort
         internals.registerApp = originalRegisterApp
         internals.notify = originalNotify
+        internals.fetchImpl = originalFetchImpl
         delete internals.reissueFloorMs
       }
     },

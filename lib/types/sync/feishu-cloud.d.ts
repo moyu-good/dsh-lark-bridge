@@ -25,6 +25,20 @@ export type FetchImpl = (url: string, init?: {
     json: () => Promise<Record<string, unknown>>;
     text: () => Promise<string>;
 }>;
+/**
+ * One chat message as the message-history endpoint reports it.
+ *
+ * Only the fields the gap check needs: who sent it (a user message lost in a
+ * connection gap is what the chat must be told to resend) and when.
+ */
+export interface ChatMessageSummary {
+    readonly messageId: string;
+    /** `user` for a person, `app` for a bot/this app itself, else the platform's value. */
+    readonly senderType: string;
+    /** Server-side creation time in ms. */
+    readonly createTimeMs: number;
+    readonly msgType: string;
+}
 /** Drive-backed JSON storage scoped to the app's own root folder. */
 export declare class FeishuCloud {
     private readonly creds;
@@ -55,6 +69,22 @@ export declare class FeishuCloud {
         token: string;
         modifiedMs: number;
     }[]>;
+    /**
+     * Chat messages created inside `[startMs, endMs]`, oldest first.
+     *
+     * The long connection has no cursor, so a message sent while it is down
+     * never reaches the bridge — but it does exist on the server. Reading it
+     * back is what turns "a gap happened, maybe something was lost" into "N user
+     * messages were lost". Bounded to `maxPages` (50 per page) so a very long
+     * outage cannot hold the reconnect path in a paging loop; the caller only
+     * needs to know whether anything was lost, not the exact transcript.
+     * @param chatId - chat to read.
+     * @param startMs - window start, inclusive, in ms.
+     * @param endMs - window end, inclusive, in ms.
+     * @param maxPages - page cap (50 messages per page).
+     * @returns the messages in the window, in send order.
+     */
+    listMessages(chatId: string, startMs: number, endMs: number, maxPages?: number): Promise<ChatMessageSummary[]>;
     /** Download one file's text by token. */
     download(fileToken: string): Promise<string>;
     /** Delete one file by token (best effort by caller). */

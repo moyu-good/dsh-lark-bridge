@@ -6,6 +6,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { Config } from './config.ts';
 import type { ResolvedConfig } from './config.ts';
 import { type ChannelPort } from './bridge.ts';
+import type { FetchImpl } from './sync/feishu-cloud.ts';
 import type { LarkCredentials, RegisterAppPort } from './onboarding.ts';
 import type { Authorization } from './authorization.ts';
 /** Resolved configuration whose credentials are present; the transport can be built. */
@@ -24,6 +25,8 @@ export declare const internals: {
     notify: (line: string) => void;
     /** Shortest gap between two issued QR codes; absent keeps the onboarding default. */
     reissueFloorMs?: number;
+    /** HTTP seam for the post-gap history read-back; tests inject a fake. */
+    fetchImpl?: FetchImpl;
 };
 /**
  * Apply the plugin to its Cordis context. With credentials configured (entry

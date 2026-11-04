@@ -40,6 +40,21 @@ const TOKEN_SAFETY_MS = 60_000
  */
 const CLOUD_TIMEOUT_MS = 15_000
 
+/**
+ * One chat message as the message-history endpoint reports it.
+ *
+ * Only the fields the gap check needs: who sent it (a user message lost in a
+ * connection gap is what the chat must be told to resend) and when.
+ */
+export interface ChatMessageSummary {
+  readonly messageId: string
+  /** `user` for a person, `app` for a bot/this app itself, else the platform's value. */
+  readonly senderType: string
+  /** Server-side creation time in ms. */
+  readonly createTimeMs: number
+  readonly msgType: string
+}
+
 /** Drive-backed JSON storage scoped to the app's own root folder. */
 export class FeishuCloud {
   private token?: CachedToken
@@ -158,6 +173,71 @@ export class FeishuCloud {
       }
       pageToken = data.data?.next_page_token
       if (pageToken === undefined || pageToken === '') break
+    }
+    return out
+  }
+
+  /**
+   * Chat messages created inside `[startMs, endMs]`, oldest first.
+   *
+   * The long connection has no cursor, so a message sent while it is down
+   * never reaches the bridge — but it does exist on the server. Reading it
+   * back is what turns "a gap happened, maybe something was lost" into "N user
+   * messages were lost". Bounded to `maxPages` (50 per page) so a very long
+   * outage cannot hold the reconnect path in a paging loop; the caller only
+   * needs to know whether anything was lost, not the exact transcript.
+   * @param chatId - chat to read.
+   * @param startMs - window start, inclusive, in ms.
+   * @param endMs - window end, inclusive, in ms.
+   * @param maxPages - page cap (50 messages per page).
+   * @returns the messages in the window, in send order.
+   */
+  async listMessages(
+    chatId: string,
+    startMs: number,
+    endMs: number,
+    maxPages = 5,
+  ): Promise<ChatMessageSummary[]> {
+    const token = await this.getToken()
+    const out: ChatMessageSummary[] = []
+    let pageToken: string | undefined
+    for (let page = 0; page < maxPages; page += 1) {
+      const url = new URL(`${this.origin()}/open-apis/im/v1/messages`)
+      url.searchParams.set('container_id_type', 'chat')
+      url.searchParams.set('container_id', chatId)
+      // The endpoint takes seconds, while the bridge tracks ms.
+      url.searchParams.set('start_time', String(Math.floor(startMs / 1000)))
+      url.searchParams.set('end_time', String(Math.ceil(endMs / 1000)))
+      url.searchParams.set('sort_type', 'ByCreateTimeAsc')
+      url.searchParams.set('page_size', '50')
+      if (pageToken !== undefined) url.searchParams.set('page_token', pageToken)
+      const res = await this.fetchImpl(url.toString(), { headers: { Authorization: `Bearer ${token}` } })
+      const data = (await res.json()) as {
+        code?: number
+        msg?: string
+        data?: {
+          has_more?: boolean
+          page_token?: string
+          items?: {
+            message_id?: string
+            msg_type?: string
+            create_time?: string | number
+            sender?: { sender_type?: string }
+          }[]
+        }
+      }
+      if (data.code !== 0) throw new Error(`飞书消息历史读取失败(${data.code}): ${data.msg ?? 'unknown'}`)
+      for (const item of data.data?.items ?? []) {
+        if (item.message_id === undefined) continue
+        out.push({
+          messageId: item.message_id,
+          senderType: item.sender?.sender_type ?? '',
+          createTimeMs: Number(item.create_time ?? 0),
+          msgType: item.msg_type ?? '',
+        })
+      }
+      pageToken = data.data?.page_token
+      if (data.data?.has_more !== true || pageToken === undefined || pageToken === '') break
     }
     return out
   }

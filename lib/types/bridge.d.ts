@@ -63,6 +63,7 @@ interface StreamChunkLike {
         readonly text?: string;
     };
 }
+import type { FetchImpl } from './sync/feishu-cloud.ts';
 export { messageTimeStamp } from './clock.ts';
 /** 一条原始消息里我们实际要读的字段（`im.v1.message.get` 的 `data.items[]`）。 */
 export interface RawCardMessage {
@@ -226,6 +227,9 @@ export declare function busyDelivery(busy: boolean, policy: BusyPolicy, agent: P
  * @param ctx - scoped plugin context carrying the `agents` service.
  * @param config - resolved plugin configuration.
  * @param port - the transport to drive; production passes the real Lark channel.
+ * @param deps - injectable seams for tests; production leaves it empty.
  */
-export declare function installBridge(ctx: Context, config: ResolvedConfig, port: ChannelPort, notify: (line: string) => void, authorization: Authorization): void;
+export declare function installBridge(ctx: Context, config: ResolvedConfig, port: ChannelPort, notify: (line: string) => void, authorization: Authorization, deps?: {
+    readonly fetchImpl?: FetchImpl | undefined;
+}): void;
 //# sourceMappingURL=bridge.d.ts.map

@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Config, resolveConfig } from './config.ts'
 import type { ResolvedConfig } from './config.ts'
 import { installBridge, type ChannelPort } from './bridge.ts'
+import type { FetchImpl } from './sync/feishu-cloud.ts'
 import { scheduleRestartNotice } from './restart-notice.ts'
 import type { CotEvent, CotHandle } from './cot.ts'
 import type { PanelCommand } from './slash-panel.ts'
@@ -232,6 +233,8 @@ export const internals: {
   notify: (line: string) => void
   /** Shortest gap between two issued QR codes; absent keeps the onboarding default. */
   reissueFloorMs?: number
+  /** HTTP seam for the post-gap history read-back; tests inject a fake. */
+  fetchImpl?: FetchImpl
 } = {
   createPort: createLarkChannelPort,
   registerApp,
@@ -262,7 +265,7 @@ export function apply(ctx: Context, config: Config): void {
     const authorization = resolveAuthorization(resolved)
     internals.notify(describeAuthorization(authorization))
     const port = internals.createPort(resolved, authorization)
-    installBridge(ctx, resolved, port, internals.notify, authorization)
+    installBridge(ctx, resolved, port, internals.notify, authorization, { fetchImpl: internals.fetchImpl })
     // A restart requested from a chat reports itself here, on the way back up
     // (src/restart-notice.ts). No pending record means this is a no-op.
     scheduleRestartNotice(port, internals.notify)

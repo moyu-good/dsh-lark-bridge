@@ -176,6 +176,7 @@ import { createReplayPort } from './replay.ts'
 import { createSendFileTool, deliverFile } from './files.ts'
 import { createFeishuTools, feishuToolsPromptSection, FEISHU_NOTIFY_TOOL } from './feishu-tools.ts'
 import { FeishuCloud } from './sync/feishu-cloud.ts'
+import type { FetchImpl } from './sync/feishu-cloud.ts'
 import { pricingPromptLine } from './pricing.ts'
 // `messageTimeStamp` used to be defined here. It moved to `clock.ts` so the
 // thinking process renders the same instant the same way without `cot.ts`
@@ -907,6 +908,7 @@ export function busyDelivery(
  * @param ctx - scoped plugin context carrying the `agents` service.
  * @param config - resolved plugin configuration.
  * @param port - the transport to drive; production passes the real Lark channel.
+ * @param deps - injectable seams for tests; production leaves it empty.
  */
 export function installBridge(
   ctx: Context,
@@ -914,6 +916,7 @@ export function installBridge(
   port: ChannelPort,
   notify: (line: string) => void,
   authorization: Authorization,
+  deps: { readonly fetchImpl?: FetchImpl | undefined } = {},
 ): void {
   // Wrap the transport so a long-connection gap queues outbound calls instead
   // of losing them; `setConnected` toggles the gate from the reconnecting /
@@ -2987,26 +2990,76 @@ export function installBridge(
     ctx.logger.warn('connection lost, reconnecting')
   }), 'dsh-lark-bridge:on(reconnecting)')
 
+  /**
+   * 重连后核实断线窗口里是否真有用户消息丢失，再决定说不说。
+   *
+   * 传输层没有游标，断线期间的事件在到达桥之前就没了；但消息本身还在飞书
+   * 服务器上。原来一断线就发一条"可能丢了消息"的提示，对已经自己察觉到
+   * 断线的用户就是噪音（2026-11-04 运营方质疑）。现在先按窗口拉一次历史，
+   * 只有真的存在 user 消息才点名告诉对方丢了 N 条；窗口里没有消息就静默。
+   * 拉不到（无凭证/无权限/网络）才退回通用提示，保证不漏报。
+   */
+  const reportGap = async (
+    chats: readonly string[],
+    gapStartMs: number,
+    gapEndMs: number,
+    gapMs: number,
+  ): Promise<void> => {
+    const gapLabel = gapMs < 120_000
+      ? `${Math.round(gapMs / 1000)} 秒`
+      : `${Math.round(gapMs / 60_000)} 分钟`
+    const fallback = `⚠️ 连接中断了约 ${gapLabel}——期间发来的消息飞书不会补送，若有遗漏请重发。`
+    const send = (chatId: string, markdown: string): void => {
+      void replay.send(chatId, { markdown }).catch(reportSendFailure)
+    }
+    const credentials = config.appId !== undefined && config.appSecret !== undefined
+      ? { appId: config.appId, appSecret: config.appSecret, ...(config.domain !== undefined ? { domain: config.domain } : {}) }
+      : undefined
+    if (credentials === undefined) {
+      for (const chatId of chats) send(chatId, fallback)
+      return
+    }
+    const cloud = new FeishuCloud(credentials, deps.fetchImpl)
+    const counts = await Promise.allSettled(chats.map(async (chatId) => {
+      const messages = await cloud.listMessages(chatId, gapStartMs, gapEndMs)
+      return messages.filter(message => message.senderType === 'user').length
+    }))
+    for (let index = 0; index < chats.length; index += 1) {
+      const chatId = chats[index]!
+      const result = counts[index]!
+      if (result.status === 'rejected') {
+        // 拉不到就按"可能丢了"处理：宁可多说一句，不可静默吞掉。
+        ctx.logger.warn('gap history read failed for %s: %s', chatId,
+          result.reason instanceof Error ? result.reason.message : String(result.reason))
+        send(chatId, fallback)
+        continue
+      }
+      if (result.value === 0) {
+        ctx.logger.debug('gap of %s lost no user message in %s', gapLabel, chatId)
+        continue
+      }
+      send(chatId, `⚠️ 刚才连接断了约 ${gapLabel}，这期间你有 ${result.value} 条消息没送到，请重发。`)
+    }
+  }
+
   ctx.effect(() => replay.on('reconnected', () => {
     replay.setConnected(true)
     notify('dsh-lark-bridge: connection restored')
     ctx.logger.info('connection restored')
     // Inbound events are not replayed across a gap (the transport has no
-    // cursor), so a long one silently ate every message the chat sent. Tell
-    // the bound chats instead of leaving them reading the silence as a hang
-    // (2026-09-12 operator report; P140).
+    // cursor), so a long one silently ate every message the chat sent. Read
+    // the window back before speaking: a gap that lost nothing is not news
+    // (2026-09-12 P140; 2026-11-04 operator report on the noise it caused).
     const gapStart = disconnectedAt
     disconnectedAt = undefined
     if (gapStart === undefined) return
-    const gapMs = Date.now() - gapStart
-    if (gapMs < 30_000) return
-    const gapLabel = gapMs < 120_000
-      ? `${Math.round(gapMs / 1000)} 秒`
-      : `${Math.round(gapMs / 60_000)} 分钟`
-    const notice = `⚠️ 连接中断了约 ${gapLabel}——期间发来的消息飞书不会补送，重要指令请重发。`
-    for (const chatId of new Set([...bySession.values()].map(binding => binding.chatId))) {
-      void replay.send(chatId, { markdown: notice }).catch(reportSendFailure)
-    }
+    if (config.gapNoticeMinMs <= 0) return
+    const gapEnd = Date.now()
+    const gapMs = gapEnd - gapStart
+    if (gapMs < config.gapNoticeMinMs) return
+    const chats = [...new Set([...bySession.values()].map(binding => binding.chatId))]
+    if (chats.length === 0) return
+    void reportGap(chats, gapStart, gapEnd, gapMs).catch(reportSendFailure)
   }), 'dsh-lark-bridge:on(reconnected)')
 
   // Boot-time panel floor: sync the channel-owned commands as soon as the
