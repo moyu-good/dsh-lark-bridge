@@ -178,6 +178,37 @@ describe('notice lines', () => {
     expect(line).toBe('🗑️ 已修剪 1 条旧消息，释放约 2,301 tokens')
   })
 
+  it('adds the post-compaction occupancy and the room left', () => {
+    const line = compactionSummaryLine(
+      { shadowedSeqs: [1, 2], shadowedTokenCount: 48_810 },
+      { user: 1, assistant: 1, toolCall: 0, toolResult: 0, other: 0 },
+      { total: 62_340, window: 128_000 },
+    )
+    expect(line).toContain('压缩后占用约 62,340 / 128,000')
+    expect(line).toContain('还剩约 65,660 可用')
+    expect(line).toContain('（51%）')
+  })
+
+  it('still reports occupancy when the window is unknown', () => {
+    const line = compactionPruneLine(
+      { shadowedSeqs: [1], shadowedTokenCount: 100 },
+      undefined,
+      { total: 5_000 },
+    )
+    expect(line).toContain('压缩后占用约 5,000 tokens')
+    expect(line).not.toContain('还剩')
+  })
+
+  it('clamps at zero room when the measurement overshoots the window', () => {
+    const line = compactionPruneLine(
+      { shadowedSeqs: [1], shadowedTokenCount: 100 },
+      undefined,
+      { total: 130_000, window: 128_000 },
+    )
+    expect(line).toContain('还剩约 0 可用（0%）')
+    expect(line).not.toContain('-2,000')
+  })
+
   it('renders a token-pressure warning with total, surface, and threshold', () => {
     const line = tokenPressureLine({ total: 145_000, surface: 12_300, threshold: 120_000 })
     expect(line).toContain('145,000')

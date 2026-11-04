@@ -161,7 +161,7 @@ import {
   runStartLine,
   workflowLogLine,
 } from './workflow.ts'
-import type { ShadowedBreakdown } from './notices.ts'
+import type { CompactionUsage, ShadowedBreakdown } from './notices.ts'
 import {
   compactionPruneLine,
   compactionSummaryLine,
@@ -172,7 +172,7 @@ import {
   tokenPressureLine,
   webSearchLine,
 } from './notices.ts'
-import { readContextBreakdown } from './context-breakdown.ts'
+import { readContextBreakdown, readContextWindow } from './context-breakdown.ts'
 import { onboardingMessage } from './first-contact.ts'
 import { createReplayPort } from './replay.ts'
 import { createSendFileTool, deliverFile } from './files.ts'
@@ -1625,6 +1625,27 @@ export function installBridge(
       } else {
         pressureWarned.delete(sessionId)
       }
+    }
+  }
+
+  /**
+   * 压缩/修剪完成那一刻的占用与窗口。
+   *
+   * 事件已经落盘，所以 `measure()` 回放出来的是压完之后的数——正是提示里
+   * 「还剩多少可用」要报的那个。测不出来（没有计量服务、会话不可回放）时返回
+   * `undefined`，提示退回只说释放量，而不是报一个假数字。
+   */
+  const compactionUsage = (session: HostSession): CompactionUsage | undefined => {
+    const tokenMeter = ctx.get('tokenMeter') as HostTokenMeter | undefined
+    if (tokenMeter === undefined) return undefined
+    try {
+      return {
+        total: tokenMeter.measure(session).totalTokens,
+        window: readContextWindow(ctx, session),
+      }
+    } catch (error) {
+      ctx.logger.warn('compaction usage measure failed: %s', error)
+      return undefined
     }
   }
 
@@ -3354,11 +3375,19 @@ export function installBridge(
       void replay.send(binding.chatId, { markdown: '📦 上下文较长，正在压缩（较早内容将被摘要）…' }).catch(reportSendFailure)
     } else if (isCompactionSummaryEvent(event)) {
       void replay.send(binding.chatId, {
-        markdown: compactionSummaryLine(event.data, classifyShadowed(session, event.data.shadowedSeqs)),
+        markdown: compactionSummaryLine(
+          event.data,
+          classifyShadowed(session, event.data.shadowedSeqs),
+          compactionUsage(session),
+        ),
       }).catch(reportSendFailure)
     } else if (isCompactionPruneEvent(event)) {
       void replay.send(binding.chatId, {
-        markdown: compactionPruneLine(event.data, classifyShadowed(session, event.data.shadowedSeqs)),
+        markdown: compactionPruneLine(
+          event.data,
+          classifyShadowed(session, event.data.shadowedSeqs),
+          compactionUsage(session),
+        ),
       }).catch(reportSendFailure)
     } else if (isCompactionEndEvent(event)) {
       if (event.data.error !== undefined) {

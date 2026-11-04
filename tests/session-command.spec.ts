@@ -47,7 +47,8 @@ describe('/session 查看当前会话', () => {
     try {
       const text = await runCommand(harness, '/session')
       expect(text).toContain('12,000')
-      expect(text).toContain('固定开销')
+      // 差额不是常数（2026-11-05 的质疑）：说"聊天之外的开销"，不说"固定开销"。
+      expect(text).toContain('聊天之外的开销')
       // 1.2 万 / 12 万 = 10%
       expect(text).toContain('10%')
     } finally {

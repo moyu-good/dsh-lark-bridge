@@ -76,4 +76,31 @@ describe('/context 的详细拆解', () => {
     const text = contextPressureLine({ total: 20_000, surface: 15_000 })
     expect(text).not.toContain('/compact')
   })
+
+  it('有逐工具占用时摊开明细，并把余量显式给出', () => {
+    const toolCosts = [
+      { name: 'mcp__chrome__take_snapshot', tokens: 40_000 },
+      { name: 'dsh_subagent', tokens: 30_000 },
+      ...Array.from({ length: 10 }, (_, index) => ({ name: `tool${index}`, tokens: 100 })),
+    ]
+    const text = contextPressureLine({
+      total: 444_833,
+      surface: 277_312,
+      breakdown: { messageTokens: 200_000, systemTokens: 77_312, toolsTokens: 167_521 },
+      toolCosts,
+    })
+    expect(text).toContain('mcp__chrome__take_snapshot 约 40,000')
+    // 明细只列 8 个，剩下 4 个必须合并交代，否则读者以为明细之和就是总数。
+    expect(text).toContain('其余 4 个工具 约 400')
+  })
+
+  it('拿不到逐工具占用时只给整块数字，不硬编明细', () => {
+    const text = contextPressureLine({
+      total: 444_833,
+      surface: 277_312,
+      breakdown: { messageTokens: 200_000, systemTokens: 77_312, toolsTokens: 167_521 },
+    })
+    expect(text).toContain('工具说明约 167,521')
+    expect(text).not.toContain('其余')
+  })
 })

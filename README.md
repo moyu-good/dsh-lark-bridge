@@ -194,7 +194,7 @@ Type `/help` in the chat for the live list.
 | `/ws` | List registered workspaces |
 | `/jobs` | This chat's background jobs |
 | `/schedules` | This chat's scheduled reminders |
-| `/context` | Current context token pressure |
+| `/context` | Context occupancy: chat / system prompt / tools, with per-tool detail |
 | `/audit` | Operation audit summary |
 | `/feedback` | Rate the last answer |
 | `/preset` | View / switch agent preset (standard / code / minimal / cordis) |
@@ -367,13 +367,13 @@ Repo map, the branch/MR flow and the version policy live in **[CONTRIBUTING.md](
 
 ```sh
 pnpm hygiene                    # repo hygiene (deployment terms stay local)
-pnpm test                       # 782 tests in 74 spec files
+pnpm test                       # 794 tests in 75 spec files
 pnpm contract-test              # 43 host-contract checks
 pnpm contract-drift             # drift check against upstream dsh master
 node scripts/check-readme-parity.mjs   # the two READMEs stay in step
 ```
 
-The suite lives in `tests/` — vitest suites (74), including harness-based fakes. Upgrading the harness: run `pnpm contract-drift` before and after — it fails when a host seam the bridge mirrors has moved.
+The suite lives in `tests/` — vitest suites (75), including harness-based fakes. Upgrading the harness: run `pnpm contract-drift` before and after — it fails when a host seam the bridge mirrors has moved.
 
 ## 🤝 Contributing
 

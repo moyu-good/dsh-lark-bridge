@@ -82,6 +82,13 @@ export interface ShadowedBreakdown {
     /** Anything else: step markers, goal changes, other bookkeeping. */
     readonly other: number;
 }
+/** 压缩之后还剩多少上下文可用。 */
+export interface CompactionUsage {
+    /** 压缩完成时的当前总占用（token）。 */
+    readonly total: number;
+    /** 这一路的上下文窗口；拿不到就不提"还剩多少"。 */
+    readonly window?: number | undefined;
+}
 /**
  * A compaction summary line: what replaced the old history, and at what cost.
  *
@@ -93,22 +100,24 @@ export interface ShadowedBreakdown {
  *
  * @param data - the `compaction/summary` payload.
  * @param breakdown - what the shadowed seqs were, when the caller resolved them.
+ * @param usage - post-compaction occupancy and window, when the caller measured it.
  * @returns the markdown line for the chat.
  */
 export declare function compactionSummaryLine(data: {
     readonly shadowedSeqs?: readonly number[];
     readonly shadowedTokenCount: number;
-}, breakdown?: ShadowedBreakdown): string;
+}, breakdown?: ShadowedBreakdown, usage?: CompactionUsage): string;
 /**
  * A prune line: old history was trimmed without a model call.
  * @param data - the `compaction/prune` payload.
  * @param breakdown - what the shadowed seqs were, when the caller resolved them.
+ * @param usage - post-prune occupancy and window, when the caller measured it.
  * @returns the markdown line for the chat.
  */
 export declare function compactionPruneLine(data: {
     readonly shadowedSeqs: readonly number[];
     readonly shadowedTokenCount: number;
-}, breakdown?: ShadowedBreakdown): string;
+}, breakdown?: ShadowedBreakdown, usage?: CompactionUsage): string;
 /**
  * 上下文占用的预警文案。
  *
@@ -140,17 +149,24 @@ export interface ContextBreakdown {
     /** 工具定义。 */
     readonly toolsTokens: number;
 }
+/** 一个工具在上下文里占的 token，按宿主的估算公式拆出来的。 */
+export interface ToolCost {
+    readonly name: string;
+    readonly tokens: number;
+}
 /**
  * `/context` 的回复：占用多少，以及占在哪。
  *
  * 一行总数对"要不要压缩"够用，对"压了有没有用"不够：一台挂满 MCP 的机器，
  * 工具说明就能占掉小一半，这时压历史是白费力气。所以有分组就摊开说。
- * @param data - 总量、聊天内容、可选的三段拆分。
+ * @param data - 总量、聊天内容、可选的三段拆分，以及可选的逐工具占用。
  * @returns 回复正文（markdown）。
  */
 export declare function contextPressureLine(data: {
     readonly total: number;
     readonly surface: number;
     readonly breakdown?: ContextBreakdown | undefined;
+    /** 逐工具占用；拿到时把「工具说明」那行摊开成明细。 */
+    readonly toolCosts?: readonly ToolCost[] | undefined;
 }): string;
 //# sourceMappingURL=notices.d.ts.map

@@ -24,6 +24,7 @@ import { USER_GUIDE } from './user-guide.ts'
 import { writeRestartRequest } from './restart-notice.ts'
 import { contextPressureLine } from './notices.ts'
 import { readContextBreakdown } from './context-breakdown.ts'
+import { readToolCosts } from './tool-costs.ts'
 import { runThinkCommand } from './think.ts'
 import type { EffortOverrides } from './think.ts'
 
@@ -712,7 +713,7 @@ function runSessionCommand(
       const total = measure.totalTokens
       const surface = measure.surfaceTokens
       const overhead = Math.max(0, total - surface)
-      rows.push(`· 上下文：约 ${total.toLocaleString('en-US')} tokens（闲聊内容 ${surface.toLocaleString('en-US')} + 固定开销 ${overhead.toLocaleString('en-US')}）`)
+      rows.push(`· 上下文：约 ${total.toLocaleString('en-US')} tokens（聊天内容 ${surface.toLocaleString('en-US')} + 聊天之外的开销 ${overhead.toLocaleString('en-US')}）`)
       // The warning threshold is the one the bridge itself acts on, so the
       // number answers "how close am I to a heads-up", not just "how big".
       const threshold = config?.tokenPressure.threshold
@@ -1186,7 +1187,13 @@ function runContextCommand(
   const measure = tokenMeter.measure(agent.session)
   const breakdown = readContextBreakdown(ctx, agent.session)
   return {
-    reply: contextPressureLine({ total: measure.totalTokens, surface: measure.surfaceTokens, breakdown }),
+    reply: contextPressureLine({
+      total: measure.totalTokens,
+      surface: measure.surfaceTokens,
+      breakdown,
+      // 逐工具占用只能从会话日志里的请求头拆出来；新会话还没有，传 undefined。
+      toolCosts: readToolCosts(agent.session),
+    }),
     resolved: true,
   }
 }
