@@ -10,6 +10,7 @@ import {
   parseProgress,
   RECENT_MAX,
   render,
+  renderFrozen,
   runningEntries,
   settleEntry,
   settleRunningOneShots,
@@ -374,5 +375,32 @@ describe('进度与卡死', () => {
     for (let i = 0; i < 42; i += 1) markActivity(state, 'c', `第 ${i} 步`, i, 'tool')
     for (let i = 0; i < 3; i += 1) markActivity(state, 'c', `第 ${i} 段结论`, i, 'message')
     expect(cardText(render(state, 100))).toContain('已做 42 步 · 3 段发言')
+  })
+})
+
+describe('冻结快照', () => {
+  it('标题写明是快照并转灰', () => {
+    const state = createTracker()
+    addEntry(state, 'a', { mode: 'one-shot', label: '调研' }, 1)
+    const frozen = renderFrozen(state, Date.UTC(2026, 10, 4, 7, 58)) as {
+      header: { template: string, title: { content: string } }
+      elements: { text?: { content: string } }[]
+    }
+    expect(frozen.header.title.content).toContain('历史快照')
+    // 灰是唯一不会让人误以为「还在动」的颜色。
+    expect(frozen.header.template).toBe('grey')
+    // 快照内容就是冻结那一刻的样子。
+    expect(JSON.stringify(frozen)).toContain('调研')
+  })
+
+  it('顶部有一句话说明已停止更新、怎么要新的', () => {
+    const state = createTracker()
+    addEntry(state, 'a', { mode: 'one-shot', label: 'x' }, 1)
+    const frozen = renderFrozen(state, 1_800_000_000_000) as {
+      elements: { text?: { content: string } }[]
+    }
+    const banner = frozen.elements[0]?.text?.content ?? ''
+    expect(banner).toContain('已停止更新')
+    expect(banner).toContain('/panel')
   })
 })

@@ -197,3 +197,71 @@ describe('a delegation is announced in the chat', () => {
     await harness.dispose()
   })
 })
+
+/**
+ * `/panel` 把面板捞回消息流底部。
+ *
+ * 面板是就地更新的一张卡，位置在发出去那一刻就钉死了；长任务里后面的每条消息
+ * 都排在它下面，要往上翻很久才看得见进度。飞书既没有撤回接口也没有「重新置底」
+ * 接口，所以唯一的办法是发一张新的、把旧的冻结掉。
+ */
+describe('/panel 重发面板', () => {
+  it('冻结旧卡并在底部发一张新卡接管更新', async () => {
+    const harness = await mountChannel()
+    await harness.fake.emitMessage(fakeMessage({ content: 'bind me' }))
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
+    const session = harness.agents.created[0]!.agent.session
+
+    harness.ctx.emit('session/event', session, {
+      type: 'subagent/catalog',
+      data: { version: 0, childId: 'child-p', childCreatedAt: Date.now(), mode: 'one-shot', label: '调研' },
+    })
+    await vi.waitFor(() => {
+      expect(harness.fake.sent.some(m => m.input.card !== undefined)).toBe(true)
+    }, { timeout: 20_000, interval: 100 })
+
+    const cardsBefore = harness.fake.sent.filter(m => m.input.card !== undefined).length
+    harness.fake.updated.length = 0
+
+    await harness.fake.emitMessage(fakeMessage({ content: '/panel' }))
+    await vi.waitFor(() => {
+      expect(harness.fake.sent.filter(m => m.input.card !== undefined).length).toBe(cardsBefore + 1)
+    }, { timeout: 20_000, interval: 100 })
+
+    // 旧卡被改写成快照：标题写明是历史快照，配色转灰，读者不会把它当活的。
+    const frozen = harness.fake.updated.map(u => JSON.stringify(u.card)).join('\n')
+    expect(frozen).toContain('历史快照')
+    expect(frozen).toContain('grey')
+
+    // 之后子代理再有动静，更新只打在新卡上——绝不能回头去改那张已冻结的。
+    harness.fake.updated.length = 0
+    harness.ctx.emit('session/event', { id: 'child-p' }, {
+      type: 'tool/call',
+      data: { turn: 1, step: 1, name: 'read', arguments: { path: '重发之后的新动作' } },
+    })
+    await vi.waitFor(() => {
+      expect(harness.fake.updated.length).toBeGreaterThan(0)
+    }, { timeout: 20_000, interval: 100 })
+    const afterRepost = harness.fake.updated.map(u => JSON.stringify(u.card)).join('\n')
+    expect(afterRepost).toContain('重发之后的新动作')
+    expect(afterRepost).not.toContain('历史快照')
+
+    await harness.dispose()
+  })
+
+  it('没派过子代理时说明没有面板可发', async () => {
+    const harness = await mountChannel()
+    await harness.fake.emitMessage(fakeMessage({ content: 'bind me' }))
+    await vi.waitFor(() => { expect(harness.agents.created).toHaveLength(1) }, { timeout: 20_000, interval: 50 })
+    const before = harness.fake.sent.length
+
+    await harness.fake.emitMessage(fakeMessage({ content: '/panel' }))
+    await vi.waitFor(() => {
+      const said = harness.fake.sent.slice(before)
+        .map(m => (m.input as { markdown?: string }).markdown ?? '')
+        .join('\n')
+      expect(said).toContain('还没派过子代理')
+    }, { timeout: 20_000, interval: 100 })
+    await harness.dispose()
+  })
+})

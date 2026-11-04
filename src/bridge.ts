@@ -78,6 +78,7 @@ import {
   MANUAL_COMMAND,
   MODEL_COMMAND,
   NEW_COMMAND,
+  PANEL_COMMAND,
   PLUGINS_COMMAND,
   PRESET_COMMAND,
   RESTART_COMMAND,
@@ -1305,6 +1306,50 @@ export function installBridge(
   }
 
   /**
+   * 重发面板：把当前那张冻结成快照，再沿消息流底部发一张新的接管更新。
+   *
+   * 存在的理由只有一个：面板一旦发出去就钉在消息流那个位置，后面的每条消息
+   * （子代理完成播报、助手回复、工具结果）都排在它下面，长任务里要往上翻很远
+   * 才看得见。飞书没有撤回接口，也没有「把消息重新置底」的接口，所以唯一能让
+   * 它回到视野里的办法就是发一张新的。
+   *
+   * 旧的不能就那么放着：它还顶着「3 在跑」的旧画面，读者分不清哪张是活的，
+   * 比没有卡更糟。所以先把它改写成说明白的快照（见 `renderFrozen`），再让它
+   * 彻底退出更新循环——`messageId` 换掉之后，所有 flush 都指向新卡。
+   * @param chatId - 面板所在的对话。
+   * @returns 新卡是否发出；没有可发的面板（一张子代理都没派过）时为 false。
+   */
+  const repostSubagentCard = async (chatId: string): Promise<boolean> => {
+    const tracker = subagentTrackers.get(chatId)
+    if (tracker === undefined || tracker.entries.size === 0) return false
+    // 有发送在飞就先让开：否则新卡的 id 会被那次 in-flight 的 flush 用旧卡
+    // 覆盖，之后所有更新都打回那张已经冻结的卡上。
+    if (tracker.sending === true) {
+      tracker.pending = true
+      return false
+    }
+    const previous = tracker.messageId
+    const now = Date.now()
+    if (previous !== undefined) {
+      // 冻结失败不该阻止新卡发出：最坏结局是旧卡停在一张旧画面上，而新卡
+      // 照样能用。所以这里独立 try，不让异常打断整个重发。
+      try {
+        await port.updateCard(previous, subCard.renderFrozen(tracker, now))
+        tracker.frozenIds.push(previous)
+      } catch (error) {
+        reportSendFailure(error)
+      }
+    }
+    // 清掉发送状态再发：新卡的 id 必须在 send 返回后立刻接管，期间任何
+    // flush 都该被 `sending` 挡在门外而不是拿着旧 id 去更新。
+    // 用 delete 而不是赋 undefined——`exactOptionalPropertyTypes` 下后者不合法。
+    delete tracker.messageId
+    delete tracker.updatedAt
+    await flushSubagentCard(chatId, tracker, true)
+    return tracker.messageId !== undefined
+  }
+
+  /**
    * Send or refresh the team card for one chat.
    *
    * The card is sent once and updated in place afterwards, so a reader
@@ -2070,6 +2115,7 @@ export function installBridge(
     { name: STOP_COMMAND, description: describeCommand(STOP_COMMAND, locale, 'Stop the current task') },
     { name: NEW_COMMAND, description: describeCommand(NEW_COMMAND, locale, 'Start a new session') },
     { name: RESUME_COMMAND, description: describeCommand(RESUME_COMMAND, locale, 'Switch to a stored session') },
+    { name: PANEL_COMMAND, description: describeCommand(PANEL_COMMAND, locale, 'Repost the subagent panel') },
     { name: HELP_COMMAND, description: describeCommand(HELP_COMMAND, locale, 'Show available commands') },
   ]
 
@@ -2317,6 +2363,24 @@ export function installBridge(
           await port.send(msg.chatId, { markdown: '🆕 已开新会话。下一条消息起就是新话题；旧会话保留在历史里（`/sessions` 可查）。' + warn }).catch(reportSendFailure)
         } catch (error) {
           await port.send(msg.chatId, { markdown: `⚠️ 开新会话失败：${error instanceof Error ? error.message : String(error)}` }).catch(reportSendFailure)
+        }
+        return
+      }
+      // `/panel` 把子代理面板重新发到消息流底部：面板就地更新，位置钉死，
+      // 后面的消息一多就得往上翻很远才看得见，而「随时看进度」正是它的用途。
+      if (new RegExp(`^\\/${PANEL_COMMAND}$`, 'i').test(msg.content.trim())) {
+        try {
+          const reposted = await repostSubagentCard(msg.chatId)
+          if (!reposted) {
+            await port.send(msg.chatId, {
+              markdown: '（这条对话还没派过子代理，没有面板可重发。派出子代理后会自动出现。）',
+            }).catch(reportSendFailure)
+          }
+          // 成功时不再额外发话：新卡本身就是回答，多发一条只会又把它往下顶。
+        } catch (error) {
+          await port.send(msg.chatId, {
+            markdown: `⚠️ 重发面板失败：${error instanceof Error ? error.message : String(error)}`,
+          }).catch(reportSendFailure)
         }
         return
       }

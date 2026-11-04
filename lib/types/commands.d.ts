@@ -79,6 +79,15 @@ export declare const NEW_COMMAND = "new";
  * 会话本身不动，变的是这条对话指向谁。
  */
 export declare const RESUME_COMMAND = "resume";
+/**
+ * 把子代理执行面板重新发到消息流底部。
+ *
+ * 面板是「就地更新」的一张卡，发出去之后位置就钉死了；长任务里后面的消息会
+ * 把它顶到很远的上方，得往上翻很久才看得见进度。飞书没有撤回接口，也没有
+ * 「把消息重新置底」的接口，所以唯一的办法是再发一张新的，把旧的冻结成快照。
+ * 名字取 panel 而不是 agents，因为读者要的是「那个面板」，不是「代理列表」。
+ */
+export declare const PANEL_COMMAND = "panel";
 /** Bridge dual-end status, settings, and plugin sync. */
 export declare const BOT_COMMAND = "bot";
 /** Query the DeepSeek platform balance the deployment bills through. */

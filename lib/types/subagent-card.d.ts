@@ -74,6 +74,15 @@ export interface SubagentCardState {
     readonly entries: Map<string, SubagentEntry>;
     /** The message ID of the sent card, for updateCard calls. */
     messageId?: string;
+    /**
+     * 已经冻结的历史卡片 id（按发送顺序）。
+     *
+     * 面板被后来的消息挤远之后，`/panel` 会发一张新卡接管实时更新。旧卡不能
+     * 就那么晾着——它还停在「3 在跑」的旧画面上，读者分不清哪张是活的。所以
+     * 旧卡先被改写成快照（写清「15:58 的快照」），再彻底停止更新。
+     * 不删是因为传输层没有撤回能力，而且快照本身也有用：能看出那一刻的状态。
+     */
+    frozenIds: string[];
     /** Epoch ms of the last in-place card update (throttling). */
     updatedAt?: number;
     /**
@@ -193,4 +202,16 @@ export declare function summaryText(state: SubagentCardState): string;
 /** 超过这个数量，已结束的子代理收进一行，不让面板无限拉长。 */
 export declare const DONE_COLLAPSE_AFTER = 3;
 export declare function render(state: SubagentCardState, now?: number): object;
+/**
+ * 把一张已经不再接管的卡片改写成「冻结快照」。
+ *
+ * `/panel` 之后旧卡停止更新，但它在聊天里还留着。如果就那样放着，它还顶着
+ * 「3 在跑」的旧画面，读者分不清哪张卡是活的——这比没有卡更糟。所以给它换
+ * 一个说清楚身份和时间的标题，并把配色转灰：不删（传输层没有撤回能力，而且
+ * 快照能看出那一刻的状态），但要让人一眼知道「这不是最新的」。
+ * @param state - 面板状态（用冻结那一刻的内容渲染）。
+ * @param frozenAt - 冻结的时刻，epoch 毫秒。
+ * @returns 供 `updateCard` 使用的卡片。
+ */
+export declare function renderFrozen(state: SubagentCardState, frozenAt: number): object;
 //# sourceMappingURL=subagent-card.d.ts.map

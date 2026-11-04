@@ -122,6 +122,16 @@ export const NEW_COMMAND = 'new'
  */
 export const RESUME_COMMAND = 'resume'
 
+/**
+ * 把子代理执行面板重新发到消息流底部。
+ *
+ * 面板是「就地更新」的一张卡，发出去之后位置就钉死了；长任务里后面的消息会
+ * 把它顶到很远的上方，得往上翻很久才看得见进度。飞书没有撤回接口，也没有
+ * 「把消息重新置底」的接口，所以唯一的办法是再发一张新的，把旧的冻结成快照。
+ * 名字取 panel 而不是 agents，因为读者要的是「那个面板」，不是「代理列表」。
+ */
+export const PANEL_COMMAND = 'panel'
+
 /** Bridge dual-end status, settings, and plugin sync. */
 export const BOT_COMMAND = 'bot'
 
@@ -286,6 +296,7 @@ export function helpText(
     ...(config?.restartCommand ? [`\`/${RESTART_COMMAND}\` — ${describeCommand(RESTART_COMMAND, locale, 'Restart the host process')}`] : []),
     `\`/${NEW_COMMAND}\` — ${describeCommand(NEW_COMMAND, locale, 'Start a new session')}`,
     `\`/${RESUME_COMMAND}\` — ${describeCommand(RESUME_COMMAND, locale, 'Switch to a stored session')}`,
+    `\`/${PANEL_COMMAND}\` — ${describeCommand(PANEL_COMMAND, locale, 'Repost the subagent panel')}`,
     `\`/${PRESET_COMMAND}\` — ${describeCommand(PRESET_COMMAND, locale, 'View or switch mode')}`,
     `\`/${SESSIONS_COMMAND}\` — ${describeCommand(SESSIONS_COMMAND, locale, 'View session history')}`,
     `\`/${SESSION_COMMAND}\` — ${describeCommand(SESSION_COMMAND, locale, 'Inspect the current session')}`,
