@@ -1269,6 +1269,14 @@ export function installBridge(
       if (tracker.messageId === undefined) {
         const sent = await replay.send(chatId, { card })
         tracker.messageId = sent.messageId
+        // A send issued while the connection was down only got queued, so the
+        // id above is a placeholder. Repoint the tracker at the real message
+        // once it lands, otherwise every later update edits a message that
+        // does not exist and Feishu answers 99992354.
+        replay.whenDelivered(sent.messageId, (realId) => {
+          const live = subagentTrackers.get(chatId)
+          if (live !== undefined && live.messageId === sent.messageId) live.messageId = realId
+        })
       } else {
         await port.updateCard(tracker.messageId, card)
       }
@@ -1326,6 +1334,12 @@ export function installBridge(
       try {
         const sent = await replay.send(chatId, { card })
         tracker.messageId = sent.messageId
+        // Same placeholder hazard as the subagent panel: repair the cached id
+        // when a queued send finally reaches Feishu.
+        replay.whenDelivered(sent.messageId, (realId) => {
+          const live = teamTrackers.get(chatId)
+          if (live !== undefined && live.messageId === sent.messageId) live.messageId = realId
+        })
       } finally {
         tracker.sending = false
       }

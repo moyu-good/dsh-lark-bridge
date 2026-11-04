@@ -28,6 +28,27 @@ export interface ReplayPort extends OutboundPort {
     disconnect(): Promise<void>;
     on(name: string, handler: (...args: never[]) => unknown): () => void;
 }
+/**
+ * Prefix of the id a queued-but-undelivered send returns.
+ *
+ * A queued send has no Feishu message yet, but `SendResult.messageId` is a
+ * required string, so the wrapper has to return something. It must never look
+ * like a real id: callers cache the id and later call `updateCard(cachedId)`,
+ * and Feishu rejects the whole request with `99992354 … Invalid ids:
+ * [queued-13]`. That single failure used to abort the session log write, so
+ * one placeholder id could cost a chat its persisted history. Every caller
+ * therefore has to recognise this prefix — see {@link isUndeliveredId}.
+ */
+export declare const UNDELIVERED_ID_PREFIX = "queued:";
+/**
+ * Whether a message id came from a queued send that has not been delivered.
+ *
+ * Callers must not hand such an id to `updateCard`, `addReaction`, or any other
+ * Feishu API: it is not a message id.
+ * @param messageId - id returned by `send`/`stream`, possibly a placeholder.
+ * @returns true when the send is still queued (or was abandoned).
+ */
+export declare function isUndeliveredId(messageId: string | undefined): boolean;
 /** The transport surface {@link createReplayPort} wraps. */
 export interface ReplayPort extends OutboundPort {
     updateCard(messageId: string, card: object): Promise<void>;
@@ -38,6 +59,17 @@ export interface ReplayAwarePort extends ReplayPort {
     setConnected(live: boolean): void;
     /** How many calls are queued waiting for a live connection. */
     pending(): number;
+    /**
+     * Learn the real message id if `messageId` was only queued.
+     *
+     * A cached placeholder id is unusable: Feishu rejects it with 99992354. A
+     * caller that keeps the returned id for a later card update registers here,
+     * and repoints its cache at the real id once delivery succeeds. A no-op for
+     * ids that already reached Feishu.
+     * @param messageId - id returned by `send`/`stream`.
+     * @param callback - receives the real id after successful delivery.
+     */
+    whenDelivered(messageId: string, callback: (realId: string) => void): void;
 }
 /**
  * Wrap a transport so outbound calls survive a connection gap.

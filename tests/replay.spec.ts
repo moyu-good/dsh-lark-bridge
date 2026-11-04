@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createReplayPort } from '../src/replay.ts'
+import { createReplayPort, isUndeliveredId } from '../src/replay.ts'
 import type { ReplayPort } from '../src/replay.ts'
 import type { SendResult } from '@larksuite/channel'
 
@@ -133,5 +133,64 @@ describe('replay port', () => {
     const raw = await port.fetchRawMessage!('om_raw_1')
     expect(raw[0]?.message_id).toBe('om_raw_1')
     expect((inner as unknown as { calls: string[] }).calls).toContain('raw:om_raw_1')
+  })
+})
+
+// A queued send has no Feishu message, but the caller caches the returned id
+// and later edits that message. The old wrapper returned `queued-<n>`, which
+// Feishu rejects as an invalid id (99992354) — and that failure aborted a
+// session log write, costing a chat its persisted history.
+describe('undelivered placeholders', () => {
+  it('never returns an id that looks like a real message', async () => {
+    const inner = fakePort()
+    const port = createReplayPort(inner, () => {}, () => {})
+    port.setConnected(false)
+    const first = await port.send('oc_1', { markdown: 'a' })
+    const second = await port.send('oc_1', { markdown: 'b' })
+    expect(isUndeliveredId(first.messageId)).toBe(true)
+    expect(isUndeliveredId(second.messageId)).toBe(true)
+    // Distinct, so a drain that shrinks the queue cannot collide two callers.
+    expect(first.messageId).not.toBe(second.messageId)
+    expect(first.messageId).not.toMatch(/^om_/)
+  })
+
+  it('refuses to push a placeholder id to updateCard', async () => {
+    const inner = fakePort()
+    const lines: string[] = []
+    const port = createReplayPort(inner, () => {}, (line) => { lines.push(line) })
+    port.setConnected(false)
+    const sent = await port.send('oc_1', { markdown: 'a' })
+    // The caller cached the placeholder and edits "its" card while down.
+    await port.updateCard(sent.messageId, { header: {} })
+    // Reconnecting must not replay that edit: the message never existed.
+    port.setConnected(true)
+    await vi.waitFor(() => { expect(inner.sent).toHaveLength(1) })
+    expect(inner.updated).toHaveLength(0)
+    expect(lines.some(line => line.includes('undelivered id'))).toBe(true)
+  })
+
+  it('reports the real id once a queued send is delivered', async () => {
+    const inner = fakePort()
+    const port = createReplayPort(inner, () => {}, () => {})
+    port.setConnected(false)
+    const sent = await port.send('oc_1', { markdown: 'a' })
+    let realId: string | undefined
+    port.whenDelivered(sent.messageId, (id) => { realId = id })
+    port.setConnected(true)
+    await vi.waitFor(() => { expect(realId).toBeDefined() })
+    expect(isUndeliveredId(realId)).toBe(false)
+    expect(realId).toBe('om_1')
+  })
+
+  it('ignores whenDelivered for an id that was already live', async () => {
+    const inner = fakePort()
+    const port = createReplayPort(inner, () => {}, () => {})
+    const sent = await port.send('oc_1', { markdown: 'a' })
+    let called = false
+    port.whenDelivered(sent.messageId, () => { called = true })
+    port.setConnected(false)
+    port.setConnected(true)
+    await vi.waitFor(() => { expect(port.pending()).toBe(0) })
+    expect(called).toBe(false)
   })
 })

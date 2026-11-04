@@ -45,6 +45,33 @@ interface QueuedCall {
   readonly opts?: SendOptions
   readonly messageId?: string
   readonly card?: object
+  /** Set on a queued `send`/`stream`: the placeholder id handed to the caller. */
+  readonly placeholderId?: string
+}
+
+/**
+ * Prefix of the id a queued-but-undelivered send returns.
+ *
+ * A queued send has no Feishu message yet, but `SendResult.messageId` is a
+ * required string, so the wrapper has to return something. It must never look
+ * like a real id: callers cache the id and later call `updateCard(cachedId)`,
+ * and Feishu rejects the whole request with `99992354 … Invalid ids:
+ * [queued-13]`. That single failure used to abort the session log write, so
+ * one placeholder id could cost a chat its persisted history. Every caller
+ * therefore has to recognise this prefix — see {@link isUndeliveredId}.
+ */
+export const UNDELIVERED_ID_PREFIX = 'queued:'
+
+/**
+ * Whether a message id came from a queued send that has not been delivered.
+ *
+ * Callers must not hand such an id to `updateCard`, `addReaction`, or any other
+ * Feishu API: it is not a message id.
+ * @param messageId - id returned by `send`/`stream`, possibly a placeholder.
+ * @returns true when the send is still queued (or was abandoned).
+ */
+export function isUndeliveredId(messageId: string | undefined): boolean {
+  return messageId !== undefined && messageId.startsWith(UNDELIVERED_ID_PREFIX)
 }
 
 /** The transport surface {@link createReplayPort} wraps. */
@@ -58,6 +85,17 @@ export interface ReplayAwarePort extends ReplayPort {
   setConnected(live: boolean): void
   /** How many calls are queued waiting for a live connection. */
   pending(): number
+  /**
+   * Learn the real message id if `messageId` was only queued.
+   *
+   * A cached placeholder id is unusable: Feishu rejects it with 99992354. A
+   * caller that keeps the returned id for a later card update registers here,
+   * and repoints its cache at the real id once delivery succeeds. A no-op for
+   * ids that already reached Feishu.
+   * @param messageId - id returned by `send`/`stream`.
+   * @param callback - receives the real id after successful delivery.
+   */
+  whenDelivered(messageId: string, callback: (realId: string) => void): void
 }
 
 /**
@@ -75,17 +113,49 @@ export function createReplayPort(
   let live = true
   let queue: QueuedCall[] = []
   let flushing: Promise<void> | undefined
+  let queueSeq = 0
 
-  const queuedSendResult = (): SendResult => ({ messageId: `queued-${queue.length}` })
+  /**
+   * Placeholder id → callback that receives the real message id once the
+   * message finally reaches Feishu.
+   *
+   * A caller caches `send()`'s result and later calls `updateCard(cached)`. If
+   * that send only got queued, the cached id is a placeholder; the flush swaps
+   * in the real id here rather than leaving the caller holding a dead one.
+   * Keyed by placeholder because the caller only knows the placeholder.
+   */
+  const pendingDeliveries = new Map<string, (messageId: string) => void>()
 
-  const enqueueSend = (to: string, input: SendInput, opts: SendOptions | undefined): SendResult => {
-    queue.push({ kind: 'send', to, input, ...opts === undefined ? {} : { opts } })
-    return queuedSendResult()
+  /**
+   * Queue one chat-facing send and return the placeholder result for it.
+   *
+   * The counter, not `queue.length`: the length shrinks as the queue drains, so
+   * two different queued sends would otherwise hand out the same id.
+   * @param kind - which transport call was deferred.
+   * @param to - target chat.
+   * @param input - the deferred call's argument.
+   * @param opts - the deferred call's options.
+   * @returns a result whose `messageId` is a recognisable placeholder.
+   */
+  const enqueueDelivery = (
+    kind: 'send' | 'stream',
+    to: string,
+    input: SendInput | StreamInput,
+    opts: SendOptions | undefined,
+  ): SendResult => {
+    queueSeq += 1
+    const placeholderId = `${UNDELIVERED_ID_PREFIX}${queueSeq}`
+    queue.push({
+      kind,
+      to,
+      input,
+      ...opts === undefined ? {} : { opts },
+      // Carried on the queued call so the flush can report the real id.
+      placeholderId,
+    } as QueuedCall)
+    return { messageId: placeholderId }
   }
-  const enqueueStream = (to: string, input: StreamInput, opts: SendOptions | undefined): SendResult => {
-    queue.push({ kind: 'stream', to, input, ...opts === undefined ? {} : { opts } })
-    return queuedSendResult()
-  }
+
   const enqueueUpdate = (messageId: string, card: object): void => {
     queue.push({ kind: 'updateCard', messageId, card })
   }
@@ -100,12 +170,26 @@ export function createReplayPort(
         try {
           switch (call.kind) {
             case 'send':
-              await port.send(call.to!, call.input as SendInput, call.opts)
+            case 'stream': {
+              const result = call.kind === 'send'
+                ? await port.send(call.to!, call.input as SendInput, call.opts)
+                : await port.stream(call.to!, call.input as StreamInput, call.opts)
+              const placeholderId = (call as { placeholderId?: string }).placeholderId
+              if (placeholderId !== undefined) {
+                const waiter = pendingDeliveries.get(placeholderId)
+                pendingDeliveries.delete(placeholderId)
+                waiter?.(result.messageId)
+              }
               break
-            case 'stream':
-              await port.stream(call.to!, call.input as StreamInput, call.opts)
-              break
+            }
             case 'updateCard':
+              // A card queued against a placeholder id can never be applied —
+              // the message it wanted to edit was never sent. Re-sending it as
+              // a new card would duplicate the panel, so drop it and log why.
+              if (isUndeliveredId(call.messageId)) {
+                notify(`dsh-lark-bridge: dropping card update for undelivered id ${call.messageId}`)
+                break
+              }
               await port.updateCard(call.messageId!, call.card!)
               break
           }
@@ -120,27 +204,54 @@ export function createReplayPort(
     await flushing
   }
 
+  /**
+   * Learn the real message id once a queued send is finally delivered.
+   *
+   * Callers that cache an id and edit that message later should either register
+   * here (the cache is repaired on delivery) or skip the edit while
+   * {@link isUndeliveredId} is true. Withdrawal is per placeholder, so several
+   * waiters on one placeholder all get told.
+   * @param messageId - the id returned by `send`/`stream`.
+   * @param callback - receives the real id when delivery succeeds.
+   */
+  const whenDelivered = (messageId: string, callback: (realId: string) => void): void => {
+    if (!isUndeliveredId(messageId)) return
+    const existing = pendingDeliveries.get(messageId)
+    pendingDeliveries.set(
+      messageId,
+      existing === undefined
+        ? callback
+        : (realId) => { existing(realId); callback(realId) },
+    )
+  }
+
   const wrapped: ReplayAwarePort = {
     ...bindPortMethods(port) as unknown as Pick<ReplayAwarePort, 'connect' | 'disconnect' | 'on'>,
     async send(to, input, opts) {
-      if (!live) return enqueueSend(to, input, opts)
+      if (!live) return enqueueDelivery('send', to, input, opts)
       try {
         return await port.send(to, input, opts)
       } catch (error) {
         onFlushFailure(error)
-        return enqueueSend(to, input, opts)
+        return enqueueDelivery('send', to, input, opts)
       }
     },
     async stream(to, input, opts) {
-      if (!live) return enqueueStream(to, input, opts)
+      if (!live) return enqueueDelivery('stream', to, input, opts)
       try {
         return await port.stream(to, input, opts)
       } catch (error) {
         onFlushFailure(error)
-        return enqueueStream(to, input, opts)
+        return enqueueDelivery('stream', to, input, opts)
       }
     },
     async updateCard(messageId, card) {
+      // Never forward a placeholder id to Feishu: it answers 99992354
+      // "Invalid ids" and the caller's whole write path can fail with it.
+      if (isUndeliveredId(messageId)) {
+        notify(`dsh-lark-bridge: skipping card update for undelivered id ${messageId}`)
+        return
+      }
       if (!live) {
         enqueueUpdate(messageId, card)
         return
@@ -152,6 +263,7 @@ export function createReplayPort(
         enqueueUpdate(messageId, card)
       }
     },
+    whenDelivered,
     setConnected(next: boolean) {
       live = next
       if (next) void flush().catch(onFlushFailure)
