@@ -104,6 +104,7 @@ import { describeCommand } from './i18n.ts'
 import { ConversationSessions, conversationKey, sessionIdFor } from './session.ts'
 import type { SessionLadder } from './session.ts'
 import { baseSessionIdOf, createRotationStore } from './session-rotation.ts'
+import { readPreviews } from './session-preview.ts'
 import { createReactionTracker } from './reaction.ts'
 import type { ReactionTracker } from './reaction.ts'
 import { createQuestionProvider } from './questions.ts'
@@ -1928,6 +1929,13 @@ export function installBridge(
   const resumeLists = new Map<string, readonly string[]>()
   /** 一张 `/resume` 列表最多列几个会话，多出来的只说数量。 */
   const RESUME_ROWS_MAX = 20
+  /**
+   * 其中前几个带「上次做到哪」的预览。
+   *
+   * 每读一个预览都要扫一遍会话日志，列表整页都读会把一次查看变成磁盘冲击；
+   * 而用户要挑的几乎总是最近那几个，更早的看时间和目录就够。
+   */
+  const RESUME_PREVIEW_ROWS = 8
 
   /**
    * The renderer for one session, opened on first use and kept until the fiber
@@ -2342,11 +2350,21 @@ export function installBridge(
           }
           const shown = owned.slice(0, RESUME_ROWS_MAX)
           resumeLists.set(msg.chatId, shown.map(header => header.header.id))
+          // 前几个带「上次做到哪」：切会话时窗口里看不到旧对话，没有这句用户
+          // 只能靠时间猜，等于盲切。
+          const previewed = await readPreviews(
+            shown.slice(0, RESUME_PREVIEW_ROWS).map(header => header.header.id),
+            { maxChars: 80 },
+          )
           const rows = shown.map((header, index) => {
             const when = new Date(header.header.createdAt).toLocaleString('zh-CN', { hour12: false })
             const where = header.header.cwd === undefined ? '' : ` · \`${header.header.cwd}\``
             const mark = header.header.id === currentId ? ' ← 当前' : ''
-            return `${index + 1}. ${when}${where}${mark}`
+            const head = `${index + 1}. ${when}${where}${mark}`
+            const preview = previewed[index]
+            // 你说的话比我说的话更能唤起记忆，所以优先它；只有回复时退回回复。
+            const last = preview?.lastUser ?? preview?.lastAssistant
+            return last === undefined ? head : `${head}\n   上次：${last}`
           })
           const more = owned.length > shown.length
             ? `\n…还有 ${owned.length - shown.length} 个更早的未列出（只显示最近 ${RESUME_ROWS_MAX} 个）。`
@@ -2380,8 +2398,17 @@ export function installBridge(
           const attached = await sessions.attach(msg, targetId)
           notify(`dsh-lark-bridge: /resume moved ${msg.chatId} to session ${attached.handle.agent.session.id}`)
           const warn = attached.persisted ? '' : '\n⚠️ 但切换记忆写入失败：重启后这条对话会退回原来的会话。'
+          // 切换后补一句「上次做到哪」：窗口里看不到旧对话，不给定位线索
+          // 用户只能凭时间猜自己切对了没有。
+          const [preview] = await readPreviews([attached.handle.agent.session.id], { maxChars: 150 })
+          const recap = preview === undefined
+            ? ''
+            : [
+                preview.lastUser === undefined ? '' : `\n上次你说：「${preview.lastUser}」`,
+                preview.lastAssistant === undefined ? '' : `\n我上次回：「${preview.lastAssistant}」`,
+              ].join('')
           await port.send(msg.chatId, {
-            markdown: `🔁 已切到会话 \`${attached.handle.agent.session.id}\`。下一条消息起就接着那个会话聊。${warn}`,
+            markdown: `🔁 已切到会话 \`${attached.handle.agent.session.id}\`。${recap}\n下一条消息起就接着那个会话聊。${warn}`,
           }).catch(reportSendFailure)
         } catch (error) {
           await port.send(msg.chatId, { markdown: `⚠️ 切换会话失败：${error instanceof Error ? error.message : String(error)}` }).catch(reportSendFailure)
