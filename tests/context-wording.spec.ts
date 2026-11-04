@@ -25,7 +25,8 @@ describe('上下文占用的措辞', () => {
     expect(line).toContain('444,833')
     expect(line).toContain('277,312')
     expect(line).toContain('167,521')
-    expect(line).toContain('压不掉')
+    // 这一半只能靠少挂工具来降，压缩动不了它。
+    expect(line).toContain('只压得动聊天内容')
   })
 
   it('总量与内容相等时不说"其余 0"，直接给建议', () => {

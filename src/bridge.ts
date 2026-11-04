@@ -172,6 +172,7 @@ import {
   tokenPressureLine,
   webSearchLine,
 } from './notices.ts'
+import { readContextBreakdown } from './context-breakdown.ts'
 import { onboardingMessage } from './first-contact.ts'
 import { createReplayPort } from './replay.ts'
 import { createSendFileTool, deliverFile } from './files.ts'
@@ -1611,7 +1612,14 @@ export function installBridge(
         pressureWarned.add(sessionId)
         void replay
           .send(binding.chatId, {
-            markdown: tokenPressureLine({ total, surface, threshold }),
+            // 差额里哪一块在变要说得出来：拿到宿主的三段拆分就报细分，
+            // 拿不到才退回「系统提示 + 工具说明」的笼统说法。
+            markdown: tokenPressureLine({
+              total,
+              surface,
+              threshold,
+              breakdown: readContextBreakdown(ctx, binding.session),
+            }),
           })
           .catch(reportSendFailure)
       } else {

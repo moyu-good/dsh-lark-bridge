@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLlm, HostLoaderEntry, HostMessageFeedback, HostSession, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry,
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLlm, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry,
   HostTools,} from './host.ts'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
@@ -23,7 +23,7 @@ import { fetchDeepseekBalance, formatBalanceReply } from './balance.ts'
 import { USER_GUIDE } from './user-guide.ts'
 import { writeRestartRequest } from './restart-notice.ts'
 import { contextPressureLine } from './notices.ts'
-import type { ContextBreakdown } from './notices.ts'
+import { readContextBreakdown } from './context-breakdown.ts'
 import { runThinkCommand } from './think.ts'
 import type { EffortOverrides } from './think.ts'
 
@@ -1184,19 +1184,7 @@ function runContextCommand(
     return { reply: `⚠️ 本部署没有组合 token 计量服务，` + '`' + `/${CONTEXT_COMMAND}` + '`' + ` 不可用。`, resolved: false }
   }
   const measure = tokenMeter.measure(agent.session)
-  let breakdown: ContextBreakdown | undefined
-  try {
-    const projections = ctx?.get('sessionProjections') as {
-      stateOf?(session: HostSession, key: string): unknown
-    } | undefined
-    const state = projections?.stateOf?.(agent.session, 'contextBreakdown') as { breakdown?: ContextBreakdown } | undefined
-    // A projection that has never folded a request header reports zeros; those
-    // zeros are not a measurement, and printing them would say "no tools" about
-    // a session that simply has not run yet.
-    if (state?.breakdown !== undefined && state.breakdown.toolsTokens > 0) breakdown = state.breakdown
-  } catch {
-    // The split is a nicety; a projection that fails must not cost the answer.
-  }
+  const breakdown = readContextBreakdown(ctx, agent.session)
   return {
     reply: contextPressureLine({ total: measure.totalTokens, surface: measure.surfaceTokens, breakdown }),
     resolved: true,

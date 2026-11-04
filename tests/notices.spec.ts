@@ -184,5 +184,22 @@ describe('notice lines', () => {
     expect(line).toContain('12,300')
     expect(line).toContain('120,000')
     expect(line).toContain('/compact')
+    // 差额不是常数：别再说"固定开销"，要说清它会随什么变（2026-11-05 的质疑）。
+    expect(line).not.toContain('固定开销')
+    expect(line).toContain('不是固定值')
+    expect(line).toContain('系统提示')
+    expect(line).toContain('工具说明')
+    expect(line).toContain('/context')
+  })
+
+  it('splits the overhead when the host exposes a breakdown', () => {
+    const line = tokenPressureLine({
+      total: 131_020,
+      surface: 56_003,
+      threshold: 120_000,
+      breakdown: { messageTokens: 56_003, systemTokens: 20_000, toolsTokens: 55_017 },
+    })
+    expect(line).toContain('系统提示约 20,000')
+    expect(line).toContain('工具说明约 55,017')
   })
 })

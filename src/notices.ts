@@ -251,6 +251,11 @@ function num(value: number): string {
  * `surfaceTokens` 的直译，读者从中看不出它指的是"你俩聊过的内容"，更看不出
  * 总量与它之间的差额是工具说明这类常驻开销。差额恰恰是关键：真正超线时，
  * 压历史能降的是前半段，压不掉的是后半段。
+ *
+ * 差额曾被称为「固定开销」，这个说法是错的，2026-11-05 被当场问住：差额是
+ * 系统提示 + 工具定义，两者都会变——MCP 工具挂载/卸载、技能目录增减、
+ * goal 状态、工作目录都会改它，而且宿主是按字符估 token，不是精确分词。
+ * 现在如实说"不是固定值"，并列出会改变它的东西，免得读者以为桥在乱报数。
  * @param data - 当前总量、其中的聊天内容、以及预警线。
  * @returns 发到聊天里的那一段。
  */
@@ -258,14 +263,21 @@ export function tokenPressureLine(data: {
   readonly total: number
   readonly surface: number
   readonly threshold: number
+  /** 三段拆分，拿到时就报细分——差额里哪一块在变才看得见。 */
+  readonly breakdown?: ContextBreakdown | undefined
 }): string {
   const other = data.total - data.surface
   const head = `⚠️ 上下文偏重了：一共约 ${num(data.total)} token，其中聊天内容 ${num(data.surface)}`
+  const split = data.breakdown === undefined
+    ? '（系统提示 + 工具说明）'
+    : `：系统提示约 ${num(data.breakdown.systemTokens)}、工具说明约 ${num(data.breakdown.toolsTokens)}`
   const body = other > 0
-    ? `，其余 ${num(other)} 是工具说明等固定开销\n已超过 ${num(data.threshold)} 的建议压缩线。`
+    ? `，其余 ${num(other)} 是聊天之外的开销${split}。\n`
+      + '这部分不是固定值：挂载了哪些工具、有哪些技能可用、当前目标，都会改变它。\n'
+      + `已超过 ${num(data.threshold)} 的建议压缩线。`
     : `\n已超过 ${num(data.threshold)} 的建议压缩线。`
   const advice = other > 0
-    ? '/compact 能压掉聊天内容那部分；工具说明是常驻的，压不掉——要压它只能少挂工具（换极简模式、关掉不用的 MCP）。'
+    ? '/compact 只压得动聊天内容；要降那一半，只能少挂工具（换极简模式、关掉不用的 MCP）。想看明细发 `/context`。'
     : '长任务建议先 `/compact` 压缩，或让 agent 收尾当前阶段。'
   return `${head}${body}${advice}`
 }

@@ -116,6 +116,11 @@ export declare function compactionPruneLine(data: {
  * `surfaceTokens` 的直译，读者从中看不出它指的是"你俩聊过的内容"，更看不出
  * 总量与它之间的差额是工具说明这类常驻开销。差额恰恰是关键：真正超线时，
  * 压历史能降的是前半段，压不掉的是后半段。
+ *
+ * 差额曾被称为「固定开销」，这个说法是错的，2026-11-05 被当场问住：差额是
+ * 系统提示 + 工具定义，两者都会变——MCP 工具挂载/卸载、技能目录增减、
+ * goal 状态、工作目录都会改它，而且宿主是按字符估 token，不是精确分词。
+ * 现在如实说"不是固定值"，并列出会改变它的东西，免得读者以为桥在乱报数。
  * @param data - 当前总量、其中的聊天内容、以及预警线。
  * @returns 发到聊天里的那一段。
  */
@@ -123,6 +128,8 @@ export declare function tokenPressureLine(data: {
     readonly total: number;
     readonly surface: number;
     readonly threshold: number;
+    /** 三段拆分，拿到时就报细分——差额里哪一块在变才看得见。 */
+    readonly breakdown?: ContextBreakdown | undefined;
 }): string;
 /** 上下文占用的构成，来自宿主的 `contextBreakdown` 投影。 */
 export interface ContextBreakdown {
