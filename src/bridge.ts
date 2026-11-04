@@ -161,6 +161,7 @@ import {
   runStartLine,
   workflowLogLine,
 } from './workflow.ts'
+import type { ShadowedBreakdown } from './notices.ts'
 import {
   compactionPruneLine,
   compactionSummaryLine,
@@ -448,6 +449,27 @@ const ACTIVITY_LABEL_MAX_CHARS = 90
  * @param title - the tool's own label for this call.
  * @returns the label as one bounded line.
  */
+/**
+ * 把 compaction 事件里的 seq 归类，好让聊天里那句提示说得出"修剪了什么"。
+ *
+ * 事件本身只带序号（`shadowedSeqs`），序号的含义只存在于会话日志里；
+ * 读不到的事件记进 `other`，不猜。
+ */
+function classifyShadowed(session: HostSession, seqs: readonly number[]): ShadowedBreakdown {
+  const counts = { user: 0, assistant: 0, toolCall: 0, toolResult: 0, other: 0 }
+  for (const seq of seqs) {
+    const event = session.eventAt(seq) as HostSessionEvent | undefined
+    switch (event?.type) {
+      case 'user/message': counts.user += 1; break
+      case 'assistant/message': counts.assistant += 1; break
+      case 'tool/call': counts.toolCall += 1; break
+      case 'tool/result': counts.toolResult += 1; break
+      default: counts.other += 1
+    }
+  }
+  return counts
+}
+
 function activityLabel(title: string): string {
   // One pass over both hazards: any run of whitespace (newlines included) or
   // backticks collapses to a single space, so neither a line break nor a code
@@ -3323,9 +3345,13 @@ export function installBridge(
     if (isCompactionStartEvent(event)) {
       void replay.send(binding.chatId, { markdown: '📦 上下文较长，正在压缩（较早内容将被摘要）…' }).catch(reportSendFailure)
     } else if (isCompactionSummaryEvent(event)) {
-      void replay.send(binding.chatId, { markdown: compactionSummaryLine(event.data) }).catch(reportSendFailure)
+      void replay.send(binding.chatId, {
+        markdown: compactionSummaryLine(event.data, classifyShadowed(session, event.data.shadowedSeqs)),
+      }).catch(reportSendFailure)
     } else if (isCompactionPruneEvent(event)) {
-      void replay.send(binding.chatId, { markdown: compactionPruneLine(event.data) }).catch(reportSendFailure)
+      void replay.send(binding.chatId, {
+        markdown: compactionPruneLine(event.data, classifyShadowed(session, event.data.shadowedSeqs)),
+      }).catch(reportSendFailure)
     } else if (isCompactionEndEvent(event)) {
       if (event.data.error !== undefined) {
         void replay.send(binding.chatId, { markdown: `⚠️ 上下文压缩失败：${event.data.error}` }).catch(reportSendFailure)

@@ -169,41 +169,74 @@ export function retryLine(retry: { readonly retry: number; readonly maxRetries?:
   return `⚠️ 模型调用连续失败，正在进行最后一次重试（第 ${retry.retry}/${retry.maxRetries} 次）；若仍失败本轮将终止。`
 }
 
-/** Extract the visible text from a compaction summary's content blocks. */
-function summaryText(blocks: readonly unknown[]): string {
-  return blocks
-    .filter((block): block is { type: 'text'; text: string } =>
-      typeof block === 'object' && block !== null
-      && (block as { type?: unknown }).type === 'text'
-      && typeof (block as { text?: unknown }).text === 'string')
-    .map(block => block.text)
-    .join('\n')
+/**
+ * What the shadowed records were, counted by source.
+ *
+ * A compaction event only carries sequence numbers, so the line used to say
+ * "trimmed 1 message" and leave the reader guessing which one. The bridge
+ * resolves those numbers against the session log and hands the counts here;
+ * "1 条工具输出" answers the question the bare count raised.
+ */
+export interface ShadowedBreakdown {
+  /** The human's own prompts. */
+  readonly user: number
+  /** The assistant's replies. */
+  readonly assistant: number
+  /** Tool invocations (the call, not its output). */
+  readonly toolCall: number
+  /** Tool outputs — usually the bulk of what a prune removes. */
+  readonly toolResult: number
+  /** Anything else: step markers, goal changes, other bookkeeping. */
+  readonly other: number
+}
+
+/** "2 条你的提问、3 条工具输出" — only the non-zero kinds, in a fixed order. */
+function breakdownPhrase(breakdown: ShadowedBreakdown | undefined): string {
+  if (breakdown === undefined) return ''
+  const parts: string[] = []
+  if (breakdown.user > 0) parts.push(`${num(breakdown.user)} 条你的提问`)
+  if (breakdown.assistant > 0) parts.push(`${num(breakdown.assistant)} 条我的回复`)
+  if (breakdown.toolCall > 0) parts.push(`${num(breakdown.toolCall)} 条工具调用`)
+  if (breakdown.toolResult > 0) parts.push(`${num(breakdown.toolResult)} 条工具输出`)
+  if (breakdown.other > 0) parts.push(`${num(breakdown.other)} 条其它记录`)
+  return parts.length === 0 ? '' : `（${parts.join('、')}）`
 }
 
 /**
  * A compaction summary line: what replaced the old history, and at what cost.
+ *
+ * The summary text itself is deliberately NOT rendered. It is a model-written
+ * digest — often in English, always full of goal ids and paths — and pasting
+ * its first 200 characters made the notice read like a debug dump (the
+ * 2026-11-04 complaint). The chat only needs to know that history was folded,
+ * how much it was worth, and which kinds of records went into it.
+ *
  * @param data - the `compaction/summary` payload.
+ * @param breakdown - what the shadowed seqs were, when the caller resolved them.
  * @returns the markdown line for the chat.
  */
 export function compactionSummaryLine(data: {
-  readonly summary: readonly unknown[]
+  readonly shadowedSeqs?: readonly number[]
   readonly shadowedTokenCount: number
-}): string {
-  const text = summaryText(data.summary).trim()
-  const preview = text.length === 0 ? '' : `\n${text.slice(0, 200)}`
-  return `📦 上下文压缩完成，释放约 ${data.shadowedTokenCount} tokens${preview}`
+}, breakdown?: ShadowedBreakdown): string {
+  const count = data.shadowedSeqs?.length ?? 0
+  const detail = breakdownPhrase(breakdown)
+  return count === 0
+    ? `📦 上下文压缩完成：释放约 ${num(data.shadowedTokenCount)} tokens`
+    : `📦 上下文压缩完成：${num(count)} 条较早消息${detail}已换成摘要，释放约 ${num(data.shadowedTokenCount)} tokens`
 }
 
 /**
  * A prune line: old history was trimmed without a model call.
  * @param data - the `compaction/prune` payload.
+ * @param breakdown - what the shadowed seqs were, when the caller resolved them.
  * @returns the markdown line for the chat.
  */
 export function compactionPruneLine(data: {
   readonly shadowedSeqs: readonly number[]
   readonly shadowedTokenCount: number
-}): string {
-  return `🗑️ 已修剪 ${data.shadowedSeqs.length} 条旧消息（释放约 ${data.shadowedTokenCount} tokens）`
+}, breakdown?: ShadowedBreakdown): string {
+  return `🗑️ 已修剪 ${num(data.shadowedSeqs.length)} 条旧消息${breakdownPhrase(breakdown)}，释放约 ${num(data.shadowedTokenCount)} tokens`
 }
 
 /** 千分位，中文数字习惯。 */

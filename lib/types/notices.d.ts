@@ -63,23 +63,52 @@ export declare function retryLine(retry: {
     readonly maxRetries?: number;
 }): string | undefined;
 /**
+ * What the shadowed records were, counted by source.
+ *
+ * A compaction event only carries sequence numbers, so the line used to say
+ * "trimmed 1 message" and leave the reader guessing which one. The bridge
+ * resolves those numbers against the session log and hands the counts here;
+ * "1 条工具输出" answers the question the bare count raised.
+ */
+export interface ShadowedBreakdown {
+    /** The human's own prompts. */
+    readonly user: number;
+    /** The assistant's replies. */
+    readonly assistant: number;
+    /** Tool invocations (the call, not its output). */
+    readonly toolCall: number;
+    /** Tool outputs — usually the bulk of what a prune removes. */
+    readonly toolResult: number;
+    /** Anything else: step markers, goal changes, other bookkeeping. */
+    readonly other: number;
+}
+/**
  * A compaction summary line: what replaced the old history, and at what cost.
+ *
+ * The summary text itself is deliberately NOT rendered. It is a model-written
+ * digest — often in English, always full of goal ids and paths — and pasting
+ * its first 200 characters made the notice read like a debug dump (the
+ * 2026-11-04 complaint). The chat only needs to know that history was folded,
+ * how much it was worth, and which kinds of records went into it.
+ *
  * @param data - the `compaction/summary` payload.
+ * @param breakdown - what the shadowed seqs were, when the caller resolved them.
  * @returns the markdown line for the chat.
  */
 export declare function compactionSummaryLine(data: {
-    readonly summary: readonly unknown[];
+    readonly shadowedSeqs?: readonly number[];
     readonly shadowedTokenCount: number;
-}): string;
+}, breakdown?: ShadowedBreakdown): string;
 /**
  * A prune line: old history was trimmed without a model call.
  * @param data - the `compaction/prune` payload.
+ * @param breakdown - what the shadowed seqs were, when the caller resolved them.
  * @returns the markdown line for the chat.
  */
 export declare function compactionPruneLine(data: {
     readonly shadowedSeqs: readonly number[];
     readonly shadowedTokenCount: number;
-}): string;
+}, breakdown?: ShadowedBreakdown): string;
 /**
  * 上下文占用的预警文案。
  *

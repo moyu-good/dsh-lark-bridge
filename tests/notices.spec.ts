@@ -142,33 +142,40 @@ describe('notice lines', () => {
     expect(retryLine({ retry: 1 })).toBeUndefined()
   })
 
-  it('renders a compaction summary with its text and released tokens', () => {
-    const line = compactionSummaryLine({
-      summary: [
-        { type: 'text', text: '用户在做飞书桥的 i18n 开发。' },
-        { type: 'text', text: '第二轮：修面板描述漂移。' },
-        { type: 'reasoning', text: '忽略这行思考。' },
-      ],
-      shadowedTokenCount: 12345,
-    })
+  it('says what a compaction folded, without pasting the summary text', () => {
+    const line = compactionSummaryLine(
+      { shadowedSeqs: [1, 2, 3], shadowedTokenCount: 49_212 },
+      { user: 1, assistant: 1, toolCall: 0, toolResult: 1, other: 0 },
+    )
     expect(line).toContain('压缩完成')
-    expect(line).toContain('12345')
-    expect(line).toContain('飞书桥的 i18n 开发')
-    expect(line).toContain('面板描述漂移')
-    // Reasoning blocks are not user-visible summary text.
-    expect(line).not.toContain('忽略这行思考')
+    expect(line).toContain('49,212')
+    expect(line).toContain('3 条较早消息')
+    expect(line).toContain('1 条你的提问')
+    expect(line).toContain('1 条我的回复')
+    expect(line).toContain('1 条工具输出')
   })
 
-  it('renders a compaction summary without text blocks too', () => {
-    const line = compactionSummaryLine({ summary: [{ type: 'image' }], shadowedTokenCount: 0 })
-    expect(line).toContain('压缩完成')
-    expect(line).toContain('0 tokens')
+  it('keeps the compaction line short when there is nothing to break down', () => {
+    // No shadowed seqs and no breakdown: one line, no dangling punctuation.
+    expect(compactionSummaryLine({ shadowedTokenCount: 0 }))
+      .toBe('📦 上下文压缩完成：释放约 0 tokens')
   })
 
-  it('renders a prune with its trimmed message count and released tokens', () => {
-    const line = compactionPruneLine({ shadowedSeqs: [1, 2, 3, 4, 5], shadowedTokenCount: 4321 })
+  it('says which kinds of records a prune removed', () => {
+    const line = compactionPruneLine(
+      { shadowedSeqs: [1, 2, 3, 4, 5], shadowedTokenCount: 4_321 },
+      { user: 0, assistant: 0, toolCall: 0, toolResult: 5, other: 0 },
+    )
     expect(line).toContain('5 条旧消息')
-    expect(line).toContain('4321')
+    expect(line).toContain('5 条工具输出')
+    expect(line).toContain('4,321')
+    // Only the non-zero kinds are named; a zero would be noise.
+    expect(line).not.toContain('0 条')
+  })
+
+  it('falls back to the bare count when the caller could not resolve the seqs', () => {
+    const line = compactionPruneLine({ shadowedSeqs: [1], shadowedTokenCount: 2_301 })
+    expect(line).toBe('🗑️ 已修剪 1 条旧消息，释放约 2,301 tokens')
   })
 
   it('renders a token-pressure warning with total, surface, and threshold', () => {
