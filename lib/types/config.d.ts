@@ -152,6 +152,20 @@ export interface Config {
      * still reports once, with what it produced, regardless of this setting.
      */
     announceSubagents?: boolean;
+    /**
+     * 外勤会话镜像：把「不属于任何聊天」的会话的**进度**推给一个群。
+     *
+     * '' （默认）= 关。2026-11-04 前它是全播的——每个不属于本群的会话都会向
+     * **所有**绑定群各推一条 `⚙️ [会话 21ffe969] T1 进行中`。一个群都没派过
+     * 那个会话，读者却收到一串认不出来的哈希和轮次号；群越多噪声越大。
+     *
+     * 设成某个 chat_id 才启用，且只推给那一个群。多数部署根本不需要它：
+     * 想看别处进度，去面板看，比一行「第 3 轮开始」有用得多。
+     *
+     * 注意这只管**进度**。别的会话声明了交付文件时照样会通知——文件是实体，
+     * 通知发往第一个绑定了会话的群（见 `externalMirrorChat()`），不受本项影响。
+     */
+    externalMirrorChatId?: string;
     /** Auto-save inbound file messages into the agent workspace. Default true. */
     autoSaveFiles?: boolean;
     /**
@@ -355,6 +369,8 @@ export interface ResolvedConfig {
     presentBridge: boolean;
     /** Whether a delegation is announced in the chat when it is made. */
     announceSubagents: boolean;
+    /** 外勤会话镜像的接收群；'' = 关闭（默认）。见 `Config.externalMirrorChatId`。 */
+    externalMirrorChatId: string;
     /** Whether inbound files are auto-saved to the workspace. */
     autoSaveFiles: boolean;
     /** Numbered model menu for /model command. */

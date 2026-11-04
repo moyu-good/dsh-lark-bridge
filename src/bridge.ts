@@ -1129,6 +1129,26 @@ export function installBridge(
    * so a child's events arrive under a session that has no chat binding. This map
    * is how they find their panel row without touching the parent's display. */
   const childChat = new Map<string, string>()
+  /**
+   * 别处的动静该推给哪一个群。
+   *
+   * 一个会话既不是本群开的、也不是已知子会话时，它和任何一个群都没有关系。
+   * 这类消息原先是向**所有**绑定群各发一份的（2026-11-04 现场：`D:\Desktop`
+   * 下一个子代理会话让每个群都收到 `T1 进行中`）。代价随群数线性增长，而收
+   * 到的读者全都不知道说的是什么。
+   *
+   * 现在只发给一个群：显式配置的 `externalMirrorChatId`，没配就取第一个绑
+   * 定了会话的群（进程内一致——同一轮里多次调用必须落在同一个群，否则同一件
+   * 事的进度和交付文件会散到两个群）。一个绑定群都没有时返回 undefined，
+   * 调用方据此静默。
+   */
+  const externalMirrorChat = (): string | undefined => {
+    const configured = config.externalMirrorChatId
+    if (configured !== '') return configured
+    // Map 的插入顺序是绑定顺序；取第一个是稳定且可解释的。
+    for (const binding of bySession.values()) return binding.chatId
+    return undefined
+  }
   // Per-session operation counters for /audit, accumulated from the session
   // event stream. Process-local like the schedule registry.
   const auditStats = new Map<string, AuditStats>()
@@ -2888,44 +2908,52 @@ export function installBridge(
       // placed — but the person who asked for them is looking at a chat, and
       // silence reads as "it worked". The files are announced to the chats
       // this bridge serves, so the reader can go and get them.
+      //
+      // 2026-11-04：这个分支原本向**所有**绑定群广播，和下面的外勤镜像同病。
+      // 但它和进度播报性质不同：进度是噪声（「T1 进行中」不看也无所谓），交付
+      // 文件是实体（「有个文件给你了」）。所以这里不关，只收敛——发给
+      // externalMirrorChat() 选出的那一个群，而不是每个群都塞一份。
       if (isPresentedEvent(event) && config.presentBridge !== false) {
         const callId = event.data.callId
         let seen = presentedCalls.get(session.id)
         if (seen === undefined) { seen = new Set<string>(); presentedCalls.set(session.id, seen) }
         if (!seen.has(callId)) {
           seen.add(callId)
+          const watcher = externalMirrorChat()
+          if (watcher === undefined) return
           for (const file of event.data.files) {
             const caption = file.description === undefined || file.description === ''
               ? `交付文件 · turn ${event.data.turn}`
               : file.description
-            const seenChats = new Set<string>()
-            for (const b2 of bySession.values()) {
-              if (seenChats.has(b2.chatId)) continue
-              seenChats.add(b2.chatId)
-              void replay.send(b2.chatId, {
-                markdown: `📎 另一会话声明了交付文件：\`${file.path}\`${caption === '' ? '' : ` · ${caption}`}\n（该会话不属于当前聊天，文件未能送达本聊天）`,
-              }).catch(() => {})
-            }
+            void replay.send(watcher, {
+              markdown: `📎 另一个会话声明了交付文件：\`${file.path}\`${caption === '' ? '' : ` · ${caption}`}\n（该会话不是本群开的，文件没送到本群；路径可以直接打开）`,
+            }).catch(() => {})
           }
         }
         return
       }
+      // 外勤会话镜像 (P141, 09-15 令：实时多agent实况)：既未绑定、也非
+      // 子会话的独立会话（并行开发线/CLI 运行）→ 按会话节流推一行进度/完结。
+      //
+      // ⚠ 2026-11-04 修：这里原本遍历 `bySession.values()` 往**每一个**绑定群都发
+      // 一份。当天现场：D:\Desktop 下有个子代理会话（父会话在网页端，桥收不到
+      // `subagent/catalog`，所以没被认成子代理），于是每个群都收到一串
+      // `⚙️ [会话 21ffe969] T1 进行中` —— 一个群都没派它，人人挨一发。
+      //
+      // 一个不属于任何群的会话，没有资格向所有群广播：群的数量随使用增长，
+      // 广播成本是 O(群数)，而读者收到的全是看不懂的哈希和轮次号。现在只推
+      // 给 externalMirrorChat() 选出的那一个群。
+      const mirrorChat = externalMirrorChat()
       const notable = isStepStartEvent(event) || isTurnEndEvent(event)
       const nowMs = Date.now()
       const last = externalMirrorAt.get(session.id)
-      if (notable && (last === undefined || nowMs - last >= 60_000)) {
+      if (mirrorChat !== undefined && notable && (last === undefined || nowMs - last >= 60_000)) {
         externalMirrorAt.set(session.id, nowMs)
         const turn = (event.data as { turn?: number }).turn
-        const reason = (event.data as { reason?: { kind?: string } }).reason?.kind
-        const label = isTurnEndEvent(event)
-          ? `✅ T${turn ?? '?'} 完成（${reason ?? '?'}）`
-          : `T${turn ?? '?'} 进行中`
-        const seenChats = new Set<string>()
-        for (const b of bySession.values()) {
-          if (seenChats.has(b.chatId)) continue
-          seenChats.add(b.chatId)
-          void replay.send(b.chatId, { markdown: `⚙️ [会话 ${session.id.slice(0, 8)}] ${label}` }).catch(() => {})
-        }
+        // 轮次号是本桥的内部叫法，会话 id 前缀也认不出是哪个会话。用能读懂的
+        // 句子；查不到标题就说「另一个会话」，不编造。
+        const label = isTurnEndEvent(event) ? `第 ${turn ?? '?'} 轮完成` : `第 ${turn ?? '?'} 轮开始`
+        void replay.send(mirrorChat, { markdown: `⚙️ 另一个会话在跑（不是本群开的）：${label}` }).catch(() => {})
       }
       return
     }
