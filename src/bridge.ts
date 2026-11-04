@@ -180,6 +180,15 @@ import { pricingPromptLine } from './pricing.ts'
 import { elapsedPhrase, messageTimeStamp } from './clock.ts'
 export { messageTimeStamp } from './clock.ts'
 
+/** 一条原始消息里我们实际要读的字段（`im.v1.message.get` 的 `data.items[]`）。 */
+export interface RawCardMessage {
+  readonly message_id?: string
+  readonly msg_type?: string
+  readonly body?: { readonly content?: string }
+  readonly create_time?: string | number
+  readonly sender?: { readonly id?: string }
+}
+
 /**
  * The transport surface the bridge drives. `LarkChannel` from
  * `@larksuite/channel` satisfies it structurally; tests substitute a fake.
@@ -219,6 +228,17 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
    * quote — degraded, not broken.
    */
   fetchMessage?(messageId: string): Promise<NormalizedMessage | undefined>
+  /**
+   * Read one message back as the transport's raw `data.items[]`.
+   *
+   * 和 {@link fetchMessage} 的区别只有一处，但很关键：`fetchMessage` 调
+   * `im.v1.message.get` 时**没带** `card_msg_content_type`，2.0 卡片拿回来是被降级的
+   * v1 占位（模型只看到 `[interactive card]`）。`fetchRawMessage` 默认带
+   * `user_card_content`，返回的是发送时的原始卡片 JSON，引用一块卡片才有内容可读。
+   *
+   * 同样可选：测试替身不必建模这个接口。
+   */
+  fetchRawMessage?(messageId: string, opts?: { cardContentType?: string | null }): Promise<RawCardMessage[]>
   /** Replace a sent card's content in place. */
   updateCard(messageId: string, card: object): Promise<void>
   /** Add an emoji reaction to a message; resolves the platform reaction id. */
@@ -693,6 +713,55 @@ export function sessionGapPhrase(sessionId: string, now: number): string {
 }
 
 /**
+ * Pull the readable text out of a card JSON whose shape may be 1.0 or 2.0.
+ *
+ * 飞书的卡片消息有两种结构：1.0 是 `title` + `elements`，2.0 是 `schema: "2.0"`
+ * + `header` + `body.elements`。这里的任务只有一个——把卡片里**人能看到的那几行字**
+ * 按阅读顺序取出来，拼成纯文本。
+ *
+ * 为什么不能直接用 `im.v1.message.get` 的默认返回：不带 `card_msg_content_type`
+ * 时，2.0 卡片会降级成 v1 占位（`[interactive card]` 就是这么来的），引用一块面板卡
+ * 时模型只拿到一个括号词组。带上 `user_card_content` 才拿得到原始 JSON。
+ *
+ * 取舍：这里只认 `plain_text` / `lark_md` / `markdown` 三种文本节点，其余结构一律
+ * 靠遍历找下去。卡片里本来就没有别的可读文字，认多了只会把样式当内容吐出来。
+ *
+ * @param card - the parsed card JSON (`body.content` of an interactive message).
+ * @param maxChars - how much text to keep; truncation is marked, never silent.
+ * @returns the readable text, '' when the card carries none.
+ */
+export function cardText(card: unknown, maxChars: number = DEFAULT_LIMITS.quoteChars): string {
+  const lines: string[] = []
+  const seen = new Set<unknown>()
+  const visit = (node: unknown): void => {
+    if (node === null || typeof node !== 'object') return
+    // 卡片 JSON 是树，正常不会有环；防一手恶意/异常输入把递归拖死。
+    if (seen.has(node)) return
+    seen.add(node)
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item)
+      return
+    }
+    const obj = node as Record<string, unknown>
+    const tag = obj.tag
+    const content = obj.content
+    if ((tag === 'markdown' || tag === 'lark_md' || tag === 'plain_text') && typeof content === 'string') {
+      const text = content.trim()
+      if (text !== '') lines.push(text)
+      return
+    }
+    // 标题在 `header.title`、2.0 正文在 `body.elements`、1.0 正文在 `elements`。
+    // 直接遍历值，不依赖具体字段名：卡片组件种类太多，逐个列会漏新组件。
+    for (const value of Object.values(obj)) visit(value)
+  }
+  visit(card)
+  // 卡片里 markdown 段落常常自带换行，逐段拼回去时用单换行分隔，避免出现成片空行。
+  const text = lines.join('\n').trim()
+  if (text === '') return ''
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…（引用内容过长，已截断）` : text
+}
+
+/**
  * Render the message a chat message quotes back, as a block to prepend.
  *
  * 飞书的「引用」不是正文的一部分：入站事件只带 `parent_id`，被引用的那条要
@@ -726,6 +795,57 @@ export function quotedPrefix(
       : '（这条被引用的消息没有文字内容）'
   const head = when === undefined ? `[引用 · ${who}]` : `[引用 · ${who} · ${when}]`
   return `${head}\n${text}\n[/引用]\n`
+}
+
+/**
+ * SDK 读不懂卡片正文时的占位词。
+ *
+ * `@larksuite/channel` 的 `convertInteractive` 只认 `plain_text` / `lark_md` /
+ * `markdown` 三种节点；一个都提取不到就吐这个字符串。所以它出现等于「正文没读到」，
+ * 而不是「用户真的发了这几个字」——拿到它就该去补读原始卡片 JSON。
+ */
+const CARD_PLACEHOLDER = /^\[interactive card\]$/i
+
+/**
+ * 把引用到的卡片正文补进 `quoted.content`，其余字段原样保留。
+ *
+ * 为什么需要这一步：`fetchMessage` 走的是 `im.v1.message.get` 且**不带**
+ * `card_msg_content_type`，2.0 卡片只会返回降级后的 v1 占位，SDK 归一化后
+ * 就变成 `[interactive card]` —— 用户引用一张面板卡说「这个再改改」，模型
+ * 看到的全是同一个括号词组，根本不知道指的是哪张卡。带上 `user_card_content`
+ * 重读一次才拿得到原始 JSON。
+ *
+ * 只在「读回来的内容等于占位词」时才补读：普通文本消息一次就够，不额外发请求。
+ * 补读失败就退回原样——引用少一段正文，不能让整条消息发不出去。
+ */
+async function withCardText(
+  quoted: NormalizedMessage | undefined,
+  messageId: string,
+  fetchRaw: ((messageId: string) => Promise<RawCardMessage[]>) | undefined,
+): Promise<NormalizedMessage | undefined> {
+  if (quoted === undefined) return quoted
+  const body = quoted.content.trim()
+  // 不是占位词说明已经读到了真内容（普通文本、图片说明、1.0 卡片正文都算）。
+  if (body !== '' && !CARD_PLACEHOLDER.test(body)) return quoted
+  if (fetchRaw === undefined) return quoted
+  try {
+    const items = await fetchRaw(messageId)
+    const raw = items[0]
+    const content = raw?.body?.content
+    if (typeof content !== 'string' || content === '') return quoted
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      // 不是 JSON 就当纯文本用：某些卡片降级后会直接给一段可读字符串。
+      return { ...quoted, content }
+    }
+    const text = cardText(parsed)
+    if (text === '') return quoted
+    return { ...quoted, content: text }
+  } catch {
+    return quoted
+  }
 }
 
 /** What one chat message becomes, and what the chat is told about it. */
@@ -2307,7 +2427,17 @@ export function installBridge(
         const fetchOne = port.fetchMessage
         if (typeof fetchOne !== 'function') return ''
         try {
-          return quotedPrefix(await fetchOne.call(port, parentId), config.limits.quoteChars, config.showMessageTime)
+          const quotedMsg = await fetchOne.call(port, parentId)
+          // fetchRawMessage 是 transport 实例上的方法，内部要读 this.rawClient，
+          // 所以必须带着 port 这个 this 绑过去，不能裸传函数引用。
+          const fetchRaw = typeof port.fetchRawMessage === 'function'
+            ? port.fetchRawMessage.bind(port)
+            : undefined
+          return quotedPrefix(
+            await withCardText(quotedMsg, parentId, fetchRaw),
+            config.limits.quoteChars,
+            config.showMessageTime,
+          )
         } catch (error) {
           // A quote the app cannot read must not cost the whole message: the
           // user's own words still reach the model, minus the quote.

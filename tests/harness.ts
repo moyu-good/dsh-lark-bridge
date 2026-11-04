@@ -18,7 +18,7 @@ import * as plugin from '../src/index.ts'
 import { commandName } from '../src/commands.ts'
 import { internals } from '../src/runtime.ts'
 import type { ChannelConfig } from '../src/runtime.ts'
-import type { ChannelPort } from '../src/bridge.ts'
+import type { ChannelPort, RawCardMessage } from '../src/bridge.ts'
 import type {
   HostAgent,
   HostAgentOptions,
@@ -97,6 +97,15 @@ export function createFakePort() {
   const quotedById = new Map<string, NormalizedMessage>()
   /** Ids passed to `fetchMessage`, in call order. */
   const fetched: string[] = []
+  /**
+   * 原始消息（`im.v1.message.get` 的 `data.items[]`），按 id 存。
+   *
+   * 和 {@link quotedById} 分开：前者是归一化后的结果（卡片会被降级成
+   * `[interactive card]`），这里是要给 `fetchRawMessage` 的原始 JSON。
+   */
+  const rawById = new Map<string, RawCardMessage>()
+  /** Ids passed to `fetchRawMessage`, in call order. */
+  const fetchedRaw: string[] = []
   const state = {
     connects: 0,
     disconnects: 0,
@@ -198,6 +207,13 @@ export function createFakePort() {
       // throwing here would hide the degradation path behind a fake-only shape.
       return quotedById.get(messageId)
     },
+    async fetchRawMessage(messageId) {
+      fetchedRaw.push(messageId)
+      // 真实 transport 在这里会带 card_msg_content_type=user_card_content，
+      // 拿回**未降级**的原始卡片 JSON；fake 照这个契约答，卡片正文才读得出来。
+      const raw = rawById.get(messageId)
+      return raw === undefined ? [] : [raw]
+    },
     async listSlashCommands() {
       if (state.failPanelList) throw new Error('no permission to list commands (fake)')
       return panelCommands.map((c, index) => ({ command: c, commandId: `cmd_${index}` }))
@@ -246,6 +262,8 @@ export function createFakePort() {
     resourceBytes,
     quotedById,
     fetched,
+    rawById,
+    fetchedRaw,
     cots,
     state,
     /** Deliver one inbound chat message to every subscribed handler. */

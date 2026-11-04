@@ -112,6 +112,12 @@ describe('replay port', () => {
       async send() { return { messageId: 'om_class' } }
       async stream() { return { messageId: 'om_class' } }
       async updateCard() {}
+      // 引用卡片要用它读原始 JSON：和 send/on 一样长在原型上，
+      // wrapper 不绑过去的话，引用卡片会静默退回占位词。
+      async fetchRawMessage(messageId: string) {
+        this.calls.push(`raw:${messageId}`)
+        return [{ message_id: messageId }]
+      }
     }
     const inner = new ClassPort() as unknown as ReplayPort
     const port = createReplayPort(inner, () => {}, () => {})
@@ -124,5 +130,8 @@ describe('replay port', () => {
     expect((inner as unknown as { calls: string[] }).calls).toEqual(['connect', 'disconnect'])
     await port.send('oc_1', { markdown: 'hi' })
     expect(port.pending()).toBe(0)
+    const raw = await port.fetchRawMessage!('om_raw_1')
+    expect(raw[0]?.message_id).toBe('om_raw_1')
+    expect((inner as unknown as { calls: string[] }).calls).toContain('raw:om_raw_1')
   })
 })

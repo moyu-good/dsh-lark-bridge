@@ -64,6 +64,18 @@ interface StreamChunkLike {
     };
 }
 export { messageTimeStamp } from './clock.ts';
+/** 一条原始消息里我们实际要读的字段（`im.v1.message.get` 的 `data.items[]`）。 */
+export interface RawCardMessage {
+    readonly message_id?: string;
+    readonly msg_type?: string;
+    readonly body?: {
+        readonly content?: string;
+    };
+    readonly create_time?: string | number;
+    readonly sender?: {
+        readonly id?: string;
+    };
+}
 /**
  * The transport surface the bridge drives. `LarkChannel` from
  * `@larksuite/channel` satisfies it structurally; tests substitute a fake.
@@ -100,6 +112,19 @@ export interface ChannelPort extends OutboundPort, SlashPanelPort, ImagePort, Co
      * quote — degraded, not broken.
      */
     fetchMessage?(messageId: string): Promise<NormalizedMessage | undefined>;
+    /**
+     * Read one message back as the transport's raw `data.items[]`.
+     *
+     * 和 {@link fetchMessage} 的区别只有一处，但很关键：`fetchMessage` 调
+     * `im.v1.message.get` 时**没带** `card_msg_content_type`，2.0 卡片拿回来是被降级的
+     * v1 占位（模型只看到 `[interactive card]`）。`fetchRawMessage` 默认带
+     * `user_card_content`，返回的是发送时的原始卡片 JSON，引用一块卡片才有内容可读。
+     *
+     * 同样可选：测试替身不必建模这个接口。
+     */
+    fetchRawMessage?(messageId: string, opts?: {
+        cardContentType?: string | null;
+    }): Promise<RawCardMessage[]>;
     /** Replace a sent card's content in place. */
     updateCard(messageId: string, card: object): Promise<void>;
     /** Add an emoji reaction to a message; resolves the platform reaction id. */
@@ -131,6 +156,25 @@ export declare function chatUserMessage(msg: NormalizedMessage, images: Collecte
  *   too small to be worth a word.
  */
 export declare function sessionGapPhrase(sessionId: string, now: number): string;
+/**
+ * Pull the readable text out of a card JSON whose shape may be 1.0 or 2.0.
+ *
+ * 飞书的卡片消息有两种结构：1.0 是 `title` + `elements`，2.0 是 `schema: "2.0"`
+ * + `header` + `body.elements`。这里的任务只有一个——把卡片里**人能看到的那几行字**
+ * 按阅读顺序取出来，拼成纯文本。
+ *
+ * 为什么不能直接用 `im.v1.message.get` 的默认返回：不带 `card_msg_content_type`
+ * 时，2.0 卡片会降级成 v1 占位（`[interactive card]` 就是这么来的），引用一块面板卡
+ * 时模型只拿到一个括号词组。带上 `user_card_content` 才拿得到原始 JSON。
+ *
+ * 取舍：这里只认 `plain_text` / `lark_md` / `markdown` 三种文本节点，其余结构一律
+ * 靠遍历找下去。卡片里本来就没有别的可读文字，认多了只会把样式当内容吐出来。
+ *
+ * @param card - the parsed card JSON (`body.content` of an interactive message).
+ * @param maxChars - how much text to keep; truncation is marked, never silent.
+ * @returns the readable text, '' when the card carries none.
+ */
+export declare function cardText(card: unknown, maxChars?: number): string;
 /**
  * Render the message a chat message quotes back, as a block to prepend.
  *
