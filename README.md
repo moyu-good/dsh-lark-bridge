@@ -179,7 +179,7 @@ Type `/help` in the chat for the live list.
 |---|---|
 | `/stop` | Cancel the running turn |
 | `/new` | Start a new session (`/clear` is an alias) |
-| `/resume` | Switch this chat back to a stored session: bare lists them (number, time, directory, and for the newest few "what you said last"), `/resume <n>` or `/resume <session id>` moves onto one, and the switch reports where you left off |
+| `/resume` | Switch this chat back to a stored session: bare lists them (number, time, directory, **turns / your messages / tool calls / size / span**, and "what you said last"); `/resume <n>` or `/resume <session id>` moves onto one |
 | `/manual` | The full user guide (start here if you're new) |
 | `/sessions` | Search this chat's session history |
 | `/session` | Everything about the session this chat is talking to: id, directory, the model route actually used, log size, context tokens and distance to the warning line, preset and busy policy |
@@ -366,7 +366,7 @@ Repo map, the branch/MR flow and the version policy live in **[CONTRIBUTING.md](
 
 ```sh
 pnpm hygiene                    # repo hygiene (deployment terms stay local)
-pnpm test                       # 741 tests in 72 spec files
+pnpm test                       # 749 tests in 72 spec files
 pnpm contract-test              # 43 host-contract checks
 pnpm contract-drift             # drift check against upstream dsh master
 node scripts/check-readme-parity.mjs   # the two READMEs stay in step

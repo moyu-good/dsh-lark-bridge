@@ -23,6 +23,22 @@ export interface SessionPreview {
     readonly lastAssistant?: string;
     /** 最后一个事件的时间（epoch 毫秒）。 */
     readonly lastActivity?: number;
+    /** 第一个事件的时间（epoch 毫秒），用来算这段对话跨了多久。 */
+    readonly startedAt?: number;
+    /**
+     * 真人发了多少次消息。
+     *
+     * 之所以不直接报 `turn`：turn 的推进不只有人说话，被中断、被压缩、被
+     * 目标续跑都会开新的 turn，所以 turn 数会明显多于「你说了几句话」
+     * （实测有 54 个 turn 里只有 39 条真人消息的会话）。
+     */
+    readonly userMessages?: number;
+    /** 有多少轮 turn——即这段对话进行过多少次来回。 */
+    readonly turns?: number;
+    /** 工具调用次数，代表这轮干了多少活。 */
+    readonly toolCalls?: number;
+    /** 日志占用字节数。 */
+    readonly bytes?: number;
 }
 /** {@link readSessionPreview} 的可调项。 */
 export interface PreviewOptions {
@@ -77,6 +93,32 @@ export declare function findSessionFile(sessionId: string, home?: string): Promi
  * @returns 正文。
  */
 export declare function stripEnvelope(text: string): string;
+/**
+ * 把一次预览的规模压成一行，放在会话标题下面。
+ *
+ * 只报轮次是不够的：一个 54 轮的会话可能因为跑了三千多次工具调用而变成
+ * 几 MB（实测如此），也可能只是几 KB 的闲聊。反过来，几 MB 的会话也可能
+ * 只有 1 轮。所以三样都得给——说了几轮、你说了几句、干了多少活——再加一个
+ * 「💬/📄」标记，让人一眼分出「那个很长的会话」。
+ * @param preview - 一次会话预览。
+ * @returns 形如「54 轮 · 你说了 39 句 · 3889 次工具调用 · 7.9 MB」。
+ */
+export declare function describeScale(preview: SessionPreview): string;
+/**
+ * 把字节数写成习惯的单位。
+ * @param bytes - 字节数。
+ * @returns 形如 `7.9 MB`；不足 1 KB 用字节。
+ */
+export declare function formatBytes(bytes: number): string;
+/**
+ * 一段对话持续了多久，写成「3 天」「5 小时」这种。
+ *
+ * 跨度和规模是两回事：一个连聊三天的会话可能只有 20 轮，但它显然比
+ * 一个两小时里说了 60 句的会话更「长」。两者一起看才判断得准。
+ * @param preview - 一次会话预览。
+ * @returns 形如 `3.9 天`；拿不到起止时间时为空串。
+ */
+export declare function describeSpan(preview: SessionPreview): string;
 /**
  * 把一段消息压成一行预览。
  * @param text - 原始文本。

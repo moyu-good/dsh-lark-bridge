@@ -44,6 +44,22 @@ export interface SessionPreview {
   readonly lastAssistant?: string
   /** 最后一个事件的时间（epoch 毫秒）。 */
   readonly lastActivity?: number
+  /** 第一个事件的时间（epoch 毫秒），用来算这段对话跨了多久。 */
+  readonly startedAt?: number
+  /**
+   * 真人发了多少次消息。
+   *
+   * 之所以不直接报 `turn`：turn 的推进不只有人说话，被中断、被压缩、被
+   * 目标续跑都会开新的 turn，所以 turn 数会明显多于「你说了几句话」
+   * （实测有 54 个 turn 里只有 39 条真人消息的会话）。
+   */
+  readonly userMessages?: number
+  /** 有多少轮 turn——即这段对话进行过多少次来回。 */
+  readonly turns?: number
+  /** 工具调用次数，代表这轮干了多少活。 */
+  readonly toolCalls?: number
+  /** 日志占用字节数。 */
+  readonly bytes?: number
 }
 
 /** {@link readSessionPreview} 的可调项。 */
@@ -68,6 +84,7 @@ interface SessionEvent {
     readonly content?: readonly ContentPart[]
     readonly source?: { readonly kind?: string }
     readonly message?: { readonly content?: readonly ContentPart[] }
+    readonly turn?: number
   }
 }
 
@@ -189,6 +206,54 @@ export function stripEnvelope(text: string): string {
 }
 
 /**
+ * 把一次预览的规模压成一行，放在会话标题下面。
+ *
+ * 只报轮次是不够的：一个 54 轮的会话可能因为跑了三千多次工具调用而变成
+ * 几 MB（实测如此），也可能只是几 KB 的闲聊。反过来，几 MB 的会话也可能
+ * 只有 1 轮。所以三样都得给——说了几轮、你说了几句、干了多少活——再加一个
+ * 「💬/📄」标记，让人一眼分出「那个很长的会话」。
+ * @param preview - 一次会话预览。
+ * @returns 形如「54 轮 · 你说了 39 句 · 3889 次工具调用 · 7.9 MB」。
+ */
+export function describeScale(preview: SessionPreview): string {
+  const parts: string[] = []
+  if (preview.turns !== undefined && preview.turns > 0) parts.push(`${preview.turns} 轮`)
+  if (preview.userMessages !== undefined && preview.userMessages > 0) parts.push(`你说了 ${preview.userMessages} 句`)
+  if (preview.toolCalls !== undefined && preview.toolCalls > 0) parts.push(`${preview.toolCalls} 次工具调用`)
+  if (preview.bytes !== undefined && preview.bytes > 0) parts.push(formatBytes(preview.bytes))
+  return parts.join(' · ')
+}
+
+/**
+ * 把字节数写成习惯的单位。
+ * @param bytes - 字节数。
+ * @returns 形如 `7.9 MB`；不足 1 KB 用字节。
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * 一段对话持续了多久，写成「3 天」「5 小时」这种。
+ *
+ * 跨度和规模是两回事：一个连聊三天的会话可能只有 20 轮，但它显然比
+ * 一个两小时里说了 60 句的会话更「长」。两者一起看才判断得准。
+ * @param preview - 一次会话预览。
+ * @returns 形如 `3.9 天`；拿不到起止时间时为空串。
+ */
+export function describeSpan(preview: SessionPreview): string {
+  if (preview.startedAt === undefined || preview.lastActivity === undefined) return ''
+  const ms = preview.lastActivity - preview.startedAt
+  if (!(ms > 0)) return ''
+  const hours = ms / 3_600_000
+  if (hours < 1) return '不到 1 小时'
+  if (hours < 24) return `${Math.round(hours)} 小时`
+  return `${(hours / 24).toFixed(1)} 天`
+}
+
+/**
  * 把一段消息压成一行预览。
  * @param text - 原始文本。
  * @param maxChars - 最多保留多少字符。
@@ -248,7 +313,38 @@ export async function readSessionPreview(file: string, options: PreviewOptions =
   let lastUser: string | undefined
   let lastAssistant: string | undefined
   let lastActivity: number | undefined
+  let startedAt: number | undefined
+  let userMessages = 0
+  let toolCalls = 0
+  // turn 号来自 `turn/start` 的 data.turn，用集合是因为同一号不该重复计数；
+  // 直接数事件数会被「重放/续跑」写下的重复 turn 骗到。
+  const turnNumbers = new Set<number>()
 
+  // 计数必须纵览全量：轮次和工具调用次数散落在整个文件里，只读尾部会少算。
+  // 这一步顺带把每条事件都解一遍，比再读第二遍便宜。
+  for (const span of frames) {
+    let raw: string
+    try {
+      raw = (await decompress(buffer.subarray(span.start, span.end))).toString('utf8')
+    } catch {
+      continue
+    }
+    for (const line of raw.split('\n')) {
+      if (line === '') continue
+      let event: SessionEvent
+      try {
+        event = JSON.parse(line) as SessionEvent
+      } catch {
+        continue
+      }
+      if (startedAt === undefined && typeof event.time === 'number') startedAt = event.time
+      if (event.type === 'turn/start' && typeof event.data?.turn === 'number') turnNumbers.add(event.data.turn)
+      else if (event.type === 'user/message' && event.data?.source?.kind === 'user') userMessages += 1
+      else if (event.type === 'tool/call') toolCalls += 1
+    }
+  }
+
+  // 再从尾部往前找最后两句话；只扫最近若干帧，长会话不必为预览解到底。
   for (let index = frames.length - 1; index >= 0 && frames.length - index <= maxFrames; index -= 1) {
     const span = frames[index]!
     let raw: string
@@ -289,6 +385,11 @@ export async function readSessionPreview(file: string, options: PreviewOptions =
     ...(lastUser === undefined ? {} : { lastUser }),
     ...(lastAssistant === undefined ? {} : { lastAssistant }),
     ...(lastActivity === undefined ? {} : { lastActivity }),
+    ...(startedAt === undefined ? {} : { startedAt }),
+    userMessages,
+    turns: turnNumbers.size,
+    toolCalls,
+    bytes: buffer.length,
   }
 }
 

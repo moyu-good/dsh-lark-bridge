@@ -5,7 +5,10 @@ import { zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import {
   condense,
+  describeScale,
+  describeSpan,
   findSessionFile,
+  formatBytes,
   readSessionPreview,
   readPreviews,
   scanFrames,
@@ -36,6 +39,16 @@ function assistantEvent(parts: { type: string; text?: string }[]): string {
 /** 任意其它事件，用来把两条目标消息隔开。 */
 function fillerEvent(seq: number): string {
   return JSON.stringify({ type: 'step/start', seq, time: 3000, data: { turn: 1, step: seq } })
+}
+
+/** 一条 turn/start 事件，轮次的唯一来源。 */
+function turnEvent(turn: number): string {
+  return JSON.stringify({ type: 'turn/start', seq: 100 + turn, time: 4000, data: { turn } })
+}
+
+/** 一条工具调用事件。 */
+function toolEvent(seq: number): string {
+  return JSON.stringify({ type: 'tool/call', seq, time: 4500, data: { name: 'pwsh' } })
 }
 
 /**
@@ -116,6 +129,73 @@ describe('会话预览', () => {
     const previews = await readPreviews(['feishu-oc_s7:r1', 'feishu-oc_s7:missing'], { home })
     expect(previews[0]?.lastUser).toBe('在的')
     expect(previews[1]).toBeUndefined()
+  })
+
+  it('数出轮次、真人消息数和工具调用次数', async () => {
+    const file = writeSession('feishu-oc_s8', [
+      [turnEvent(1), userEvent('第一句'), toolEvent(1), toolEvent(2)],
+      [turnEvent(2), userEvent('第二句'), toolEvent(3)],
+      [turnEvent(3), userEvent('第三句')],
+    ])
+    const preview = await readSessionPreview(file)
+    expect(preview?.turns).toBe(3)
+    expect(preview?.userMessages).toBe(3)
+    expect(preview?.toolCalls).toBe(3)
+    expect(preview?.bytes).toBeGreaterThan(0)
+  })
+
+  it('轮次按 turn 号去重，重复写下的同一轮只算一次', async () => {
+    const file = writeSession('feishu-oc_s9', [
+      [turnEvent(1), userEvent('先说')],
+      // 重放会再写一遍同一轮的 turn/start，直接数事件数会多算。
+      [turnEvent(1), turnEvent(2), userEvent('再说')],
+    ])
+    const preview = await readSessionPreview(file)
+    expect(preview?.turns).toBe(2)
+    expect(preview?.userMessages).toBe(2)
+  })
+
+  it('计数纵览全量，不受尾部帧数上限影响', async () => {
+    // 只有 1 帧可读、但那一帧之外的事件不该被忽略。
+    const frames = [[turnEvent(1), userEvent('开头')]]
+    for (let n = 2; n <= 20; n += 1) frames.push([turnEvent(n), userEvent(`第 ${n} 句`)])
+    const file = writeSession('feishu-oc_s10', frames)
+    const preview = await readSessionPreview(file, { maxFrames: 1 })
+    expect(preview?.turns).toBe(20)
+    expect(preview?.userMessages).toBe(20)
+    // 尾部预览仍只取了最后那一段。
+    expect(preview?.lastUser).toBe('第 20 句')
+  })
+})
+
+describe('会话规模描述', () => {
+  it('把规模写成一行', () => {
+    const line = describeScale({ turns: 54, userMessages: 39, toolCalls: 3889, bytes: 8_290_000 })
+    // 去掉兆字节的尾数，避免不同平台格式化差异影响断言。
+    expect(line.startsWith('54 轮 · 你说了 39 句 · 3889 次工具调用 · ')).toBe(true)
+  })
+
+  it('没有的项不占位', () => {
+    expect(describeScale({ turns: 3 })).toBe('3 轮')
+    expect(describeScale({})).toBe('')
+  })
+
+  it('轮次为 0 的会话不写「0 轮」', () => {
+    expect(describeScale({ turns: 0, userMessages: 0, bytes: 1024 })).toBe('1.0 KB')
+  })
+
+  it('字节数按习惯单位写', () => {
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(2048)).toBe('2.0 KB')
+    expect(formatBytes(8_290_000)).toBe('7.9 MB')
+  })
+
+  it('历时按小时或天写', () => {
+    const hour = 3_600_000
+    expect(describeSpan({ startedAt: 0, lastActivity: hour * 5 })).toBe('5 小时')
+    expect(describeSpan({ startedAt: 0, lastActivity: hour * 24 * 3 })).toBe('3.0 天')
+    expect(describeSpan({ startedAt: 0, lastActivity: 1000 })).toBe('不到 1 小时')
+    expect(describeSpan({ startedAt: 0 })).toBe('')
   })
 })
 
