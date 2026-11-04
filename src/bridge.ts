@@ -1399,10 +1399,10 @@ export function installBridge(
    * `subagent/catalog` keyed the row with — so concurrent children can never
    * show one child's work under another child's name.
    */
-  const noteChildActivity = (chatId: string, childId: string, line: string): void => {
+  const noteChildActivity = (chatId: string, childId: string, line: string, kind: 'tool' | 'message' = 'tool'): void => {
     const tracker = subagentTrackers.get(chatId)
     if (tracker === undefined || line.trim() === '') return
-    const entry = subCard.markActivity(tracker, childId, line)
+    const entry = subCard.markActivity(tracker, childId, line, Date.now(), kind)
     if (entry === undefined) return
     if (streamDebug) notify(`dsh-lark-bridge: child ${childId}: ${line.slice(0, 60)}`)
     // The first thing a child does is worth an immediate redraw — otherwise the
@@ -1469,7 +1469,7 @@ export function installBridge(
       const text = event.data.message.content
         .filter(block => block.type === 'text' && block.text)
         .map(block => block.text).join('')
-      noteChildActivity(chatId, childId, text.split('\n').map(l => l.trim()).find(l => l !== '') ?? '')
+      noteChildActivity(chatId, childId, text.split('\n').map(l => l.trim()).find(l => l !== '') ?? '', 'message')
     }
   }
 
@@ -1746,8 +1746,14 @@ export function installBridge(
           // The child is done: stop resolving its session to this chat.
           childChat.delete(info.id)
           const settled = tracker?.entries.get(info.id)
-          if (tracker !== undefined && subCard.settleEntry(tracker, info.id, info.stopReason) !== undefined) {
-            void flushSubagentCard(binding.chatId, tracker, true).catch(reportSendFailure)
+          if (tracker !== undefined) {
+            // 失败时把「它最后说的话」留下面板：只标一个 ❌ 回答不了「为什么
+            // 失败」，读者还得去翻会话记录。子代理的最后一条助手消息通常就是
+            // 错误原文或它卡住的地方。
+            const detail = subCard.failureText(info)
+            if (subCard.settleEntry(tracker, info.id, info.stopReason, Date.now(), detail) !== undefined) {
+              void flushSubagentCard(binding.chatId, tracker, true).catch(reportSendFailure)
+            }
           }
           // Prefer the delivery block (label + duration + what it produced) over
           // the bare「子任务结束 [id]」line, which told the reader nothing.

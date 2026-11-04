@@ -144,7 +144,7 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 | 🎯 **goal/todo 实时卡＋自动续跑** | 阶段变化实时进聊天；`autoResumeGoals`（需手动开启）重启后自动恢复 |
 | ✋ **任务中插话** | `busyPolicy`：`queue`（默认）排队等下一轮，`steer` 在下一个 step 边界接管方向、不丢已做的工作，`inject` 只作上下文、不唤醒驱动器 |
 | 📦 **压缩透明化** | 「正在压缩…」→ 摘要＋释放 token 数；修剪报告删除条数 |
-| 🧑‍💻 **子代理 fan-out** | workflow 以文本流呈现：run 开始、子代理开启/结束、run 结束 |
+| 🧑‍💻 **子代理执行面板** | 一张卡片就地刷新全部子代理：失败置顶并带错误原文、进行中显示进度条与心跳（久无动静标黄）、已结束的折叠、结尾分开报「完成 / 失败 / 在跑」 |
 | 👥 **团队面板** | 宿主跑起多 agent 团队时，一张卡片显示成员、共享任务与队内往来消息，就地刷新 |
 | 🔍 **会话历史检索** | `/sessions <关键词>` 对本聊天历史全文搜索 |
 | 🌐 **多端舰队同步** | `web` 与 `desktop` 两种形态同一套会话库；端级云端仲裁（`deviceId:form:profile`）——不会双回复，活跃端掉线自动改选 |
@@ -365,7 +365,7 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 
 ```sh
 pnpm hygiene                    # 仓库卫生（部署专有词只留在本机）
-pnpm test                       # 749 条测试 / 72 个 spec 文件
+pnpm test                       # 768 条测试 / 72 个 spec 文件
 pnpm contract-test              # 43 条宿主契约检查
 pnpm contract-drift             # 对上游 dsh master 的漂移检查
 node scripts/check-readme-parity.mjs   # 两份 README 保持同构

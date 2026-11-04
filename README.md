@@ -144,7 +144,7 @@ Daily ops: run `pnpm dlx @deepseek-ai/dsh web` again (subsequent runs hit the pn
 | 🎯 **Live goal / todo cards + auto-resume** | Phase changes stream into chat; `autoResumeGoals` (opt-in) re-arms after restarts |
 | ✋ **Mid-turn steering** | `busyPolicy`: `queue` (default) waits its turn, `steer` takes over at the next step boundary without discarding the work, `inject` adds context without waking the driver |
 | 📦 **Compaction transparency** | "Compacting…" → summary + released tokens; prunes report trimmed count |
-| 🧑‍💻 **Subagent fan-out** | Workflow runs stream as text lines: run start, child open/end, run end |
+| 🧑‍💻 **Subagent panel** | One card updates in place for every child: failures float to the top with their error text, live rows show a progress bar and heartbeat (amber when quiet), finished ones collapse, and the footer splits「completed / failed / running」 |
 | 👥 **Team panel** | When the host runs a team, one card shows the members, shared tasks and messages between them, updated in place |
 | 🔍 **Session history search** | `/sessions <keyword>` full-text search over this chat's stored history |
 | 🌐 **Multi-surface fleet sync** | `web` and `desktop` forms share one session library; per-endpoint cloud arbitration (`deviceId:form:profile`) — no double replies, automatic failover election |
@@ -366,7 +366,7 @@ Repo map, the branch/MR flow and the version policy live in **[CONTRIBUTING.md](
 
 ```sh
 pnpm hygiene                    # repo hygiene (deployment terms stay local)
-pnpm test                       # 749 tests in 72 spec files
+pnpm test                       # 768 tests in 72 spec files
 pnpm contract-test              # 43 host-contract checks
 pnpm contract-drift             # drift check against upstream dsh master
 node scripts/check-readme-parity.mjs   # the two READMEs stay in step

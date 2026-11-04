@@ -5,12 +5,16 @@ import {
   createTracker,
   deliveryText,
   elapsedText,
+  failureText,
   markActivity,
+  parseProgress,
   RECENT_MAX,
   render,
   runningEntries,
   settleEntry,
   settleRunningOneShots,
+  STALL_MS,
+  summaryText,
   ACTIVITY_MAX,
 } from '../src/subagent-card.ts'
 import { isSubagentCatalogEvent, isSubagentDescriptorEvent, type HostSessionEvent } from '../src/host.ts'
@@ -131,14 +135,16 @@ describe('multi-agent panel rows', () => {
     const state = createTracker()
     addEntry(state, 'child-1', { mode: 'one-shot', label: '纪四复核' }, 0)
     markActivity(state, 'child-1', '跑 自动通关 --era=纪四', 1000)
-    const card = render(state, 5000) as { header: { title: { content: string } }, elements: { text: { content: string } }[] }
-    const body = card.elements[0]!.text.content
-    expect(card.header.title.content).toContain('1 进行中')
+    const card = render(state, 5000) as { header: { title: { content: string } }, elements: { text?: { content: string } }[] }
+    const body = cardText(card)
+    expect(card.header.title.content).toContain('1 在跑')
     expect(body).toContain('纪四复核')
     expect(body).toContain('进行中')
     expect(body).toContain('5秒')
     expect(body).toContain('跑 自动通关 --era=纪四')
-    expect(body).toContain('0 结束 / 1 进行中')
+    // 只报有内容的：0 完成不占位。
+    expect(body).toContain('1 在跑')
+    expect(body).not.toContain('0 完成')
   })
 
   it('remembers only distinct lines — one streaming sentence is quoted once', () => {
@@ -165,7 +171,8 @@ describe('multi-agent panel rows', () => {
     settleEntry(state, 'c1', 'completed', 60_000)
     const text = deliveryText(state.entries.get('c1')!, 60_000)
     expect(text).toContain('【子代理完成】纪四复核')
-    expect(text).toContain('5 条动作')
+    // 工具调用和发言分开数：合成一个「N 条动作」读不出工作量的区别。
+    expect(text).toContain('已做 5 步')
     expect(text).toContain('1分')
     expect(text).toContain('↳ 第 4 步')
     expect(text).not.toContain('↳ 第 1 步')   // only the tail is quoted
@@ -176,7 +183,8 @@ describe('multi-agent panel rows', () => {
     const state = createTracker()
     addEntry(state, 'c2', { mode: 'one-shot', label: '空跑' }, 0)
     settleEntry(state, 'c2', 'aborted', 1000)
-    expect(deliveryText(state.entries.get('c2')!, 1000)).toBe('⏹️【子代理已中止】空跑 · 0 条动作 · 1秒')
+    // 没干活就不写「0 步」，别让空跑的行看起来像报过错。
+    expect(deliveryText(state.entries.get('c2')!, 1000)).toBe('⏹️【子代理已中止】空跑 · 1秒')
   })
 
   it('renders an empty panel without a runner count', () => {
@@ -189,5 +197,182 @@ describe('multi-agent panel rows', () => {
     expect(elapsedText(0, 80_000)).toBe('1分20秒')
     expect(elapsedText(0, 120_000)).toBe('2分')
     expect(elapsedText(0, 3_600_000)).toBe('1小时0分')
+  })
+})
+
+/** 取卡片里所有文本元素拼起来，方便断言顺序和内容。 */
+function cardText(card: object): string {
+  const elements = (card as { elements: { text?: { content: string } }[] }).elements
+  return elements.map(element => element.text?.content ?? '').filter(content => content !== '').join('\n')
+}
+
+describe('面板排序：谁需要你看，谁排前面', () => {
+  it('失败的排在进行中的前面', () => {
+    const state = createTracker()
+    addEntry(state, 'run', { mode: 'one-shot', label: '还在跑的' }, 1)
+    addEntry(state, 'bad', { mode: 'one-shot', label: '炸了的' }, 2)
+    settleEntry(state, 'bad', 'error', 100)
+    const body = cardText(render(state, 200))
+    expect(body.indexOf('炸了的')).toBeLessThan(body.indexOf('还在跑的'))
+  })
+
+  it('进行中的排在完成的上面——原来按加入顺序排，跑完的会压在还在跑的上面', () => {
+    const state = createTracker()
+    addEntry(state, 'done', { mode: 'one-shot', label: '早就跑完的' }, 1)
+    addEntry(state, 'run', { mode: 'one-shot', label: '现在还在跑的' }, 2)
+    settleEntry(state, 'done', 'completed', 100)
+    const body = cardText(render(state, 200))
+    expect(body.indexOf('现在还在跑的')).toBeLessThan(body.indexOf('早就跑完的'))
+  })
+
+  it('已结束的收起第二行，进行中的展开', () => {
+    const state = createTracker()
+    addEntry(state, 'run', { mode: 'one-shot', label: '在跑的' }, 1)
+    markActivity(state, 'run', '正在读第三十个文件', 50)
+    addEntry(state, 'done', { mode: 'one-shot', label: '跑完的' }, 1)
+    markActivity(state, 'done', '这是跑完那条的旧动作', 50)
+    settleEntry(state, 'done', 'completed', 100)
+    const body = cardText(render(state, 200))
+    expect(body).toContain('正在读第三十个文件')
+    expect(body).not.toContain('这是跑完那条的旧动作')
+  })
+
+  it('已结束超过三条就折叠，并说明还有几个', () => {
+    const state = createTracker()
+    for (let i = 0; i < 6; i += 1) {
+      addEntry(state, `d${i}`, { mode: 'one-shot', label: `完成 ${i}` }, i)
+      settleEntry(state, `d${i}`, 'completed', 100 + i)
+    }
+    const body = cardText(render(state, 500))
+    expect(body).toContain('另有 3 个已结束的子代理未列出')
+    expect(body).toContain('完成 5')
+    expect(body).not.toContain('完成 0')
+  })
+})
+
+describe('失败必须说清为什么', () => {
+  it('失败行带上错误原文', () => {
+    const state = createTracker()
+    addEntry(state, 'bad', { mode: 'one-shot', label: '接口文档整理' }, 1)
+    settleEntry(state, 'bad', 'error', 100, '语法错误：openapi.json 第 47 行缺少逗号')
+    const body = cardText(render(state, 200))
+    expect(body).toContain('语法错误：openapi.json 第 47 行缺少逗号')
+  })
+
+  it('没有原文时退回 stopReason，而不是只标一个叉', () => {
+    const state = createTracker()
+    addEntry(state, 'bad', { mode: 'one-shot', label: 'x' }, 1)
+    settleEntry(state, 'bad', 'max-tokens', 100)
+    expect(cardText(render(state, 200))).toContain('max-tokens')
+  })
+
+  it('从结束事件里捞最后一条助手消息作失败原因', () => {
+    expect(failureText({ stopReason: 'error', lastAssistantMessage: [{ type: 'text', text: '连不上数据库' }] }))
+      .toBe('连不上数据库')
+  })
+
+  it('结束事件没有助手消息时返回空串', () => {
+    expect(failureText({ stopReason: 'error' })).toBe('')
+    expect(failureText({ stopReason: 'error', lastAssistantMessage: [] })).toBe('')
+  })
+
+  it('失败项的失败行不会被折叠掉', () => {
+    const state = createTracker()
+    addEntry(state, 'bad', { mode: 'one-shot', label: '炸的' }, 1)
+    settleEntry(state, 'bad', 'error', 100, '磁盘写满了')
+    // 再塞六个成功的，把失败项挤出「最近三条」的常规视野。
+    for (let i = 0; i < 6; i += 1) {
+      addEntry(state, `ok${i}`, { mode: 'one-shot', label: `成功 ${i}` }, i)
+      settleEntry(state, `ok${i}`, 'completed', 200 + i)
+    }
+    expect(cardText(render(state, 500))).toContain('磁盘写满了')
+  })
+
+  it('统计里失败和完成分开报', () => {
+    const state = createTracker()
+    addEntry(state, 'a', { mode: 'one-shot', label: 'a' }, 1)
+    settleEntry(state, 'a', 'completed', 10)
+    addEntry(state, 'b', { mode: 'one-shot', label: 'b' }, 1)
+    settleEntry(state, 'b', 'error', 10)
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 1)
+    expect(summaryText(state)).toBe('1 完成 · 1 失败 · 1 在跑')
+  })
+})
+
+describe('进度与卡死', () => {
+  it('从子代理的话里认出 8/23 这样的进度', () => {
+    expect(parseProgress('正在抓取，已处理 8/23 区')).toEqual({ done: 8, total: 23 })
+    expect(parseProgress('完成 3 / 7 项')).toEqual({ done: 3, total: 7 })
+  })
+
+  it('不把日期、版本号、URL 当进度', () => {
+    expect(parseProgress('2026/11/04 的报表')).toBeUndefined()
+    expect(parseProgress('升级到 v1/2')).toBeUndefined()
+    expect(parseProgress('取 5/2 的平均')).toBeUndefined()
+    expect(parseProgress('已完成 1/1')).toBeUndefined()
+  })
+
+  it('进度只增不减，换个话题说别的数字不会把进度抹掉', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 0)
+    markActivity(state, 'c', '已处理 8/23 区', 10)
+    markActivity(state, 'c', '接下来换个角度', 20)
+    expect(state.entries.get('c')?.progress).toEqual({ done: 8, total: 23 })
+  })
+
+  it('有进度时画进度条代替纯时长', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 0)
+    markActivity(state, 'c', '已处理 8/23 区', 100)
+    const body = cardText(render(state, 200))
+    expect(body).toContain('▓▓░░░ 8/23')
+  })
+
+  it('长时间没动静标黄并写明多久', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 0)
+    markActivity(state, 'c', '正在跑测试', 1_000)
+    const body = cardText(render(state, 1_000 + STALL_MS + 60_000))
+    expect(body).toContain('🟡')
+    expect(body).toContain('无新动静')
+  })
+
+  it('刚安静一会儿只说「最近动作 N 前」，不报警', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 0)
+    markActivity(state, 'c', '正在跑测试', 1_000)
+    const body = cardText(render(state, 1_000 + 45_000))
+    expect(body).not.toContain('🟡')
+    expect(body).toContain('最近动作 45秒前')
+  })
+
+  it('卡住时标题报警并转黄，但不冒充失败', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 0)
+    markActivity(state, 'c', '正在跑测试', 1_000)
+    const card = render(state, 1_000 + STALL_MS + 1_000) as {
+      header: { template: string, title: { content: string } }
+    }
+    expect(card.header.title.content).toContain('1 疑似卡住')
+    // 黄不是红：它还在跑，只是没动静，跟真出错不该同色。
+    expect(card.header.template).toBe('orange')
+  })
+
+  it('真失败时标题转红，优先级高于卡住', () => {
+    const state = createTracker()
+    addEntry(state, 'stuck', { mode: 'one-shot', label: 'stuck' }, 0)
+    markActivity(state, 'stuck', '卡着呢', 1_000)
+    addEntry(state, 'bad', { mode: 'one-shot', label: 'bad' }, 0)
+    settleEntry(state, 'bad', 'error', 2_000)
+    const card = render(state, 1_000 + STALL_MS + 1_000) as { header: { template: string } }
+    expect(card.header.template).toBe('red')
+  })
+
+  it('一个子代理干了多少活看得出来', () => {
+    const state = createTracker()
+    addEntry(state, 'c', { mode: 'one-shot', label: 'c' }, 0)
+    for (let i = 0; i < 42; i += 1) markActivity(state, 'c', `第 ${i} 步`, i, 'tool')
+    for (let i = 0; i < 3; i += 1) markActivity(state, 'c', `第 ${i} 段结论`, i, 'message')
+    expect(cardText(render(state, 100))).toContain('已做 42 步 · 3 段发言')
   })
 })
