@@ -2170,7 +2170,36 @@ export function installBridge(
     report: (line) => { ctx.logger.info(line) },
   }
 
-  const sessions = new ConversationSessions(config.sessionScope, ladder, createRotationStore())
+  /**
+   * Forget everything this process keyed by a session that stopped serving its
+   * conversation.
+   *
+   * `/new` disposes the previous agent and moves the chat to a fresh id, but
+   * the per-session maps below outlived it. The binding was the one that hurt:
+   * the ten-minute pressure sweep walks `bySession`, and `tokenMeter.measure`
+   * replays a session's own log, which stays readable after disposal — so the
+   * retired conversation kept being priced and its total was posted into the
+   * chat that had just been rotated, reading as if the brand-new session were
+   * already 127k deep (2026-11-06).
+   *
+   * Only maps that are meaningless once the session is gone are cleared here.
+   * `sessionPresets` deliberately survives `/new`: the chat's model choice is
+   * the chat's, and dropping it would make every rotation re-pick one.
+   */
+  const forgetSession = (sessionId: string): void => {
+    bySession.delete(sessionId)
+    compositions.delete(sessionId)
+    pressureWarned.delete(sessionId)
+    lastMeasured.delete(sessionId)
+    lastAssistantIds.delete(sessionId)
+  }
+
+  const sessions = new ConversationSessions(
+    config.sessionScope,
+    ladder,
+    createRotationStore(),
+    (sessionId) => { forgetSession(sessionId) },
+  )
 
   /**
    * 每条对话最近一次 `/resume` 列表的会话 id，按展示顺序。
@@ -2414,6 +2443,14 @@ export function installBridge(
     // told apart from "the handler never ran at all" — and that distinction
     // decides whether to look inside the bridge or outside it.
     notify(`dsh-lark-bridge: inbound ${msg.messageId} in ${msg.chatId}`)
+    // Diagnostic probe: a ref'd watchdog sitting next to the unref'd stage
+    // timers. If this line appears while a `still in stage=…` never does, the
+    // awaited call is not what stalled — the timer subsystem is, and every
+    // unref'd diagnostic in this file has been lying by staying silent.
+    setTimeout(
+      () => notify(`dsh-lark-bridge: ref'd watchdog fired for ${msg.messageId} (stage timers are unref'd)`),
+      15_000,
+    )
     // Authorization before anything else: a message here starts a
     // shell-capable agent. Refusals stay silent in the chat — answering would
     // turn the bot into an oracle for who is authorized — and name the sender
@@ -2492,7 +2529,10 @@ export function installBridge(
       // over here, before the acquire that may create it.
       pendingSessionCwd.set(
         sessionIdFor(conversationKey(config.sessionScope ?? 'chat', msg)),
-        await chatCwd(msg.chatId),
+        // Staged like the rest: a workspace read that never settles used to
+        // park the handler with no log at all, and every message of the chat
+        // queued behind it.
+        await stage(msg.messageId, 'chat-cwd', () => chatCwd(msg.chatId)),
       )
       const opened = await stage(msg.messageId, 'session-acquire', () => sessions.acquire(msg))
       const binding = await stage(msg.messageId, 'session-bind', () => bindingFor(opened.handle.agent.session.id, msg, opened.handle.agent.session))
@@ -2712,8 +2752,11 @@ export function installBridge(
           // first: a reminder created by an earlier process never announced
           // itself to this one, and /schedules would report "none" for
           // something that is still firing.
-          await seedScheduleRegistry(opened.handle.agent.session)
-          outcome = await runCommandLine(
+          await stage(msg.messageId, 'schedule-seed', () => seedScheduleRegistry(opened.handle.agent.session))
+          // The command body, argument evaluation included: `compositionFor`
+          // and two workspace reads run before the call itself, so a stall
+          // there is just as invisible as one inside a command.
+          outcome = await stage(msg.messageId, 'command', async () => runCommandLine(
             msg.content,
             opened.handle.agent,
             ctx.get('commands') as HostCommands | undefined,
@@ -2759,7 +2802,7 @@ export function installBridge(
               sessionPreset: sessionPresets.get(sessionId),
               schedule: scheduleControl,
             },
-          )
+          ))
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error)
           notify(`dsh-lark-bridge: command execution failed for chat ${msg.chatId}: ${detail}`)

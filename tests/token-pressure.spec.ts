@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { HostSession, HostTokenMeter } from '../src/host.ts'
 import { tokenPressureLine } from '../src/notices.ts'
-import { fakeMessage, mountChannel } from './harness.ts'
+import { createFakeCommands, fakeMessage, mountChannel } from './harness.ts'
 
 const THRESHOLD = 3_000
 /** The schema floor; polls run on the production cadence, driven by fake timers. */
@@ -238,6 +238,64 @@ describe('context-pressure polling', () => {
       const logged = harness.logs.filter(line => line.text.includes('token pressure measure failed'))
       expect(logged.length).toBeGreaterThan(0)
       expect(logged.some(line => line.text.includes('the meter is not ready'))).toBe(true)
+
+      await harness.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never prices a retired session into the chat that just rotated', async () => {
+    // The reported failure (2026-11-06): `/new`, and the fresh chat immediately
+    // reads 「上下文偏重了 … 聊天内容 70,906」. The number belonged to the
+    // previous conversation — `bySession` kept its binding after the rotation,
+    // and `measure` replays a log that stays readable after disposal, so the
+    // sweep priced the retired session and posted it into the same chat.
+    vi.useFakeTimers()
+    try {
+      const meter = createFakeTokenMeter()
+      const harness = await mountChannel(
+        { onboarding: false, tokenPressure: { enabled: true, intervalMs: INTERVAL_MS, threshold: THRESHOLD } },
+        { tokenMeter: meter.service, commands: createFakeCommands().service },
+      )
+      await harness.fake.emitMessage(fakeMessage({ content: '长任务' }))
+      await vi.waitFor(() => {
+        if (harness.agents.created.length === 0) throw new Error('the inbound message created no agent')
+      }, { timeout: 30_000 })
+      const retired = harness.agents.created[0]!.agent.session
+      // Over the line while it was still the live conversation, with no sweep
+      // in between: this is exactly the crossing that used to be announced
+      // after the rotation instead of before it.
+      harness.agents.sessionEvents.get(retired.id)!.push(
+        { tokens: 90_000, surface: 4_000 },
+        { tokens: 55_000, surface: 1_200 },
+      )
+
+      await harness.fake.emitMessage(fakeMessage({ content: '/new' }))
+      await vi.waitFor(() => {
+        expect(harness.agents.created).toHaveLength(2)
+      }, { timeout: 30_000 })
+
+      // The fresh session has no binding yet — the state the chat was in when
+      // the stale warning arrived.
+      await vi.advanceTimersByTimeAsync(INTERVAL_MS)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(pressureWarnings(harness)).toHaveLength(0)
+
+      // And once the fresh session is bound, the sweep prices it alone. The
+      // binding lands before the turn is handed to the agent, so a delivered
+      // followup is proof the sweep has a binding to walk.
+      await harness.fake.emitMessage(fakeMessage({ content: '接着说' }))
+      await vi.waitFor(() => {
+        expect(harness.agents.created[1]!.agent.followup).toHaveBeenCalled()
+      }, { timeout: 30_000 })
+      const fresh = harness.agents.created[1]!.agent.session
+      await vi.advanceTimersByTimeAsync(INTERVAL_MS)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(meter.priced).not.toContain(retired)
+      expect(meter.priced).toContain(fresh)
+      expect(pressureWarnings(harness)).toHaveLength(0)
 
       await harness.dispose()
     } finally {

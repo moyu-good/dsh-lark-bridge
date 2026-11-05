@@ -237,6 +237,19 @@ export interface OpenedSession {
  * registry satisfies them through the bridge, while tests substitute an
  * in-memory object and need no Cordis mount.
  */
+/**
+ * Told once, when a conversation stops running on a session.
+ *
+ * The channel keys per-session state by session id — renderers, the
+ * token-pressure bookkeeping, the last assistant id — and had no way to learn
+ * that a session had been retired. So `/new` left the previous session's
+ * binding in place and the ten-minute pressure sweep kept pricing it: the
+ * previous conversation's token total was posted into the brand-new chat as if
+ * the fresh session were already that heavy. Retirement is a fact this store
+ * owns, so it says so rather than letting every consumer infer it.
+ */
+export type SessionRetireHook = (sessionId: string, key: string) => void
+
 export interface SessionLadder {
   /**
    * Return the live agent for this id, if the host already has one.
@@ -297,10 +310,17 @@ export class ConversationSessions {
    * must wait for it, or it would bind the session being disposed. */
   private readonly rotating = new Map<string, Promise<OpenedSession>>()
 
+  /**
+   * @param scope - the conversation facet every session is keyed by.
+   * @param ladder - the host operations to walk.
+   * @param rotation - where a rotated id is recorded, when the host supplies one.
+   * @param onRetire - told once per session that stops serving its conversation.
+   */
   constructor(
     private readonly scope: SessionScope,
     private readonly ladder: SessionLadder,
     private readonly rotation?: RotationStore,
+    private readonly onRetire?: SessionRetireHook,
   ) {}
 
   /** Session ids currently bound, in insertion order. */
@@ -435,13 +455,7 @@ export class ConversationSessions {
     const persisted = this.rebind(key, newId)
     const previous = this.opened.get(key)
     if (previous !== undefined) {
-      this.opened.delete(key)
-      this.keys.delete(previous.handle.agent.session.id)
-      if (previous.owned) {
-        await previous.handle.dispose().catch((error: unknown) => {
-          this.ladder.report(`dsh-lark-bridge: disposing the pre-rotation session for ${key} failed: ${failureDetail(error)}`)
-        })
-      }
+      await this.retire(key, previous, 'pre-rotation session')
     }
     const opened: OpenedSession = { handle, owned: true }
     this.opened.set(key, opened)
@@ -483,18 +497,45 @@ export class ConversationSessions {
     // 但反过来——内存换了、映射没写——会让本进程和下一条消息看到不同的会话。
     const persisted = this.rebind(key, targetSessionId)
     if (previous !== undefined) {
-      this.opened.delete(key)
-      this.keys.delete(previous.handle.agent.session.id)
-      if (previous.owned) {
-        await previous.handle.dispose().catch((error: unknown) => {
-          this.ladder.report(`dsh-lark-bridge: disposing the pre-resume session for ${key} failed: ${failureDetail(error)}`)
-        })
-      }
+      await this.retire(key, previous, 'pre-resume session')
     }
     const opened: OpenedSession = { handle, owned }
     this.opened.set(key, opened)
     this.keys.set(handle.agent.session.id, key)
     return { ...opened, persisted }
+  }
+
+  /**
+   * Drop one conversation's binding and dispose the agent this store owns.
+   *
+   * Every way a session leaves the store goes through here — `/new`,
+   * `/resume`, and the close sweep — so retirement is reported once per
+   * session, in one shape, and no caller can drop a binding while forgetting
+   * the dispose (or the notice) that has to follow it.
+   * @param key - the conversation key the session served.
+   * @param session - the binding being dropped.
+   * @param cause - what retired it, for the report when disposal fails.
+   * @returns the disposal rejection, if any; the caller decides how loud it is.
+   */
+  private async retire(key: string, session: OpenedSession, cause: string): Promise<unknown | undefined> {
+    const sessionId = session.handle.agent.session.id
+    this.opened.delete(key)
+    this.keys.delete(sessionId)
+    // Before the dispose: the hook is bookkeeping, and a channel that throws
+    // must not leave an owned agent running with nothing routing to it.
+    try {
+      this.onRetire?.(sessionId, key)
+    } catch (error) {
+      this.ladder.report(`dsh-lark-bridge: retire hook for ${sessionId} failed: ${failureDetail(error)}`)
+    }
+    if (!session.owned) return undefined
+    try {
+      await session.handle.dispose()
+      return undefined
+    } catch (error) {
+      this.ladder.report(`dsh-lark-bridge: disposing the ${cause} for ${key} failed: ${failureDetail(error)}`)
+      return error
+    }
   }
 
   /**
@@ -505,12 +546,13 @@ export class ConversationSessions {
    */
   async close(): Promise<void> {
     this.closed = true
-    const owned = [...this.opened.values()].filter(session => session.owned)
+    const bound = [...this.opened.entries()]
     this.opened.clear()
     this.keys.clear()
     this.opening.clear()
-    const settled = await Promise.allSettled(owned.map(session => session.handle.dispose()))
-    const failures = settled.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+    const failures = (await Promise.all(
+      bound.map(async ([key, session]) => this.retire(key, session, 'session')),
+    )).filter(failure => failure !== undefined)
     if (failures.length > 0) throw new AggregateError(failures, 'dsh-lark-bridge: session disposal failed')
   }
 

@@ -40,6 +40,18 @@ export interface OpenedSession {
  * registry satisfies them through the bridge, while tests substitute an
  * in-memory object and need no Cordis mount.
  */
+/**
+ * Told once, when a conversation stops running on a session.
+ *
+ * The channel keys per-session state by session id — renderers, the
+ * token-pressure bookkeeping, the last assistant id — and had no way to learn
+ * that a session had been retired. So `/new` left the previous session's
+ * binding in place and the ten-minute pressure sweep kept pricing it: the
+ * previous conversation's token total was posted into the brand-new chat as if
+ * the fresh session were already that heavy. Retirement is a fact this store
+ * owns, so it says so rather than letting every consumer infer it.
+ */
+export type SessionRetireHook = (sessionId: string, key: string) => void;
 export interface SessionLadder {
     /**
      * Return the live agent for this id, if the host already has one.
@@ -81,6 +93,7 @@ export declare class ConversationSessions {
     private readonly scope;
     private readonly ladder;
     private readonly rotation?;
+    private readonly onRetire?;
     /** Resolved sessions by conversation key. */
     private readonly opened;
     /** Conversation key per live session id, in binding order. */
@@ -100,7 +113,13 @@ export declare class ConversationSessions {
     /** Rotations in flight, per conversation: a message landing mid-rotate
      * must wait for it, or it would bind the session being disposed. */
     private readonly rotating;
-    constructor(scope: SessionScope, ladder: SessionLadder, rotation?: RotationStore | undefined);
+    /**
+     * @param scope - the conversation facet every session is keyed by.
+     * @param ladder - the host operations to walk.
+     * @param rotation - where a rotated id is recorded, when the host supplies one.
+     * @param onRetire - told once per session that stops serving its conversation.
+     */
+    constructor(scope: SessionScope, ladder: SessionLadder, rotation?: RotationStore | undefined, onRetire?: SessionRetireHook | undefined);
     /** Session ids currently bound, in insertion order. */
     get sessionIds(): string[];
     /**
@@ -165,6 +184,19 @@ export declare class ConversationSessions {
      * @returns the bound session plus whether the mapping reached disk.
      */
     private performAttach;
+    /**
+     * Drop one conversation's binding and dispose the agent this store owns.
+     *
+     * Every way a session leaves the store goes through here — `/new`,
+     * `/resume`, and the close sweep — so retirement is reported once per
+     * session, in one shape, and no caller can drop a binding while forgetting
+     * the dispose (or the notice) that has to follow it.
+     * @param key - the conversation key the session served.
+     * @param session - the binding being dropped.
+     * @param cause - what retired it, for the report when disposal fails.
+     * @returns the disposal rejection, if any; the caller decides how loud it is.
+     */
+    private retire;
     /**
      * Stop accepting new work and dispose every owned agent. The bindings are
      * dropped before the first await, so a second call disposes nothing twice.
