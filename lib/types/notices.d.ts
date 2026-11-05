@@ -254,5 +254,7 @@ export declare function contextPressureLine(data: {
     readonly breakdown?: ContextBreakdown | undefined;
     /** 逐工具占用；拿到时把「工具说明」那行摊开成明细。 */
     readonly toolCosts?: readonly ToolCost[] | undefined;
+    /** 明细最多列几个工具；`Infinity` 表示全列（`/context all`）。 */
+    readonly toolLimit?: number | undefined;
 }): string;
 //# sourceMappingURL=notices.d.ts.map

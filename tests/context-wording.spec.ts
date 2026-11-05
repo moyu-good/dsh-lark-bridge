@@ -92,6 +92,36 @@ describe('/context 的详细拆解', () => {
     expect(text).toContain('mcp__chrome__take_snapshot 约 40,000')
     // 明细只列 8 个，剩下 4 个必须合并交代，否则读者以为明细之和就是总数。
     expect(text).toContain('其余 4 个工具 约 400')
+    // 被截断时给一条"看全部"的出口（2026-11-05 追问「102 个工具全列出来」）。
+    expect(text).toContain('/context all')
+  })
+
+  it('要全列时不再截断，也不再提示看全部', () => {
+    const toolCosts = Array.from({ length: 12 }, (_, index) => ({
+      name: `tool_${index}`,
+      tokens: 1_000 - index,
+    }))
+    const text = contextPressureLine({
+      total: 444_833,
+      surface: 277_312,
+      breakdown: { messageTokens: 200_000, systemTokens: 77_312, toolsTokens: 167_521 },
+      toolCosts,
+      toolLimit: Number.POSITIVE_INFINITY,
+    })
+    expect(text).toContain('tool_0 约 1,000')
+    expect(text).toContain('tool_11 约 989')
+    expect(text).not.toContain('其余')
+    expect(text).not.toContain('/context all')
+  })
+
+  it('拿不到三段拆分时，工具明细单独成段也不丢', () => {
+    const text = contextPressureLine({
+      total: 100_000,
+      surface: 10_000,
+      toolCosts: [{ name: 'pwsh', tokens: 874 }],
+    })
+    expect(text).toContain('· 工具明细：')
+    expect(text).toContain('pwsh 约 874')
   })
 
   it('拿不到逐工具占用时只给整块数字，不硬编明细', () => {

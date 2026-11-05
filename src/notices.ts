@@ -481,6 +481,8 @@ export function contextPressureLine(data: {
   readonly breakdown?: ContextBreakdown | undefined
   /** 逐工具占用；拿到时把「工具说明」那行摊开成明细。 */
   readonly toolCosts?: readonly ToolCost[] | undefined
+  /** 明细最多列几个工具；`Infinity` 表示全列（`/context all`）。 */
+  readonly toolLimit?: number | undefined
 }): string {
   const rows = [`上下文占用：合计约 ${num(data.total)} token`]
   if (data.breakdown === undefined) {
@@ -489,9 +491,11 @@ export function contextPressureLine(data: {
     rows.push(`· 聊天内容约 ${num(data.breakdown.messageTokens)}`)
     rows.push(`· 系统提示约 ${num(data.breakdown.systemTokens)}`)
     rows.push(`· 工具说明约 ${num(data.breakdown.toolsTokens)}`)
-    if (data.toolCosts !== undefined && data.toolCosts.length > 0) {
-      rows.push(...toolCostRows(data.toolCosts))
-    }
+  }
+  if (data.toolCosts !== undefined && data.toolCosts.length > 0) {
+    // 没有三段拆分时明细也能单独成立：标题补一行，缩进仍归它自己。
+    if (data.breakdown === undefined) rows.push('· 工具明细：')
+    rows.push(...toolCostRows(data.toolCosts, data.toolLimit ?? 8))
   }
   if (data.total > 600_000) {
     rows.push('', '⚠️ 已经很重了：除了 `/compact`，更有效的是减负——换极简模式、或关掉不常用的 MCP 服务，工具说明这才降得下来。')
@@ -504,21 +508,23 @@ export function contextPressureLine(data: {
 }
 
 /**
- * 工具说明的明细：占用最大的几个，其余合并成一行。
+ * 工具说明的明细：按占用降序列出，被截断时交代余量。
  *
- * 只列 top N 是有意的——`/context` 是给"关哪个"做决定的，不是把 60 个工具
- * 全抄一遍；但余量必须显式给出，否则读者会以为明细之和就是总数。
+ * 默认只列 top N 是有意的——`/context` 平时是给"关哪个"做决定的，不是把一百
+ * 多个工具全抄一遍。但余量必须显式给出，否则读者会以为明细之和就是总数；
+ * 再给一条"看全部"的出口，因为"到底装了些什么"是另一类问题（2026-11-05 追问）。
  * @param costs - 已按占用降序排好的逐工具占用。
- * @param limit - 最多列几个工具。
+ * @param limit - 最多列几个工具；`Infinity` 全列。
  * @returns 缩进两格的明细行。
  */
-function toolCostRows(costs: readonly ToolCost[], limit = 8): string[] {
+function toolCostRows(costs: readonly ToolCost[], limit: number): string[] {
   const shown = costs.slice(0, limit)
   const rest = costs.slice(limit)
   const rows = shown.map(cost => `  · ${cost.name} 约 ${num(cost.tokens)}`)
   if (rest.length > 0) {
     const sum = rest.reduce((total, cost) => total + cost.tokens, 0)
     rows.push(`  · 其余 ${num(rest.length)} 个工具 约 ${num(sum)}`)
+    rows.push(`  · 要看全部 ${num(costs.length)} 个：发 \`/context all\``)
   }
   return rows
 }

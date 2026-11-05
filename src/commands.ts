@@ -455,7 +455,9 @@ export async function runCommandLine(
     return runFeedbackCommand(trimmed, agent, feedback, lastAssistantMessageId)
   }
   if (name === CONTEXT_COMMAND) {
-    return runContextCommand(agent, tokenMeter, extras?.ctx)
+    // `/context all`（或「全部」）把逐工具明细列全；默认只列占用最大的几个。
+    const query = trimmed.slice(1 + CONTEXT_COMMAND.length).trim().toLowerCase()
+    return runContextCommand(query === 'all' || query === '全部', agent, tokenMeter, extras?.ctx)
   }
   if (name === TOOLS_COMMAND) {
     return runToolsCommand(trimmed, deniedTools, tools, toolScope)
@@ -1207,12 +1209,14 @@ async function runFeedbackCommand(
  * the projection still answers with the total and the message portion, which
  * is enough to decide "compress", just not enough to say what compressing
  * would actually buy.
+ * @param all - whether to list every tool instead of the top few.
  * @param agent - the chat's agent (owns the measured session).
  * @param tokenMeter - the token-meter service, when composed.
  * @param ctx - the bridge's context, used to reach the projection service.
  * @returns the reply for the chat.
  */
 function runContextCommand(
+  all: boolean,
   agent: HostAgent,
   tokenMeter: HostTokenMeter | undefined,
   ctx: Context | undefined,
@@ -1229,6 +1233,7 @@ function runContextCommand(
       breakdown,
       // 逐工具占用只能从会话日志里的请求头拆出来；新会话还没有，传 undefined。
       toolCosts: readToolCosts(agent.session),
+      toolLimit: all ? Number.POSITIVE_INFINITY : undefined,
     }),
     resolved: true,
   }

@@ -23,17 +23,40 @@ import type { ResolvedConfig } from '../src/config.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 /** A fake agent whose scoped context carries the preset join. */
-function fakeAgent(ctx: Context | undefined = undefined): HostAgent {
+function fakeAgent(ctx: Context | undefined = undefined, session?: unknown): HostAgent {
   return {
     id: 'ses_1',
     // The session carries what the host's token meter replays the log
     // through: `seq` and `eventAt()`. A session that only has an id is the
     // shape that made the meter report zero tokens for every session.
-    session: { id: 'ses_1', seq: 0, eventAt: () => undefined },
+    session: session ?? { id: 'ses_1', seq: 0, eventAt: () => undefined },
     followup: vi.fn(),
     cancel: vi.fn(),
     ...ctx === undefined ? {} : { ctx },
   } as unknown as HostAgent
+}
+
+/** runCommandLine 在 `signal` 之后、`tokenMeter` 之前的可选参数，全部留空。 */
+const BLANK_COMMAND_ARGS = [
+  undefined, undefined, undefined, undefined, undefined, undefined,
+  undefined, undefined, undefined, undefined, undefined, undefined,
+] as const
+
+/** 一个会话日志里带 `count` 个工具定义的 agent，供 `/context` 明细使用。 */
+function agentWithTools(count: number): HostAgent {
+  const tools = Array.from({ length: count }, (_, index) => ({
+    name: `tool_${index}`,
+    description: 'x'.repeat(100 + index * 100),
+    parameters: { type: 'object' },
+  }))
+  const session = {
+    id: 'ses_1',
+    get seq() { return 1 },
+    eventAt: (seq: number) => seq === 0
+      ? { type: 'request/header', data: { header: { tools } } }
+      : undefined,
+  }
+  return fakeAgent(undefined, session)
 }
 
 /** A fake roster recording recompose calls. */
@@ -806,6 +829,35 @@ describe('/context command', () => {
     )
     expect(outcome.resolved).toBe(false)
     expect(outcome.reply).toContain('token 计量')
+  })
+
+  it('lists the top tools and points at `/context all`', async () => {
+    const outcome = await runCommandLine(
+      `/${CONTEXT_COMMAND}`,
+      agentWithTools(12),
+      undefined,
+      new AbortController().signal,
+      ...BLANK_COMMAND_ARGS,
+      { measure: () => ({ totalTokens: 100_000, surfaceTokens: 10_000 }) } as never,
+    )
+    expect(outcome.reply).toContain('其余 4 个工具')
+    expect(outcome.reply).toContain('/context all')
+  })
+
+  it('lists every tool when asked with `all`', async () => {
+    const outcome = await runCommandLine(
+      `/${CONTEXT_COMMAND} all`,
+      agentWithTools(12),
+      undefined,
+      new AbortController().signal,
+      ...BLANK_COMMAND_ARGS,
+      { measure: () => ({ totalTokens: 100_000, surfaceTokens: 10_000 }) } as never,
+    )
+    // 12 个工具全列出来，不再有"其余"这一行。
+    expect(outcome.reply).toContain('tool_11')
+    expect(outcome.reply).toContain('tool_0')
+    expect(outcome.reply).not.toContain('其余')
+    expect(outcome.reply).not.toContain('/context all')
   })
 })
 
