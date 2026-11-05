@@ -169,7 +169,7 @@ Two rules keep the upgrade honest:
 - CI runs tests + contract checks. It must pass.
 - Describe what changed and why, and note any behavior change for deployments
   (new defaults, renamed config).
-- Update `README.md` (and `README.zh.md` when user-facing text changes) — the two
+- Update `README.en.md` (and `README.md` when user-facing text changes) — the two
   share a section skeleton; keep the headings in step.
 - Add a `CHANGELOG.md` entry under Unreleased for user-visible changes.
 

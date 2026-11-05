@@ -44,8 +44,8 @@ function load(name) {
   return { name, lines, headings, lineCount: lines.length, details, bodyChars }
 }
 
-const en = load('README.md')
-const zh = load('README.zh.md')
+const en = load('README.en.md')
+const zh = load('README.md')
 
 const problems = []
 
@@ -58,8 +58,8 @@ const BODY_RATIO_MIN = 0.45
 const bodyRatio = zh.bodyChars / en.bodyChars
 if (bodyRatio < BODY_RATIO_MIN) {
   problems.push(
-    `body text has collapsed: README.zh.md carries ${zh.bodyChars} chars of body text ` +
-      `against README.md's ${en.bodyChars} (ratio ${bodyRatio.toFixed(2)}, floor ${BODY_RATIO_MIN})`,
+    `body text has collapsed: README.md carries ${zh.bodyChars} chars of body text ` +
+      `against README.en.md's ${en.bodyChars} (ratio ${bodyRatio.toFixed(2)}, floor ${BODY_RATIO_MIN})`,
   )
 }
 
@@ -114,7 +114,7 @@ for (let i = 0; i < pairs; i++) {
 // "🤔 它是干什么的" pair up as the k-th section, which is what matters.
 if (en.headings.length !== zh.headings.length) {
   problems.push(
-    `heading count differs: README.md has ${en.headings.length}, README.zh.md has ${zh.headings.length}`,
+    `heading count differs: README.en.md has ${en.headings.length}, README.md has ${zh.headings.length}`,
   )
 }
 
@@ -123,7 +123,7 @@ if (en.headings.length !== zh.headings.length) {
 const FOLDED_SLACK = 0
 if (Math.abs(en.details - zh.details) > FOLDED_SLACK) {
   problems.push(
-    `folded-block count differs: README.md has ${en.details}, README.zh.md has ${zh.details} ` +
+    `folded-block count differs: README.en.md has ${en.details}, README.md has ${zh.details} ` +
       `(tolerance ${FOLDED_SLACK})`,
   )
 }
@@ -145,7 +145,7 @@ const ratio = zh.lineCount / en.lineCount
 if (ratio < RATIO_MIN || ratio > RATIO_MAX) {
   problems.push(
     `line-count ratio ${ratio.toFixed(2)} is outside [${RATIO_MIN}, ${RATIO_MAX}] ` +
-      `(README.md ${en.lineCount}, README.zh.md ${zh.lineCount})`,
+      `(README.en.md ${en.lineCount}, README.md ${zh.lineCount})`,
   )
 }
 
@@ -169,8 +169,8 @@ for (const doc of [en, zh]) {
 problems.push(...imgProblems)
 
 console.log('')
-console.log(`  README.md     ${en.lineCount} lines, ${en.headings.length} sections`)
-console.log(`  README.zh.md  ${zh.lineCount} lines, ${zh.headings.length} sections, ratio ${ratio.toFixed(2)}`)
+console.log(`  README.en.md     ${en.lineCount} lines, ${en.headings.length} sections`)
+console.log(`  README.md  ${zh.lineCount} lines, ${zh.headings.length} sections, ratio ${ratio.toFixed(2)}`)
 console.log('')
 
 if (problems.length) {

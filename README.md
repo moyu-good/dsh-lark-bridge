@@ -17,267 +17,267 @@
 </p>
 
 <p align="center">
-  <a href="README.zh.md">中文</a> ·
-  <a href="#-about-this-fork">About this fork</a> ·
-  <a href="#-quick-start">Quick Start</a> ·
-  <a href="#-what-it-does">What it does</a> ·
+  <a href="README.en.md">English</a> ·
+  <a href="#-关于这个-fork">关于这个 fork</a> ·
+  <a href="#-60-秒上手">快速开始</a> ·
+  <a href="#-它是干什么的">它是干什么的</a> ·
   <a href="#-faq">FAQ</a>
 </p>
 
 ---
 
-## 🍴 About this fork
+## 🍴 关于这个 fork
 
-This is a **personal fork** of [moyu-good/dsh-lark-bridge](https://github.com/moyu-good/dsh-lark-bridge), maintained for daily use rather than for upstream release. The upstream project is excellent and remains the source of the original design; what lives here is upstream's code plus a set of additions made while running it as a full-time Feishu workstation.
+这是 [moyu-good/dsh-lark-bridge](https://github.com/moyu-good/dsh-lark-bridge) 的**个人 fork**，为日常使用维护，不为上游发版。上游项目本身很好，原始设计都出自那里；这里放着的是上游代码，加上把它当飞书工作台天天用之后添的东西。
 
-**How this fork relates to upstream**
+**这个 fork 与上游的关系**
 
 | | |
 |---|---|
-| Upstream | [moyu-good/dsh-lark-bridge](https://github.com/moyu-good/dsh-lark-bridge) — the original |
-| This fork | [CHENJIAMIAN/dsh-lark-bridge](https://github.com/CHENJIAMIAN/dsh-lark-bridge) — `main` is the working line |
-| npm | This fork is **not published**. `@moyu-good/dsh-lark-bridge` on npm is upstream's |
-| Bug fixes | Upstream fixes are cherry-picked in via `git fetch upstream` |
+| 上游 | [moyu-good/dsh-lark-bridge](https://github.com/moyu-good/dsh-lark-bridge) —— 原始项目 |
+| 本 fork | [CHENJIAMIAN/dsh-lark-bridge](https://github.com/CHENJIAMIAN/dsh-lark-bridge) —— `main` 是主线 |
+| npm | 本 fork **不发布**。npm 上的 `@moyu-good/dsh-lark-bridge` 是上游的 |
+| 上游修复 | 用 `git fetch upstream` 取回来挑着合 |
 
-**What this fork adds** (see [CHANGELOG.md](CHANGELOG.md) for detail):
+**本 fork 加了什么**（细节见 [CHANGELOG.md](CHANGELOG.md)）：
 
-- **Time made visible, both ways** — every tool call in the thinking process carries its clock time and elapsed duration; the model is told each turn's current time and how long the chat was idle.
-- **`/session`** — one command that states the session's id, directory, the model route actually used, log size, context tokens and distance to the warning line.
-- **`/think`** — per-session reasoning effort, applied to the next request; `/model` no longer drops it.
-- **`/ws use <dir>` and `bind_workspace`** — bind a chat to a project directory permanently, so `/new` lands where you meant.
-- **Quoted messages reach the model** — a reply's quoted body is fetched and placed ahead of the question.
-- **Configurable elision budgets** — every truncation limit is a setting, defaults sized for workstation use.
-- **Fixes upstream never hit on Linux** — restart via PowerShell on Windows, schedules recovered from the session log after a restart, media sent before its caption.
+- **时间两头都看得见** —— 思考区里每次工具调用带钟点与耗时；模型每轮知道现在几点、这个聊天安静了多久。
+- **`/session`** —— 一条命令说清会话的 id、目录、实际在用的模型路由、日志规模、上下文 token 与距提醒线的距离。
+- **`/think`** —— 会话级思考强度，对下一步请求生效；`/model` 不再把它丢掉。
+- **`/ws use <目录>` 与 `bind_workspace`** —— 把聊天永久绑定到项目目录，`/new` 才落在你要的地方。
+- **引用回复的正文进模型** —— 被引用的那条会先取回、放在提问之前。
+- **截断预算可配** —— 每个截断上限都是设置项，默认值按工作台用量放大。
+- **上游在 Linux 上碰不到的问题** —— Windows 上用 PowerShell 重启、重启后从会话日志恢复定时提醒、媒体先于 caption 发送。
 
-**Contributing back** — changes that are generally useful get offered upstream as focused PRs. Changes that assume this deployment's workflow stay here. Either way this fork tracks upstream rather than diverging from it.
+**回不回流上游** —— 通用改动会单独提 PR 回上游；带着这套部署工作流假设的改动留在这里。两条路都建立在这个 fork 跟随上游、而不是分道扬镳的前提上。
 
 ---
 
-## 🤔 What it does
+## 🤔 它是干什么的
 
-**Who it's for** — someone with one laptop, who works over Feishu, and wants an AI agent to touch their real files. No server, no ops, no public URL.
+**给谁用** —— 手边就一台电脑、平时在飞书上派活、又想让 AI 直接动自己机器上真实文件的人。不用服务器，不用运维，不用公网地址。
 
-**What it replaces** — the loop of *open the IDE → describe the task → watch it edit → switch back to chat to report*. That loop becomes one sentence in Feishu.
+**它替掉的是什么** —— 「打开 IDE → 描述需求 → 看它改 → 切回聊天汇报」这一圈。现在这一圈变成飞书里的一句话。
 
-**Why not another bridge** — most Feishu-agent bridges hand you a bot that answers messages. This hands you an agent with a terminal, approval gates and session memory — and it shares the same session library as your DSH Desktop, so work begun in the chat is still there when you open the desktop app.
+**为什么不直接用别的桥** —— 多数飞书 agent 桥给你一个会回消息的 bot；这个给你一个带终端、带审批闸门、带会话记忆的 agent。而且它跟你的 DSH Desktop 共用同一套会话库——在聊天里开干的活，打开桌面端还在。
 
-## 🧭 How it works
+## 🧭 它怎么运作
 
-![Architecture: a Feishu message travels over a WebSocket long connection into the local bridge, drives one dsh agent per chat, and flows back](docs/assets/architecture.png)
+![架构：飞书消息经 WebSocket 长连接进入本机桥，驱动每个会话一个 dsh agent，再把过程与结果送回飞书](docs/assets/architecture.png)
 
-- **In** — the message arrives over a WebSocket long connection. No callback URL, no reverse proxy, no public IP.
-- **Through** — the bridge maps each chat (DM or group) to its own `dsh` agent, which reads and writes your real working directory.
-- **Back** — thinking, approval requests and results return to the chat as native Feishu messages.
-- **Shared** — the `web` and `desktop` runtime forms share one `~/.dsh` session library.
+- **进来** —— 消息走 WebSocket 长连接。没有回调地址，没有反向代理，没有公网 IP。
+- **中间** —— 桥把每个聊天（私聊或群）映射成自己的 `dsh` agent，agent 读写的是你真实的工作目录。
+- **回去** —— 思考过程、审批请求、执行结果，都以飞书原生消息的形态回到聊天里。
+- **共享** —— `web` 与 `desktop` 两种运行形态共用一套 `~/.dsh` 会话库。
 
-![Arbitration: a cloud ledger keyed per endpoint keeps one instance answering while the other stands by](docs/assets/arbitration.png)
+![端级仲裁：云端台账按端记账，只有一个是 ACTIVE，另一个待命](docs/assets/arbitration.png)
 
-A cloud ledger keyed per endpoint (`deviceId` + `form` + `profile`) keeps one instance per endpoint answering and elects a successor when the active one goes quiet. Both forms read and write the same sessions, so failing over never loses the conversation.
+云端台账按端（`deviceId` + `form` + `profile`）记账，保证每个端只有一个实例在回话，活跃的那个掉线就自动改选。两种形态读写的是同一批会话，所以交接不丢对话。
 
-## ✨ Three things most bridges don't do
+## ✨ 三件别的桥大多做不到的事
 
-### Runs on your machine, in minutes, with no public address
+### 装在自己机器上，几分钟搞定，不需要公网
 
-One `pnpm dlx` command installs the plugin and boots the host; a QR code is the whole credential flow. The transport is an outbound WebSocket long connection — nothing has to reach you from the internet.
+一条 `pnpm dlx` 命令装好插件并起宿主，扫码就是全部的凭据流程。传输是出站的 WebSocket 长连接——没有任何东西需要从公网打进来。
 
-### You can see what it's thinking
+### 它想什么，你看得见
 
-Reasoning renders as Feishu's own *thinking* message. Tool calls arrive with their icon and the first lines of their result; the full output stays in the session log. Every turn closes with one plain line — how many tool calls it made, how long it took. Nothing has to be taken on faith. A message you send mid-turn lands in there too, right before the step it redirected.
+reasoning 渲染成飞书原生的「思考中」消息。工具调用带图标进来，结果默认显示前 10 行、1600 字（`limits` 可调），完整输出留在会话记录里。每轮结束时固定一行收束——用了几次工具、花了多久。不需要凭感觉相信。跑到一半插话，你说的那句话也会落进思考区，就排在它让 Agent 改方向的那一步前面。
 
-### A long task is not "fire and forget"
+### 长任务不是「发完就等」
 
-Send a message while a turn is running and it follows `busyPolicy`: `queue` waits its turn, `steer` takes over at the next step boundary **without discarding work already done**, `inject` adds context without waking the driver. Risky operations become approval cards. Turn on `autoResumeGoals` and a goal picks itself back up after a restart.
+跑到一半再发消息，按 `busyPolicy` 走：`queue` 排队等下一轮；`steer` 在下一个 step 边界接管方向，**不丢掉已经做完的工作**；`inject` 只补上下文、不唤醒驱动器。危险操作变成审批卡片。打开 `autoResumeGoals` 后，重启时 goal 会自己接着跑。
 
-## 🚀 Quick Start
+## 🚀 60 秒上手
 
-**Prerequisites:** Node 22.19+ or 24+, [pnpm](https://pnpm.io/installation), a DeepSeek API key, Feishu on your phone.
-**Harness:** dsh `>= 0.2.1-rc.1 < 0.3.0` (declared as `engines.dsh` in `package.json`).
+**准备**：Node 22.19+ 或 24+、[pnpm](https://pnpm.io/installation)、一个 DeepSeek API Key、手机上有飞书。
+**Harness 版本**：dsh `>= 0.2.1-rc.1 < 0.3.0`（`package.json` 里的 `engines.dsh` 就是这么写的）。
 
 ```sh
-# 1. install the plugin into a dsh profile and boot
+# 1. 把插件装进 dsh profile 并启动
 pnpm dlx @deepseek-ai/dsh plugin --profile web add @moyu-good/dsh-lark-bridge \
   && pnpm dlx @deepseek-ai/dsh web
 
-# 2. a QR code prints → scan it with Feishu
-#    (this creates the app and its event subscription for you)
+# 2. 控制台打印二维码 → 用飞书扫码
+#    （自动创建应用＋事件订阅，凭据持久化）
 
-# 3. open the dsh console → Settings → Models → paste your DeepSeek API key
+# 3. 打开 dsh 控制台 → Settings → Models → 填入 DeepSeek API Key
 
-# 4. DM the bot, or @ it in a group. That's it.
+# 4. 私聊机器人，或群里 @ 它。完成。
 ```
 
-Two traps, both real:
+两个坑，都是真的：
 
-- **Use `pnpm`, not `npx`.** On one machine this was recorded at about 20 seconds versus about 25 minutes (npm's serial reify), and on a ≤4 GB machine the npm process died with "JavaScript heap out of memory" mid-install. Those are the author's numbers, not a benchmark this repository reproduces — treat the gap as *large*, not as *exactly 20 vs 25*.
-- **Do not `npm i -g dsh-lark-bridge`.** That name on npm belongs to an unrelated project. This one is **`@moyu-good/dsh-lark-bridge`**.
+- **用 `pnpm`，别用 `npx`。** 在一台机器上记录到的是约 20 秒 vs 约 25 分钟（npm 串行 reify）；≤4 GB 内存的机器上，npm 进程会直接以「JavaScript heap out of memory」死在安装中途。**这是作者的一次观测，本仓没有可复跑的基准**——把这个差距当成「很大」，别当成「正好 20 秒对 25 分钟」。
+- **别执行 `npm i -g dsh-lark-bridge`。** npm 上那个裸名字是**别人的无关项目**。本插件叫 **`@moyu-good/dsh-lark-bridge`**。
 
 <details>
-<summary>First install fails on <code>protobufjs</code>? — two-minute fix</summary>
+<summary>首次安装卡在 <code>protobufjs</code>？—— 两分钟修好</summary>
 
-pnpm 10 blocks dependency build scripts by default and exits non-zero with `ERR_PNPM_IGNORED_BUILDS`. The blocked script belongs to `protobufjs` (a Feishu SDK dependency); it only prints a version-scheme warning — no file written, no network.
+pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败并报 `ERR_PNPM_IGNORED_BUILDS`。被拦的是 `protobufjs`（飞书 SDK 的依赖）的 postinstall，它只打印一行版本方案警告：不写文件、不联网。
 
-Open `<your-home>/.dsh/profiles/web/pnpm-workspace.yaml` and set `protobufjs: false` under `allowBuilds`. After the failed install pnpm writes the literal text `set this to true or false` there — replace it with `false`. Then **re-run the same command**: a failed install leaves the profile half-configured (bundles are not merged when the install exits non-zero), so editing the file alone does not finish the job.
+打开 `<你的home>/.dsh/profiles/web/pnpm-workspace.yaml`，在 `allowBuilds` 下把 `protobufjs` 设为 `false`。安装失败后 pnpm 会在这个文件里留下一行占位，值是字面文本 `set this to true or false`（不是布尔值），要整行替换掉。然后**重跑同一条命令**——安装以非零退出码结束时，插件的 bundles 不会被合并，只改文件不算装完。
 
-`allowBuilds` (pnpm 10.26+) is the only key pnpm reads for this; `onlyBuiltDependencies` and the other legacy keys were removed in pnpm 11.
+`allowBuilds`（pnpm 10.26+）是 pnpm 唯一认的键；`onlyBuiltDependencies` 等旧键在 pnpm 11 已被移除。它写在**安装方** profile 里，不在本包里：批准权属于执行安装的人。
 
 </details>
 
-## 🎯 Three commands to try first
+## 🎯 装完先试这三条
 
-| Command | What you get |
+| 命令 | 拿到什么 |
 |---|---|
-| `/manual` | The full eight-section user guide, delivered in the chat |
-| `/balance` | Live DeepSeek balance, per currency and timestamped, with the current peak/off-peak phase |
-| `/bot devices` | Which endpoints are in the fleet, and which one is currently answering |
+| `/manual` | 八节完整使用说明，直接发到聊天里 |
+| `/balance` | DeepSeek 实时余额（分币种、带查询时刻），含当前峰谷档 |
+| `/bot devices` | 舰队里有哪些端，此刻是谁在接活 |
 
-Daily ops: run `pnpm dlx @deepseek-ai/dsh web` again (subsequent runs hit the pnpm store), or host it under systemd / supervisor. The package ships **prebuilt** — nothing compiles on install.
+日常运维：再跑一次 `pnpm dlx @deepseek-ai/dsh web`（后续命中 pnpm store，很快），或用 systemd / supervisor 托管。包是**预编译**发布的，安装时不编译任何东西。
 
 <details>
-<summary>💬 All capabilities</summary>
+<summary>💬 全部能力</summary>
 
 | | |
 |---|---|
-| 🗂️ **One agent per conversation** | `sessionScope`: whole chat / topic thread / single sender; sessions persist across restarts |
-| 🧠 **Native Feishu CoT** | Reasoning renders as the platform's own thinking message (`cot`), typewriter card fallback (`stream`) |
-| ✅ **Live reactions** | `OK` → `THINKING` → `DONE`/`ERROR`, states replace each other, configurable |
-| 📋 **Approval cards + decider trail** | Click to decide; who decided is written back |
-| 🎯 **Live goal / todo cards + auto-resume** | Phase changes stream into chat; `autoResumeGoals` (opt-in) re-arms after restarts |
-| ✋ **Mid-turn steering** | `busyPolicy`: `queue` (default) waits its turn, `steer` takes over at the next step boundary without discarding the work, `inject` adds context without waking the driver |
-| 📦 **Compaction transparency** | "Compacting…" → summary + released tokens; prunes report trimmed count |
-| 🧑‍💻 **Subagent panel** | One card updates in place for every child: failures float to the top with their error text, live rows show a progress bar and heartbeat (amber when quiet), finished ones collapse, and the footer splits「completed / failed / running」 |
-| 👥 **Team panel** | When the host runs a team, one card shows the members, shared tasks and messages between them, updated in place |
-| 🔍 **Session history search** | `/sessions <keyword>` full-text search over this chat's stored history |
-| 🌐 **Multi-surface fleet sync** | `web` and `desktop` forms share one session library; per-endpoint cloud arbitration (`deviceId:form:profile`) — no double replies, automatic failover election |
-| 🔄 **Interactive account switcher** | `/bot account` stores/switches/forgets Feishu-app credentials from a card; shared settings push it to every surface |
-| 💰 **Balance & peak/off-peak awareness** | `/balance` live DeepSeek balance (per currency, timestamped); the prompt embeds the tariff table so batch work lands in half-price windows |
-| 🛠️ **Native Feishu agent tools** | `feishu_notify` proactive messages, `feishu_drive_*` cloud-drive scratchpad reachable from any device |
-| 🖥️ **Self-healing slash panel** | The panel has a single writer (the arbitration-active endpoint), bilingual, kept in step with what actually runs |
-| 🧰 **Capability inventory** | `/tools` lists what this deployment can actually do — the visible tools and the MCP servers it talks to |
-| 🎙️ **Media delivered in kind** | An ogg/opus recording arrives as a voice note, an mp4/m4v clip as a video — playable in the chat, not a download link |
-| 🖼️ **Image input (opt-in)** | `attachImages` passes chat images to the model |
-| 🕐 **Message timestamps** | showMessageTime (default on) stamps each inbound message and each quoted message with its local send time; set it to `false` to leave the text alone |
-| ⏱️ **Time is visible, both ways** | Every tool call in the thinking process carries the clock time it started and every result over 1s carries its elapsed time; the closing line names the slowest step. The model is told each turn's current time and how long the chat had been quiet — so "继续" after eight hours and "继续" after three minutes are not the same instruction |
-| 📎 **File delivery** | Agent `send_file` delivers artifacts with caption (default-deny local dirs) |
-| 🔒 **Authorization narrowing** | `senderAllowlist` / `groupAllowlist` / `approvers` |
-| ⏰ **Scheduled task panel** | `/schedules` lists each task's rule, next run and last delivery; `/schedules 1` for detail, `run 1` to fire it now, `edit 1 <new prompt>`, `delete 1`. A firing task announces itself in one line instead of letting its prompt pass as the human's own message (compose `@deepseek-ai/dsh-schedule` for the model-side tools) |
-| ⚙️ **Background job notifications** | `run_in_background` jobs announce their terminal outcome |
-| 🧩 **Skill ecosystem surface** | `/skills` lists workspace skills, `/skills <name>` peeks at one |
-| 🤖 **Model switching** | `/model <provider>/<model>` through the host `saveSelection` seam (persistent) |
-| 🖥️ **PC-parity tooling** | Compose `dsh-terminal*` / `code-runtime-worker-thread` / `dsh-mcp-client` → persistent PTY, Code Mode, external MCP servers |
-| 🗺️ **Workspace visibility** | `/ws` lists workspaces and marks where new sessions land |
-| 🔑 **QR onboarding** | First boot prints a QR; scanning creates the app with event subscription |
-| 🧩 **Chronicle hook** | `chronicleEndpoint`: fire-and-forget POST per accepted inbound **user** message (`source`/`text`/`chatId`); the bridge's replies never go to the ledger |
+| 🗂️ **一会话一 Agent** | `sessionScope`：整个 chat / 话题 thread / 单 sender；会话持久化，重启恢复 |
+| 🧠 **原生飞书 CoT** | reasoning 渲染为平台原生「思考中」消息；旧客户端退化为打字机卡片 |
+| ✅ **Live Reaction** | 收到 `OK` → 思考 `THINKING` → 完成 `DONE`（失败 `ERROR`），状态互替可配置 |
+| 📋 **审批卡片＋决策人留痕** | 点击即决策，谁批的写得清清楚楚 |
+| 🎯 **goal/todo 实时卡＋自动续跑** | 阶段变化实时进聊天；`autoResumeGoals`（需手动开启）重启后自动恢复 |
+| ✋ **任务中插话** | `busyPolicy`：`queue`（默认）排队等下一轮，`steer` 在下一个 step 边界接管方向、不丢已做的工作，`inject` 只作上下文、不唤醒驱动器 |
+| 📦 **压缩透明化** | 「正在压缩…」→ 摘要＋释放 token 数；修剪报告删除条数 |
+| 🧑‍💻 **子代理执行面板** | 一张卡片就地刷新全部子代理：失败置顶并带错误原文、进行中显示进度条与心跳（久无动静标黄）、已结束的折叠、结尾分开报「完成 / 失败 / 在跑」 |
+| 👥 **团队面板** | 宿主跑起多 agent 团队时，一张卡片显示成员、共享任务与队内往来消息，就地刷新 |
+| 🔍 **会话历史检索** | `/sessions <关键词>` 对本聊天历史全文搜索 |
+| 🌐 **多端舰队同步** | `web` 与 `desktop` 两种形态同一套会话库；端级云端仲裁（`deviceId:form:profile`）——不会双回复，活跃端掉线自动改选 |
+| 🔄 **账号库交互卡片** | `/bot account` 存/切/忘多个飞书应用凭证，卡片两下切换；共享设置全端生效 |
+| 💰 **余额与峰谷感知** | `/balance` 实时查 DeepSeek 余额（分币种、带查询时刻）；提示词内置峰谷时段表，重活自动排半价时段 |
+| 🛠️ **飞书原生 agent 工具** | `feishu_notify` 主动发消息、`feishu_drive_*` 用应用云盘当跨设备便签 |
+| 🖥️ **面板自愈** | 命令面板由活跃端单写者维护，双语、与实际能力对齐 |
+| 🧰 **能力全景** | `/tools` 列出这台机器此刻真能做什么——可见工具与接的 MCP 服务器 |
+| 🎙️ **媒体按形态送达** | ogg/opus 录音按语音条、mp4/m4v 视频按视频送达，聊天里直接能播 |
+| 🖼️ **图片输入（可选）** | `attachImages` 把聊天图片传给模型 |
+| 🕐 **消息时间戳** | showMessageTime（默认开）给每条来信和每条被引用的消息标上本地发送时间；设成 `false` 则原文不动 |
+| ⏱️ **时间两头都看得见** | 思考区里每次工具调用带开始的钟点、超过 1 秒的结果带耗时、收尾行点名最慢的一步；同时每轮把「现在几点、距上一轮多久」交给模型——隔八小时的「继续」和隔三分钟的「继续」不是同一个指令 |
+| 📎 **文件发送** | Agent 的 `send_file` 带 caption 投递到聊天（本地目录默认拒绝） |
+| 🔒 **授权窄化** | `senderAllowlist` / `groupAllowlist` / `approvers` |
+| ⏰ **定时任务面板** | `/schedules` 列出每个任务的规则、下次触发、上次投递；`/schedules 1` 看详情、`run 1` 立刻跑一次、`edit 1 <新内容>` 改、`delete 1` 删。定时器触发时先发一行署名，不再让任务内容冒充用户发言（模型侧工具需组合 `@deepseek-ai/dsh-schedule`） |
+| ⚙️ **后台任务通知** | `run_in_background` 任务结束时播报结果 |
+| 🧩 **Skill 生态面板** | `/skills` 列出可用 skills，`/skills <name>` 看详情 |
+| 🤖 **模型切换** | `/model <provider>/<model>` 走宿主 `saveSelection`，持久生效 |
+| 🖥️ **PC 能力补齐** | 组合 `dsh-terminal*` / `code-runtime-worker-thread` / `dsh-mcp-client` → PTY 终端、Code Mode、外部 MCP |
+| 🗺️ **工作区可见** | `/ws` 列出已注册工作区并标记新会话落点 |
+| 🔑 **扫码注册** | 首次启动打印二维码，扫码即建应用 |
+| 🧩 **外部台账钩子** | `chronicleEndpoint`：每条被受理的**入站用户消息** POST 一次（载荷只有 `source`/`text`/`chatId`；桥自己的回复不入台账） |
 
 </details>
 
 <details>
-<summary>⌨️ Slash commands</summary>
+<summary>⌨️ 斜杠命令</summary>
 
-Type `/help` in the chat for the live list.
+在聊天里发 `/help` 看实时列表。
 
-| Command | Description |
+| 命令 | 说明 |
 |---|---|
-| `/stop` | Cancel the running turn |
-| `/new` | Start a new session (`/clear` is an alias) |
-| `/resume` | Switch this chat back to a stored session: bare lists them (number, time, directory, **turns / your messages / tool calls / size / span**, and "what you said last"); `/resume <n>` or `/resume <session id>` moves onto one |
-| `/panel` | Repost the subagent panel at the bottom of the message flow (the old one freezes into a "historical snapshot" and stops updating); use it once later messages have pushed the panel out of view |
-| `/manual` | The full user guide (start here if you're new) |
-| `/sessions` | Search this chat's session history |
-| `/session` | Everything about the session this chat is talking to: id, directory, the model route actually used, log size, context tokens and distance to the warning line, preset and busy policy |
-| `/balance` | DeepSeek API balance, with the live peak/off-peak phase |
-| `/tools` | View / deny / allow tools at runtime |
-| `/skills` | List skills, or peek at one |
-| `/model` | View / switch the default model (reaches sessions created after the switch) |
-| `/think` | View / change THIS session's reasoning effort — applies to the next request |
-| `/config` | The bridge's live configuration |
-| `/plugins` | List deployed plugins and status |
-| `/ws` | List registered workspaces |
-| `/jobs` | This chat's background jobs |
-| `/schedules` | This chat's scheduled tasks: rule, next run, last delivery — plus `1` (detail), `run`, `edit`, `rename`, `delete`, `history` |
-| `/context` | Context occupancy: chat / system prompt / tools, with per-tool detail |
-| `/audit` | Operation audit summary |
-| `/feedback` | Rate the last answer |
-| `/preset` | View / switch agent preset (standard / code / minimal / cordis) |
-| `/permission` | View / switch permission mode (host) |
-| `/goal` | View / set the goal (host) |
-| `/plan` | Enter / leave plan mode (host) |
-| `/compact` | Compact older history (host) |
-| `/bot` | Bridge admin: status, settings, accounts, plugin sync, devices |
-| `/restart` | Restart the host process (only when the deployment wires it) |
-| `/help` | Show the listing |
+| `/stop` | 取消当前任务 |
+| `/new` | 新开会话（`/clear` 是同义命令） |
+| `/resume` | 切回本聊天的历史会话：不带参数列出（序号、时间、目录、**轮次 / 你说过几句 / 工具调用次数 / 体积 / 历时**、「上次你说的话」），`/resume <序号>` 或 `/resume <会话 id>` 切过去 |
+| `/panel` | 把子代理执行面板重新发到消息流最下面（旧的那张会冻结成「历史快照」并停止更新）；面板被后面的消息挤远了就用它 |
+| `/manual` | 完整使用说明（新人从这里开始） |
+| `/sessions` | 本聊天会话历史检索 |
+| `/session` | 当前这个会话的全部事实：id、目录、实际在用的模型路由、日志规模、上下文 token 与距提醒线、模式与忙时策略 |
+| `/balance` | 查 DeepSeek 余额（含当前峰谷档） |
+| `/tools` | 运行时查看/禁用/恢复工具 |
+| `/skills` | 查看 skills / 某个 skill 详情 |
+| `/model` | 查看/切换默认模型（只对切换之后新建的会话生效） |
+| `/think` | 查看/设置**本会话**的思考强度（对下一步请求即生效） |
+| `/config` | 桥的当前配置 |
+| `/plugins` | 查看已部署的插件及运行状态 |
+| `/ws` | 查看已注册工作区 |
+| `/jobs` | 本会话后台任务 |
+| `/schedules` | 本聊天定时任务：规则、下次触发、上次投递；`1` 看详情，`run`/`edit`/`rename`/`delete`/`history` 动手 |
+| `/context` | 上下文占用分布：聊天内容 / 系统提示 / 工具说明，并列出各工具占多少 |
+| `/audit` | 本会话操作审计摘要 |
+| `/feedback` | 给上一条回答评分 |
+| `/preset` | 查看/切换 agent 模式（standard / code / minimal / cordis） |
+| `/permission` | 查看/切换权限模式（宿主） |
+| `/goal` | 查看/设置目标（宿主） |
+| `/plan` | 进入/退出计划模式（宿主） |
+| `/compact` | 压缩较早对话历史（宿主） |
+| `/bot` | 桥管理：状态/设置/账号/插件同步/设备 |
+| `/restart` | 重启服务进程（需部署侧配置） |
+| `/help` | 显示本列表 |
 
-Set `locale: zh|en` to pin the slash-panel and help wording; otherwise it follows the platform domain. It does not translate what the agent says.
+**`/bot` 子命令**：`set` / `unset` / `peers` / `sync-plugins` / `account`（save·use·forget，交互卡片）/ `export` / `import` / `devices` / `retire` / `activate` / `name`。
 
-**`/bot` subcommands**: `set` / `unset` / `peers` / `sync-plugins` / `account` (save·use·forget, interactive card) / `export` / `import` / `devices` / `retire` / `activate` / `name`.
+面板描述与 help 文案按平台自动双语；`locale: zh|en` 可强制指定。它不影响 agent 说了什么。
 
 </details>
 
 <details>
-<summary>⚙️ Configuration & required permissions</summary>
+<summary>⚙️ 配置速查与必需权限</summary>
 
-| Field | Default | Meaning |
+| 字段 | 默认 | 含义 |
 |---|---|---|
-| `appId`, `appSecret` | first-boot QR registration | Feishu/Lark app credentials |
-| `cwd` | host process cwd | Absolute workspace directory for chat agents |
-| `provider`, `model` | host default | Model routing for chat agents |
-| `output` | `cot` | Native thinking message vs typewriter card |
-| `requireMention` | `true` | In groups, respond only when @-mentioned |
-| `outbound.allowedFileDirs` | unset → disabled | Local dirs `send_file` may read from |
-| `chronicleEndpoint` | `''` | Optional external ledger: one POST per accepted inbound user message |
-| `announceSubagents` | `true` | Announce a delegation in the chat when it is made |
-| `autoResumeGoals` | `false` | Re-arm an active goal after a restart — off unless you turn it on |
-| `restartCommand` | unset → `/restart` unavailable | Command that restarts the host; runs in a detached child after 2.5 s (POSIX `sh`, Windows PowerShell) |
+| `appId`、`appSecret` | 首次扫码注册 | 飞书/Lark 应用凭证（可 `/bot set` 进共享设置全端生效） |
+| `cwd` | 宿主进程 cwd | 会话 Agent 的工作目录 |
+| `provider`、`model` | 宿主默认 | 会话 Agent 的模型路由 |
+| `output` | `cot` | 原生思考消息 vs 打字机卡片 |
+| `requireMention` | `true` | 群聊仅被 @ 时响应 |
+| `outbound.allowedFileDirs` | 未配置=禁用 | `send_file` 允许读取的本地目录 |
+| `chronicleEndpoint` | `''` | 可选：每条被受理的入站用户消息 POST 一次 |
+| `announceSubagents` | `true` | 派出子代理时在聊天里播报一行 |
+| `autoResumeGoals` | `false` | 重启后自动续跑活跃 goal——默认关，要自己打开 |
+| `restartCommand` | 未配置 → `/restart` 不可用 | 重启宿主的命令；2.5 秒后在脱离父进程的子进程里执行（POSIX 用 `sh`，Windows 用 PowerShell） |
 
-Credentials resolve in three layers: bundle patch config → settings document plugin section → first-boot QR registration.
+凭据三层解析（后者覆盖前者）：bundle patch 配置 → settings 文档插件区 → 首次扫码注册。
 
 <details>
-<summary>Required app scopes (manual app creation only)</summary>
+<summary>应用必需权限（手动建应用时）</summary>
 
-| Scope | Needed for |
+| 权限 | 用途 |
 |---|---|
-| `application:app_slash_command` (read + write) | Slash panel — without it sync fails with `99991672` |
-| `im:message` / `im:message:readonly` | Send / read messages |
-| `im:message.receive_v1` event | Receive messages (Events → long connection) |
-| `im:resource` | Upload images and files |
-| `im:chat:read` | Group info |
-| `im:message.reactions:read` / `write_only` | Reaction feedback |
-| **`drive:drive`** | `/bot export --to-feishu`, `feishu_drive_*`, cloud arbitration |
+| `application:app_slash_command`（read + write） | 斜杠面板——缺它同步报 `99991672` |
+| `im:message` / `im:message:readonly` | 发送/读取消息 |
+| `im:message.receive_v1` 事件 | 接收消息（事件与回调 → 长连接） |
+| `im:resource` | 上传图片和文件 |
+| `im:chat:read` | 群信息 |
+| `im:message.reactions:read` / `write_only` | reaction 反馈 |
+| **`drive:drive`**（或云空间读写） | `/bot export --to-feishu`、`feishu_drive_*` 工具、云端仲裁 |
 
-QR onboarding grants these automatically; manually created apps must publish a new version after adding scopes. Panel sync runs on session create/resume — send the bot one message after granting.
+扫码注册自动授予；手动创建的应用加完权限必须**发布新版本**。面板同步在会话 create/resume 时触发——开通后给 bot 发条消息即可。
 
 </details>
 
 </details>
 
 <details>
-<summary>📦 Moving to a new machine</summary>
+<summary>📦 换机迁移</summary>
 
-The bridge carries its own migration path. On the old machine:
-
-```text
-/bot export include-secrets --to-feishu   # uploads to the app's own Feishu drive
-/bot export include-secrets               # or a local file, credentials masked
-```
-
-The Feishu route needs no copying: the file lands in the app's own cloud space, and the new machine pulls it with `/bot import --from-feishu`. For the local route, copy the printed file to the same path on the new machine, install the plugin there, then:
+桥自带迁移路径。旧机上：
 
 ```text
-/bot import                       # preview: settings + plugin plan + warnings
-/bot import apply                 # execute (add --from-feishu for the cloud slot)
+/bot export include-secrets --to-feishu   # 直传应用自己的飞书云空间
+/bot export include-secrets               # 或本地文件，凭证掩码
 ```
 
-What travels: shared settings and per-profile plugin lists. What never travels: peer heartbeats, control tokens, `node_modules`, session history.
-
-Session history lives under `~/.dsh`. To carry it across, copy the session directories **only**:
+飞书路线零拷贝：文件落在应用自己的云空间（仅本应用可见），新机直接 `/bot import --from-feishu` 拉取。本地文件路线则把打印出的文件拷到新机同路径，按快速开始装好插件后：
 
 ```text
-~/.dsh/sessions/     # the conversations themselves
-~/.dsh/storages/     # session projection cache and workspace index
+/bot import                       # 预览：将写入的设置 + 装包计划 + 提醒
+/bot import apply                 # 执行（云端槽位加 --from-feishu）
 ```
 
-**Do not copy the whole of `~/.dsh`.** `~/.dsh/dsh-lark-bridge/device-state.json` holds this machine's `deviceId` and its retired flag — a copy would give the new machine the old machine's identity (both would answer the same chat) and could carry the retired flag along.
+带得走的：共享设置与各 profile 插件清单。永不带走的：peer 心跳、control token、`node_modules`、会话历史。
 
-**Device lifecycle** — every machine mints a stable `deviceId` on first boot; `/bot devices` shows the roster. Instead of stopping the old service by hand, retire it: `/bot retire` puts it out of the reply path (messages get a one-line notice, not an agent turn); `/bot activate` brings it back. Every live machine renews its presence each minute, and if the active one goes silent, the freshest endpoint with the lowest endpoint key wins the election on the next inbound message. `/bot name <readable-name>` names a device for the roster.
+会话历史在 `~/.dsh`（上游管理）。要带走，**只拷会话目录**：
+
+```text
+~/.dsh/sessions/     # 会话本体
+~/.dsh/storages/     # 会话投影缓存与工作区索引
+```
+
+**不要整目录拷 `~/.dsh`。** `~/.dsh/dsh-lark-bridge/device-state.json` 记着本机的 `deviceId` 与退位标记：拷过去会让新机顶着旧机的身份（两台机器抢同一个聊天），还可能把退位标记一并带走——新机开机后每条消息只回一行提示，不再驱动 agent。
+
+**设备生命周期** —— 每台机器首启生成稳定 `deviceId`，`/bot devices` 看台账。旧机不用手动停：`/bot retire` 即退位（后续消息只回一行提示、不再驱动 agent），`/bot activate` 重新启用。每台在线端每分钟续写心跳；活跃端掉线超时后，端键最小的新鲜端在下一条消息自动当选。`/bot name <可读名>` 给设备起台账显示名。
 
 </details>
 
@@ -285,105 +285,104 @@ Session history lives under `~/.dsh`. To carry it across, copy the session direc
 <summary>❓ FAQ</summary>
 
 <details>
-<summary>Do I need a public IP or webhook?</summary>
+<summary>需要公网 IP 或 webhook 吗？</summary>
 
-No. The transport is a WebSocket long connection; the app must use long-connection event subscription (self-built app).
-
-</details>
-
-<details>
-<summary>I have DSH Desktop and the web host — will they both answer?</summary>
-
-No. Both share one `~/.dsh` session library, and cloud arbitration is keyed per endpoint (`deviceId:form:profile`): exactly one instance replies per endpoint at any moment, and if the active one goes silent the freshest endpoints elect a successor on the next message. `/bot devices` shows who.
+不需要。传输是 WebSocket 长连接；应用需使用长连接事件订阅方式（自建应用）。
 
 </details>
 
 <details>
-<summary>Which models work?</summary>
+<summary>我同时开着 DSH Desktop 和 web 宿主，会双回复吗？</summary>
 
-Any model routable by your dsh deployment — the bridge is model-agnostic, and `/model` switches at runtime.
-
-</details>
-
-<details>
-<summary>The agent says it sent a file but nothing arrives</summary>
-
-File delivery is default-deny: configure `outbound.allowedFileDirs`. URLs and raw buffers always work.
+不会。两者共用一套 `~/.dsh` 会话库，云端仲裁按端（`deviceId` + `form` + `profile`）判定：每个端只有一个实例回复；活跃端掉线超时后，其余端在下一条消息自动竞选接管。`/bot devices` 看谁在接。
 
 </details>
 
 <details>
-<summary>The web console returns 401 when I open it directly</summary>
+<summary>支持什么模型？</summary>
 
-Each launch mints a new token, so a browser without the cookie gets 401. Open the full `http://127.0.0.1:18787/?token=…` URL the launcher prints once — that sets a long-lived cookie, after which the plain address works.
-
-</details>
-
-<details>
-<summary>The slash panel is empty or partial after a restart</summary>
-
-Boot registers constant commands; the full panel sync runs on the first message of a session. Send the bot anything. If it stays empty, check the `application:app_slash_command` scope and publish an app version.
+你的 dsh 部署能路由的都行——桥与模型无关，`/model` 运行时可切。
 
 </details>
 
 <details>
-<summary>How do I switch to a different Feishu app?</summary>
+<summary>Agent 说发了文件但没收到？</summary>
 
-`/bot account save <name>` archives the current credentials; later `/bot account` and tap **Use** on the card, then `/restart` (web) or restart Desktop. Multiple credential sets can live side by side.
-
-</details>
-
-<details>
-<summary>What survives a restart?</summary>
-
-Sessions resume from their logs; permission and preset choices ride with the session state. Active goals re-arm only if you set `autoResumeGoals: true` (it defaults to false).
-
-</details>
+文件发送默认拒绝：先配 `outbound.allowedFileDirs`。URL 和原始 buffer 始终可用。
 
 </details>
 
 <details>
-<summary>⚠️ Known limitations</summary>
+<summary>浏览器直接打开 web 控制台报 401？</summary>
 
-- **The desktop form lacks question cards.** `hostQuestions` is not available in the `desktop` runtime form; the `web` form is unaffected.
-- **Transport-level config is read once at startup.** Credentials, `requireMention` and allowlists need a restart; other config edits hot-reload via dsh's Config-only HMR (`/config` shows live values).
-- **Events during a long-connection outage are not replayed** (no cursor); outbound sends are queued by the replay port.
-- **`schedule_*` model tools** need `@deepseek-ai/dsh-schedule` composed in your profile.
-- **File sending is deny-by-default** — directories must be listed in outbound.allowedFileDirs first. A refused send now says so in the chat instead of leaving only a caption behind.
-- **How much of a long thing reaches the chat is a budget, not a constant** — tool results, tool arguments, mid-turn messages, quotes, job-output tails, approval-card arguments and /skills previews all read from the limits section; the defaults are sized for a working session, and every cap is adjustable.
-- **Two processes sharing one endpoint key will both answer.** Arbitration compares the endpoint key (`deviceId` + `form` + `profile`); a `dsh web` process and a bare CLI process on the same machine and profile produce the same key, so neither sees the other as a rival. Run one host process per profile.
+每次启动都会重新生成 token，没有 cookie 的浏览器自然 401。先把启动日志里 `http://127.0.0.1:18787/?token=…` 那整行打开一次——会种下长效 cookie，之后裸地址即可。
 
 </details>
 
-## 🧩 Extend it
+<details>
+<summary>重启后斜杠面板空了/少了？</summary>
 
-Three invariants keep the bridge maintainable:
+启动只注册常量命令；完整面板在会话第一条消息时同步（多端舰队里由**活跃端**单写，待命端不抢）。给 bot 发句话即可。仍为空就查 `application:app_slash_command` 权限并发布应用版本。
 
-1. **Grafted channel, not re-integration** — the bridge only normalizes messages; every capability comes from official opt-in dsh plugin families composed in your profile. Zero bridge code = zero upgrade cost when upstream ships features.
-2. **Everything through host service contracts** — `agents`, `agentPresets`, `approval`, `goals`, `settings`… self-contained against published packages only.
-3. **Every change archives a design card first** — see [`docs/design/`](docs/design/README.md).
+</details>
 
-Repo map, the branch/MR flow and the version policy live in **[CONTRIBUTING.md](CONTRIBUTING.md)**. The gates CI runs on every push:
+<details>
+<summary>怎么换绑另一个飞书应用？</summary>
+
+`/bot account save <名字>` 存档当前凭证，之后 `/bot account` 点卡片「使用」即切换，`/restart`（web）或重启 Desktop 生效。支持多套凭证并存。
+
+</details>
+
+<details>
+<summary>重启会丢什么？</summary>
+
+会话从日志恢复；权限与模式选择随会话状态保留。活跃 goal 只有在设了 `autoResumeGoals: true` 时才会续跑（默认关）。
+
+</details>
+
+</details>
+
+<details>
+<summary>⚠️ 已知限制</summary>
+
+- **Desktop 形态暂缺提问卡。** `hostQuestions` 在 `desktop` 运行形态下没有提供方，提问卡降级；`web` 形态不受影响。
+- **传输级配置启动时读一次。** 凭证、`requireMention`、白名单改动需重启；其余配置由 dsh 的 Config-only HMR 自动生效（`/config` 看当前值）。
+- **长连接中断期间到达的事件不重放**（传输层无游标）；出站由 replay 队列兜底。
+- **`schedule_*` 模型工具** 需要在 profile 里组合 `@deepseek-ai/dsh-schedule`。
+- **文件发送默认拒绝** —— 目录必须先写进 `outbound.allowedFileDirs`。
+- **同一个 endpoint key 上的两个进程会同时回话。** 仲裁比的是端键（`deviceId` + `form` + `profile`）；同一台机器、同一个 profile 上同时跑 `dsh web` 和裸 CLI，两者算出来是同一个键，彼此都不认为对方是竞争者。一个 profile 只跑一个宿主进程。
+
+</details>
+
+## 🧩 围绕它做开发
+
+三条不变式让这个仓库长期可维护：
+
+1. **嫁接桥，不重集成** —— 桥只做消息归一化；一切能力来自官方 opt-in 的 dsh 插件家族，在你的 profile 里组合即可。桥零改动 = 上游发新功能零升级成本。
+2. **一切走宿主服务契约** —— `agents` / `agentPresets` / `approval` / `goals` / `settings`…，只依赖已发布的包，自包含。
+3. **凡改动先立设计卡** —— 见 [`docs/design/`](docs/design/README.md)。
+
+仓库地图、分支与 MR 流程、版本与升级策略，都在 **[CONTRIBUTING.md](CONTRIBUTING.md)**。CI 每次 push 都跑这几道门：
 
 ```sh
-pnpm hygiene                    # repo hygiene (deployment terms stay local)
-pnpm test                       # 816 tests in 77 spec files
-pnpm contract-test              # 43 host-contract checks
-pnpm contract-drift             # drift check against upstream dsh master
-node scripts/check-readme-parity.mjs   # the two READMEs stay in step
+pnpm hygiene                    # 仓库卫生（部署专有词只留在本机）
+pnpm test                       # 816 条测试 / 77 个 spec 文件
+pnpm contract-test              # 43 条宿主契约检查
+pnpm contract-drift             # 对上游 dsh master 的漂移检查
+node scripts/check-readme-parity.mjs   # 两份 README 保持同构
 ```
 
-The suite lives in `tests/` — vitest suites (77), including harness-based fakes. Upgrading the harness: run `pnpm contract-drift` before and after — it fails when a host seam the bridge mirrors has moved.
+测试在 `tests/` —— vitest 套件（77 个），含 harness 注入式假件。升级引擎前后各跑一次 `pnpm contract-drift`——桥所镜像的宿主接缝一旦挪位，它会红。
 
-## 🤝 Contributing
+## 🤝 参与
 
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** — how to get a change in.
-- **[SECURITY.md](SECURITY.md)** — how to report a vulnerability. Please do not open a public issue for it.
-- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** — how people are expected to treat each other here.
-- **Issue templates** — under [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE). A report that fills in the environment section is answered faster.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 怎么把改动合进来。
+- **[SECURITY.md](SECURITY.md)** —— 怎么报漏洞。**别开公开 issue**。
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** —— 这里的人与人之间怎么相处。
+- **Issue 模板** —— [`.github/ISSUE_TEMPLATE`](.github/ISSUE_TEMPLATE)。填了环境信息的那份回得更快。
 
-Listed in 9 plugin directories, including [dshbase (verified)](https://dshbase.com/plugins/moyu-good-dsh-lark-bridge/). Most directories read the version from npm; **the repository tag is the truth** — install from npm (`@moyu-good/dsh-lark-bridge`) or straight from a tag.
+已在 9 个目录收录，含 [dshbase（verified）](https://dshbase.com/zh/plugins/moyu-good-dsh-lark-bridge/)。多数目录从 npm 读版本——**以仓库 tag 为准**，安装走 npm（`@moyu-good/dsh-lark-bridge`）或直接装 tag。
 
-## 📄 License
+## 📄 许可
 
-BSD-3-Clause. Architecture inspired by [dsh-lark](https://github.com/Roy-oss1/dsh-lark) (also BSD-3-Clause).
+BSD-3-Clause。架构启发自 [dsh-lark](https://github.com/Roy-oss1/dsh-lark)（同为 BSD-3-Clause）。

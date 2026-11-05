@@ -34,7 +34,7 @@ for (const file of readdirSync(join(ROOT, 'tests'))) {
   tests += [...source.matchAll(/\bit(?:\.each)?\(/g)].length
 }
 
-const FILES = ['README.md', 'README.zh.md']
+const FILES = ['README.en.md', 'README.md']
 const EDITS = [
   [/tests-(\d+)%20passing/g, `tests-${tests}%20passing`],
   [/vitest suites \((\d+)\)/g, `vitest suites (${suites})`],

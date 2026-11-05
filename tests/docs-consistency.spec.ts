@@ -26,7 +26,7 @@ function copyForGate(): string {
   fs.mkdirSync(path.join(copy, 'src', 'sync'), { recursive: true })
   fs.mkdirSync(path.join(copy, 'docs'), { recursive: true })
   fs.mkdirSync(path.join(copy, 'tests'), { recursive: true })
-  for (const file of ['README.md', 'README.zh.md', 'docs/\u7528\u6237\u624b\u518c.md', 'src/commands.ts', 'src/sync/bot-command.ts', 'src/user-guide.ts']) {
+  for (const file of ['README.en.md', 'README.md', 'docs/\u7528\u6237\u624b\u518c.md', 'src/commands.ts', 'src/sync/bot-command.ts', 'src/user-guide.ts']) {
     fs.copyFileSync(path.join(ROOT, file), path.join(copy, file))
   }
   for (const file of fs.readdirSync(path.join(ROOT, 'tests'))) {
@@ -81,7 +81,7 @@ describe('the documentation gate', () => {
     // green, and this test — the only thing watching the count door — went
     // red instead. Bumping whatever is there survives either spelling.
     withChanged(
-      'README.md',
+      'README.en.md',
       (text) =>
         text
           .replace(/(tests-)(\d+)(%20passing)/, (_m, a, n, b) => `${a}${Number(n) + 1}${b}`)
@@ -94,35 +94,35 @@ describe('the documentation gate', () => {
   })
 
   it('catches a command that is written down but does not exist', () => {
-    withChanged('README.md', (text) => `${text}\n| \`/nosuchcommand\` | Does not exist |\n`, (result) => {
+    withChanged('README.en.md', (text) => `${text}\n| \`/nosuchcommand\` | Does not exist |\n`, (result) => {
       expect(result.code).not.toBe(0)
       expect(result.stdout).toContain('lists no command that does not exist')
     })
   })
 
   it('catches a command the bridge implements but no README mentions', () => {
-    withChanged('README.md', (text) => text.split('\n').filter((line) => !line.startsWith('| `/tools` |')).join('\n'), (result) => {
+    withChanged('README.en.md', (text) => text.split('\n').filter((line) => !line.startsWith('| `/tools` |')).join('\n'), (result) => {
       expect(result.code).not.toBe(0)
       expect(result.stdout).toContain('documents every command the bridge implements')
     })
   })
 
   it('catches a suite count that says zero', () => {
-    withChanged('README.zh.md', (text) => text.replace(/vitest 套件（\d+ 个）/, 'vitest 套件（0 个）'), (result) => {
+    withChanged('README.md', (text) => text.replace(/vitest 套件（\d+ 个）/, 'vitest 套件（0 个）'), (result) => {
       expect(result.code).not.toBe(0)
       expect(result.stdout).toContain('suite count')
     })
   })
 
   it('catches a suite count that is the test count rather than the file count', () => {
-    withChanged('README.md', (text) => text.replace(/vitest suites \(\d+\)/, 'vitest suites (999)'), (result) => {
+    withChanged('README.en.md', (text) => text.replace(/vitest suites \(\d+\)/, 'vitest suites (999)'), (result) => {
       expect(result.code).not.toBe(0)
       expect(result.stdout).toContain('suite count')
     })
   })
 
   it('catches one document having a section the other does not', () => {
-    withChanged('README.zh.md', (text) => `${text}\n## 另一个小节\n\n多出来的一节。\n`, (result) => {
+    withChanged('README.md', (text) => `${text}\n## 另一个小节\n\n多出来的一节。\n`, (result) => {
       expect(result.code).not.toBe(0)
       expect(result.stdout).toContain('same number of sections')
     })
@@ -134,7 +134,7 @@ describe('the documentation gate', () => {
     // (`**\`/bot\` subcommands** (bridge admin):` became `**\`/bot\`
     // subcommands**:`) and the fixed-prefix replace silently stopped injecting.
     withChanged(
-      'README.md',
+      'README.en.md',
       (text) =>
         text
           .split('\n')

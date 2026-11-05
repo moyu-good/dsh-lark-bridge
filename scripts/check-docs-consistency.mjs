@@ -101,8 +101,8 @@ function badgeCount(markdown) {
 }
 
 const commands = bridgeCommands()
-const en = read('README.md')
-const zh = read('README.zh.md')
+const en = read('README.en.md')
+const zh = read('README.md')
 
 console.log('\u2500\u2500 documentation consistency \u2500\u2500')
 
@@ -120,7 +120,7 @@ if (JSON.stringify(enNames) === JSON.stringify(zhNames)) {
 }
 
 // 2. Every command the bridge implements is written down.
-for (const [label, listed] of [['README.md', enCommands], ['README.zh.md', zhCommands]]) {
+for (const [label, listed] of [['README.en.md', enCommands], ['README.md', zhCommands]]) {
   const missing = commands.filter((c) => !listed.has(c))
   if (missing.length === 0) {
     pass(`${label} documents every command the bridge implements`, `${commands.length} commands`)
@@ -132,7 +132,7 @@ for (const [label, listed] of [['README.md', enCommands], ['README.zh.md', zhCom
 // 2b. Every command a README lists is one the bridge has, or one the host
 //     provides. A command that is written down but does not exist teaches
 //     the reader to try it and then to distrust the listing.
-for (const [label, listed] of [['README.md', enCommands], ['README.zh.md', zhCommands]]) {
+for (const [label, listed] of [['README.en.md', enCommands], ['README.md', zhCommands]]) {
   const unattributed = [...listed.entries()]
     // The mark for "the host provides this" is written in the language the
     // document is written in, so both forms are accepted.
@@ -166,7 +166,7 @@ function documentedBotSubcommands(markdown) {
 }
 
 const botCommands = botSubcommands()
-for (const [label, markdown] of [['README.md', en], ['README.zh.md', zh]]) {
+for (const [label, markdown] of [['README.en.md', en], ['README.md', zh]]) {
   const documented = documentedBotSubcommands(markdown)
   const missing = botCommands.filter((c) => !documented.includes(c))
   if (missing.length === 0) {
@@ -188,7 +188,7 @@ function suiteCount(markdown) {
 }
 
 const suiteFiles = readdirSync(join(ROOT, 'tests')).filter((f) => f.endsWith('.spec.ts')).length
-for (const [label, markdown] of [['README.md', en], ['README.zh.md', zh]]) {
+for (const [label, markdown] of [['README.en.md', en], ['README.md', zh]]) {
   const suites = suiteCount(markdown)
   if (suites === undefined) {
     fail(`${label} states how many test suites there are`, 'no suite count in the repository map')
@@ -217,7 +217,7 @@ if (enSections.length === zhSections.length) {
 
 // 3. The badge matches the number of tests that run.
 const { count, source } = actualTestCount()
-for (const [label, markdown] of [['README.md', en], ['README.zh.md', zh]]) {
+for (const [label, markdown] of [['README.en.md', en], ['README.md', zh]]) {
   const badge = badgeCount(markdown)
   if (badge === undefined) {
     fail(`${label} carries a test count`, 'no badge and no count in the test comment')
