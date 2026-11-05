@@ -159,7 +159,7 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 | ⏱️ **时间两头都看得见** | 思考区里每次工具调用带开始的钟点、超过 1 秒的结果带耗时、收尾行点名最慢的一步；同时每轮把「现在几点、距上一轮多久」交给模型——隔八小时的「继续」和隔三分钟的「继续」不是同一个指令 |
 | 📎 **文件发送** | Agent 的 `send_file` 带 caption 投递到聊天（本地目录默认拒绝） |
 | 🔒 **授权窄化** | `senderAllowlist` / `groupAllowlist` / `approvers` |
-| ⏰ **定时提醒** | `/schedules` 视图（模型侧工具需组合 `@deepseek-ai/dsh-schedule`） |
+| ⏰ **定时任务面板** | `/schedules` 列出每个任务的规则、下次触发、上次投递；`/schedules 1` 看详情、`run 1` 立刻跑一次、`edit 1 <新内容>` 改、`delete 1` 删。定时器触发时先发一行署名，不再让任务内容冒充用户发言（模型侧工具需组合 `@deepseek-ai/dsh-schedule`） |
 | ⚙️ **后台任务通知** | `run_in_background` 任务结束时播报结果 |
 | 🧩 **Skill 生态面板** | `/skills` 列出可用 skills，`/skills <name>` 看详情 |
 | 🤖 **模型切换** | `/model <provider>/<model>` 走宿主 `saveSelection`，持久生效 |
@@ -193,7 +193,7 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 | `/plugins` | 查看已部署的插件及运行状态 |
 | `/ws` | 查看已注册工作区 |
 | `/jobs` | 本会话后台任务 |
-| `/schedules` | 本聊天定时提醒 |
+| `/schedules` | 本聊天定时任务：规则、下次触发、上次投递；`1` 看详情，`run`/`edit`/`rename`/`delete`/`history` 动手 |
 | `/context` | 上下文占用分布：聊天内容 / 系统提示 / 工具说明，并列出各工具占多少 |
 | `/audit` | 本会话操作审计摘要 |
 | `/feedback` | 给上一条回答评分 |
@@ -366,13 +366,13 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 
 ```sh
 pnpm hygiene                    # 仓库卫生（部署专有词只留在本机）
-pnpm test                       # 794 条测试 / 75 个 spec 文件
+pnpm test                       # 809 条测试 / 77 个 spec 文件
 pnpm contract-test              # 43 条宿主契约检查
 pnpm contract-drift             # 对上游 dsh master 的漂移检查
 node scripts/check-readme-parity.mjs   # 两份 README 保持同构
 ```
 
-测试在 `tests/` —— vitest 套件（75 个），含 harness 注入式假件。升级引擎前后各跑一次 `pnpm contract-drift`——桥所镜像的宿主接缝一旦挪位，它会红。
+测试在 `tests/` —— vitest 套件（77 个），含 harness 注入式假件。升级引擎前后各跑一次 `pnpm contract-drift`——桥所镜像的宿主接缝一旦挪位，它会红。
 
 ## 🤝 参与
 

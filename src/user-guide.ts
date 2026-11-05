@@ -23,7 +23,8 @@ export const USER_GUIDE = `**使用说明**
 
 **三、命令速查**
 会话控制：\`/stop\` 停止当前任务 · \`/preset\` 切模式（标准/代码/极简/创造） · \`/plan\` 计划模式 · \`/compact\` 压缩历史 · \`/clear\` 清上下文 · \`/new\` 新会话 · \`/resume\` 切回历史会话（不带参数看列表） · \`/panel\` 把子代理面板重新发到最下面
-观测：\`/context\` token 压力 · \`/audit\` 操作审计 · \`/jobs\` 后台任务 · \`/schedules\` 定时提醒 · \`/sessions\` 会话历史
+观测：\`/context\` token 压力 · \`/audit\` 操作审计 · \`/jobs\` 后台任务 · \`/sessions\` 会话历史
+定时任务：\`/schedules\` 列任务（规则·下次触发·上次投递） · \`/schedules 1\` 看详情 · \`/schedules run 1\` 立刻跑一次 · \`/schedules edit 1 <新内容>\` 改内容 · \`/schedules rename 1 <新名字>\` 改名 · \`/schedules history 1\` 投递记录 · \`/schedules delete 1\` 删除。定时器触发时会先发一行「⏰ 定时任务「名字」· 规则」，任务内容再进来。
 配置：\`/model\` 看换默认模型（只影响新会话） · \`/think\` 看换本会话思考强度（下一步即生效，\`/think reset\` 回默认） · \`/tools\` 看能力全景/禁用/恢复工具 · \`/permission <模式>\` 权限（⚠️ 不带参数只显示状态，不是菜单） · \`/config\` 桥配置 · \`/skills\` 技能清单 · \`/ws\` 工作区 · \`/plugins\` 插件
 反馈：\`/feedback\` · \`/help\` 命令列表 · \`/manual\` 本说明
 

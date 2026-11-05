@@ -11,6 +11,7 @@
  */
 
 import { DEFAULT_LIMITS } from './config.ts'
+import { shortStamp, upcomingPhrase } from './clock.ts'
 
 /** The `subagent/descriptor` payload fields this module renders. */
 export interface SubagentNotice {
@@ -25,36 +26,175 @@ export function subagentLine(descriptor: SubagentNotice): string {
   return `🧑💻 ${kind}${label} 已启动`
 }
 
-/** The `schedule/change` payload fields this module renders. */
-export interface ScheduleNotice {
-  readonly operation: 'create' | 'delete' | 'dispatch'
-  readonly kind?: 'after' | 'at' | 'every'
+/**
+ * Every rule kind the host scheduler accepts.
+ *
+ * Duplicated as a string union rather than imported from `host.ts` so this
+ * module keeps its "no plugin dependencies" shape (it is the rendering layer
+ * for notices, and `host.ts` is the type layer for services). The three
+ * historical kinds are what `schedule/change` carries; the three wall-clock
+ * kinds exist only on a durable record.
+ */
+export type ScheduleRuleKind = 'after' | 'at' | 'every' | 'daily' | 'weekly' | 'cron'
+
+/** The schedule fields this module renders. */
+export interface ScheduleView {
+  readonly kind?: ScheduleRuleKind
+  readonly title?: string
   readonly prompt?: string
+  readonly everySeconds?: number
+  readonly time?: string
+  readonly timeZone?: string
+  readonly weekdays?: readonly number[]
+  readonly expression?: string
+  /** The next target instant, ISO-8601. */
+  readonly scheduledAt?: string
 }
 
-/** A human interval label for one schedule kind. */
-function scheduleKindLabel(kind: 'after' | 'at' | 'every' | undefined): string {
-  switch (kind) {
-    case 'after': return '延时'
-    case 'at': return '定点'
-    case 'every': return '周期'
-    default: return ''
+/** The `schedule/change` payload fields this module renders. */
+export interface ScheduleNotice extends ScheduleView {
+  readonly operation: 'create' | 'delete' | 'dispatch'
+}
+
+/** ISO weekday numbers as the two-character labels a Chinese reader expects. */
+const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'] as const
+
+/**
+ * Render one interval in the unit a person would say it in.
+ *
+ * Seconds are the scheduler's unit and nobody's reading unit: `每 1800 秒`
+ * makes the reader divide, and the answer — 30 minutes — is exactly what they
+ * wanted. The remainder is kept only when it is not zero, so a clean hour does
+ * not read as `1 小时 0 分钟`.
+ * @param seconds - the fixed interval.
+ * @returns the phrase, or '' when the interval is missing or unusable.
+ */
+export function intervalPhrase(seconds: number | undefined): string {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) return ''
+  if (seconds < 60) return `${Math.round(seconds)} 秒`
+  if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`
+  if (seconds < 86_400) {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.round((seconds % 3600) / 60)
+    return minutes === 0 ? `${hours} 小时` : `${hours} 小时 ${minutes} 分钟`
+  }
+  const days = Math.floor(seconds / 86_400)
+  const hours = Math.round((seconds % 86_400) / 3600)
+  return hours === 0 ? `${days} 天` : `${days} 天 ${hours} 小时`
+}
+
+/**
+ * Render the recurring rule of one task as a phrase: `每 30 分钟`, `每天
+ * 09:00`, `每周一、三 09:00`, `cron <表达式>`, `定点 11-06 09:00`.
+ *
+ * This is the answer to "when does this thing run", which the bridge used to
+ * answer with the raw kind and a `undefined` interval for anything newer than
+ * the three historical kinds. A wall-clock rule is shown in its own zone's
+ * wall time — that is what the reader scheduled — and the zone is appended
+ * only when it differs from this machine's, so the common case stays short.
+ * @param view - the record fields to describe.
+ * @returns the phrase, or '' when the record states no rule at all.
+ */
+export function scheduleRuleLabel(view: ScheduleView): string {
+  switch (view.kind) {
+    case 'after':
+      return '延时一次'
+    case 'at':
+      return '定点一次'
+    case 'every': {
+      const interval = intervalPhrase(view.everySeconds)
+      return interval === '' ? '周期' : `每 ${interval}`
+    }
+    case 'daily':
+      return view.time === undefined ? '每天' : `每天 ${view.time.slice(0, 5)}`
+    case 'weekly': {
+      const days = (view.weekdays ?? []).map(day => WEEKDAY_LABELS[day - 1] ?? String(day)).join('、')
+      const at = view.time === undefined ? '' : ` ${view.time.slice(0, 5)}`
+      return days === '' ? `每周${at}` : `每周${days}${at}`
+    }
+    case 'cron':
+      return view.expression === undefined ? 'cron' : `cron \`${view.expression}\``
+    default:
+      return ''
   }
 }
 
-/** A schedule mutation line. `dispatch` stays silent — it fires on schedule and is noise. */
+/**
+ * The name to show for one task: its own title, else the prompt's first line.
+ *
+ * A title is required by the host's current `schedule_create`, so a task the
+ * model made has one. Records written before titles existed, and every
+ * historical `schedule/change` create, do not — and a list that shows nothing
+ * but a 120-character prompt excerpt is what made the old panel unreadable.
+ * @param view - the record.
+ * @param limit - code points kept from the prompt's first line.
+ * @returns the display name, or '' when the record is empty.
+ */
+export function scheduleName(view: ScheduleView, limit = 40): string {
+  const title = view.title?.trim()
+  if (title !== undefined && title !== '') return title
+  const prompt = (view.prompt ?? '').trim()
+  if (prompt === '') return ''
+  const firstLine = prompt.split('\n').map(line => line.trim()).find(line => line !== '') ?? ''
+  return [...firstLine].length > limit ? `${[...firstLine].slice(0, limit).join('')}…` : firstLine
+}
+
+/**
+ * Render one task's next target: `下次 09:57（还有 27 分钟）`.
+ *
+ * An instant is what the record stores; "how long from now" is what a reader
+ * decides with. Both, in that order, because the absolute one is what they
+ * compare against a clock and the relative one is what tells them whether to
+ * wait.
+ * @param view - the record, carrying `scheduledAt` when the host reported it.
+ * @param now - the reference instant.
+ * @returns the phrase, or '' when there is no target.
+ */
+export function scheduleNextLabel(view: ScheduleView, now: number): string {
+  const at = view.scheduledAt === undefined ? Number.NaN : Date.parse(view.scheduledAt)
+  if (!Number.isFinite(at)) return ''
+  const short = shortStamp(at, now)
+  const gap = upcomingPhrase(at - now)
+  return gap === '' ? `下次 ${short}` : `下次 ${short}（还有 ${gap}）`
+}
+
+/** A schedule mutation line. `dispatch` renders through {@link scheduleDispatchLine}. */
 export function scheduleLine(notice: ScheduleNotice): string | undefined {
   switch (notice.operation) {
     case 'create': {
-      const kind = scheduleKindLabel(notice.kind)
-      const prompt = notice.prompt === undefined ? '' : `：${notice.prompt.slice(0, 40)}`
-      return `⏰ 已创建${kind}任务${prompt}`
+      const rule = scheduleRuleLabel(notice)
+      const name = scheduleName(notice)
+      const subject = name === '' ? '定时任务' : `「${name}」`
+      return rule === '' ? `⏰ 已创建定时任务${subject}` : `⏰ 已创建定时任务${subject}：${rule}`
     }
     case 'delete':
       return '⏰ 定时任务已删除'
     case 'dispatch':
       return undefined
   }
+}
+
+/**
+ * The line posted when a scheduled task actually fires.
+ *
+ * Delivery used to be silent: the host appends the prompt to the session as a
+ * user-role message, and the chat saw a block of instructions arrive from
+ * nobody. A reader could not tell "the agent decided to do this" from "a timer
+ * decided to do this", and the recurring tasks that fire every half hour read
+ * as the human repeatedly asking. One line names the task, its rule and its
+ * origin, which is the difference between a scheduled check and a stranger
+ * shouting into the conversation.
+ *
+ * It stays one line on purpose: the task's own output follows immediately, and
+ * a card here would push that output off the screen for no new information.
+ * @param view - the task that fired.
+ * @returns the line.
+ */
+export function scheduleDispatchLine(view: ScheduleView): string {
+  const name = scheduleName(view)
+  const rule = scheduleRuleLabel(view)
+  const subject = name === '' ? '定时任务' : `定时任务「${name}」`
+  return rule === '' ? `⏰ ${subject} 触发` : `⏰ ${subject} · ${rule}`
 }
 
 /** A DeepSeek search firing line. */

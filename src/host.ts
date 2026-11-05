@@ -588,27 +588,159 @@ export interface SubagentDescriptorData {
   readonly agentModel?: string
 }
 
+/**
+ * Every rule kind the host scheduler accepts.
+ *
+ * `after`/`at`/`every` are the three the historical `schedule/change` event
+ * carries; `daily`/`weekly`/`cron` exist only on the durable record and reach
+ * the bridge through the service's own `list`/`catalog`. A bridge that knows
+ * only the first three renders a daily task as "周期(undefineds)" — the rule
+ * is real, the label was wrong.
+ */
+export type ScheduleKind = 'after' | 'at' | 'every' | 'daily' | 'weekly' | 'cron'
+
 /** The `schedule/change` payload: one durable schedule mutation. */
 export interface ScheduleChangeData {
   readonly version: number
   readonly operation: 'create' | 'delete' | 'dispatch'
   readonly schedule?: {
     readonly id: string
-    readonly kind: 'after' | 'at' | 'every'
+    readonly kind: ScheduleKind
+    readonly title?: string
     readonly prompt: string
     readonly everySeconds?: number
   }
   readonly id?: string
 }
 
-/** One active schedule as the bridge tracks it from schedule/change events. */
+/** One schedule as the bridge tracks it: the host record plus when we saw it. */
 export interface ScheduleEntry {
   readonly id: string
-  readonly kind: 'after' | 'at' | 'every'
+  readonly kind: ScheduleKind
+  /**
+   * The task's own name, when the record carries one.
+   *
+   * `schedule_create` requires a title in the host's current tool layer, so
+   * every task made by the model has one; a record written before titles
+   * existed has none, and a historical `schedule/change` create never carries
+   * one at all. Callers fall back to the prompt's first line.
+   */
+  readonly title?: string
   readonly prompt: string
   readonly everySeconds?: number
+  /** Local wall-clock rule for `daily`/`weekly`/`cron`, normalized by the host. */
+  readonly time?: string
+  /** The IANA zone the wall-clock rule is evaluated in. */
+  readonly timeZone?: string
+  /** ISO weekdays (Monday 1 … Sunday 7) for `weekly`, ascending. */
+  readonly weekdays?: readonly number[]
+  /** Canonical five-field expression for `cron`. */
+  readonly expression?: string
+  /** The next target instant, ISO-8601 UTC, when the host record states it. */
+  readonly scheduledAt?: string
+  /** The task's own status; absent on records from an older host. */
+  readonly state?: 'active' | 'inactive'
+  /** The latest delivery receipt, when the host catalog reports one. */
+  readonly lastDelivery?: ScheduleDelivery
   /** Unix epoch milliseconds when the bridge saw the create. */
   readonly createdAt: number
+}
+
+/** One saved delivery receipt: when it was due, when it was acknowledged. */
+export interface ScheduleDelivery {
+  /** The occurrence's target instant, ISO-8601. */
+  readonly scheduledAt?: string
+  /** When the session acknowledged the message, ISO-8601. */
+  readonly deliveredAt?: string
+  readonly messageId?: string
+}
+
+/** One page of saved deliveries, newest first. */
+export interface ScheduleHistoryPage {
+  readonly records?: readonly ScheduleDelivery[]
+  /** Cursor for the next page; present only when more records remain. */
+  readonly nextBefore?: string
+  /** Whether older receipts were pruned, so the count is a lower bound. */
+  readonly earlierRecordsUnavailable?: boolean
+}
+
+/**
+ * The host `schedule` service, as the bridge's own commands use it.
+ *
+ * Every member is optional: a deployment without the schedule plugin, or one
+ * whose service surface moved, must still render the registry the bridge
+ * built from events — read-only, but never broken.
+ *
+ * The shapes below mirror the host's own results, including the failure form:
+ * a refused mutation resolves with a `code` instead of throwing, so the caller
+ * has to read the answer rather than assume the write landed.
+ */
+export interface ScheduleStore {
+  list?(query: { readonly sessionId: string }): Promise<readonly ScheduleRecordLike[]>
+  catalog?(): Promise<readonly ScheduleCatalogEntry[]>
+  history?(query: {
+    readonly sessionId: string
+    readonly id: string
+    readonly limit: number
+    readonly before?: string
+  }): Promise<ScheduleHistoryPage>
+  update?(request: ScheduleUpdateRequest): Promise<ScheduleUpdateResult>
+  delete?(query: { readonly sessionId: string; readonly id: string }): Promise<ScheduleDeleteResult>
+}
+
+/** One record exactly as the host service reports it. */
+export interface ScheduleRecordLike {
+  readonly id: string
+  readonly kind: ScheduleKind
+  readonly title?: string
+  readonly prompt: string
+  readonly everySeconds?: number
+  readonly time?: string
+  readonly timeZone?: string
+  readonly weekdays?: readonly number[]
+  readonly expression?: string
+  readonly scheduledAt?: string
+  readonly state?: 'active' | 'inactive'
+  readonly lastDelivery?: ScheduleDelivery
+}
+
+/** One `catalog` row: the record plus the session it is bound to. */
+export interface ScheduleCatalogEntry extends ScheduleRecordLike {
+  readonly sessionId?: string
+}
+
+/**
+ * An in-place edit of one active task.
+ *
+ * The host compares `expected` against the stored record as a
+ * compare-and-set, so the caller must pass the record it read immediately
+ * before — that is what turns a concurrent delivery or a second edit into
+ * `schedule_conflict` instead of a silent overwrite.
+ */
+export interface ScheduleUpdateRequest {
+  readonly sessionId: string
+  readonly id: string
+  readonly expected: unknown
+  readonly title?: string
+  readonly prompt?: string
+}
+
+/** What one `update` answered: the committed record, or a non-mutating refusal. */
+export interface ScheduleUpdateResult {
+  readonly id?: string
+  readonly updated?: boolean
+  readonly record?: ScheduleRecordLike
+  /** `schedule_conflict`, `schedule_ended`, `schedule_not_found`, `invalid_rule`, … */
+  readonly code?: string
+  readonly message?: string
+}
+
+/** What one `delete` answered. `deleted: false` means the task was already gone. */
+export interface ScheduleDeleteResult {
+  readonly id?: string
+  readonly deleted?: boolean
+  readonly code?: string
+  readonly message?: string
 }
 
 /** Per-session operation counters accumulated for `/audit`. */

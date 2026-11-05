@@ -13,6 +13,32 @@
  * @module dsh-lark-bridge/clock
  */
 /**
+ * Render a short wall-clock stamp for something that has not happened yet:
+ * `09:57` later today, `11-06 20:41` on another day.
+ *
+ * A full `2026-11-06 20:41:23 (+08:00)` is what a log line needs and what a
+ * task list does not: the year, the seconds and the offset are identical for
+ * every row, so they bury the one part that differs. The date appears only
+ * when it is not today, which is the only case a bare clock time could be
+ * misread as "already passed".
+ * @param at - epoch milliseconds.
+ * @param now - the reference instant, defaulting to the current clock.
+ * @returns the stamp, or '' when there is nothing to render.
+ */
+export declare function shortStamp(at: number | undefined, now?: number): string;
+/**
+ * Render how long until an instant, in the words a person would use: `还有 27
+ * 分钟`, `还有 3 小时 12 分钟`, `还有 2 天`.
+ *
+ * The mirror of {@link elapsedPhrase} for a schedule's next target. It stops at
+ * days on purpose: "还有 2 天" is the resolution a person needs to decide
+ * whether to wait, and a task list that says "还有 1 天 23 小时 58 分钟" is
+ * hiding that behind arithmetic.
+ * @param ms - the gap in milliseconds, already >= 0.
+ * @returns the phrase, or '' when it is not a usable number.
+ */
+export declare function upcomingPhrase(ms: number | undefined): string;
+/**
  * Render one instant as the chat's local wall clock: `2026-11-01 01:42:33 (+08:00)`.
  *
  * 飞书给的 `createTime` 是毫秒时间戳，跟着服务器走；人说的是本地时间。一律

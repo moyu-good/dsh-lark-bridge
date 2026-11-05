@@ -47,7 +47,7 @@ import type {
   AuditStats,
   ScheduleEntry,
 } from './host.ts'
-import type { HostJobs, HostJobSnapshot, HostLoaderEntry, HostMessageFeedback, HostSession, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleChangeData, SubagentEndData, WorkflowRunInfoData } from './host.ts'
+import type { HostJobs, HostJobSnapshot, HostLoaderEntry, HostMessageFeedback, HostSession, HostSessionQuery, HostSkills, HostTokenMeter, ScheduleChangeData, ScheduleStore, SubagentEndData, WorkflowRunInfoData } from './host.ts'
 import { isAssistantMessageEvent, isTeamRelayMessageEvent, isCompactionEndEvent, isPresentedEvent, isCompactionPruneEvent, isCompactionStartEvent, isCompactionSummaryEvent, isGoalChangeEvent, isLlmRetryEvent, isScheduleChangeEvent, isStepStartEvent, isSubagentCatalogEvent, isSubagentDescriptorEvent, isTodoWriteEvent, isToolCallEvent, isTurnEndEvent, isWebSearchRequestEvent, isWorkflowAgentEndEvent, isWorkflowAgentStartEvent, isWorkflowRunEndEvent, isWorkflowRunStartEvent ,
   isTeamMemberEvent,
   isTeamTaskEvent,
@@ -93,6 +93,7 @@ import {
   TOOLS_COMMAND,
   WS_COMMAND,
 } from './commands.ts'
+import type { ScheduleControl } from './commands.ts'
 import { EffortOverrides } from './think.ts'
 import { getSyncContext } from './sync/bot-command.ts'
 import { collectImages } from './images.ts'
@@ -167,6 +168,7 @@ import {
   compactionSummaryLine,
   jobDoneLine,
   retryLine,
+  scheduleDispatchLine,
   scheduleLine,
   subagentEndLine,
   tokenPressureLine,
@@ -1038,12 +1040,44 @@ export function installBridge(
   /** One schedule record as the plugin's own `list` reports it. */
   interface ScheduleRecordLike {
     readonly id: string
-    readonly kind: 'after' | 'at' | 'every'
+    readonly kind: ScheduleEntry['kind']
+    readonly title?: string
     readonly prompt: string
     readonly everySeconds?: number
+    readonly time?: string
+    readonly timeZone?: string
+    readonly weekdays?: readonly number[]
+    readonly expression?: string
+    readonly scheduledAt?: string
+    readonly state?: 'active' | 'inactive'
+    readonly lastDelivery?: ScheduleEntry['lastDelivery']
   }
   /** Sessions whose registry was already rebuilt from their own log. */
   const seededSchedules = new Set<string>()
+  /**
+   * One service record as a registry entry.
+   *
+   * Every optional field is copied only when the service reported it, so an
+   * older host that knows nothing about wall-clock rules produces an entry the
+   * renderer can still describe — it just has less to say. `createdAt` is
+   * passed in because a refresh must keep the original creation instant
+   * instead of restamping it to now.
+   */
+  const entryFromRecord = (record: ScheduleRecordLike, createdAt: number): ScheduleEntry => ({
+    id: record.id,
+    kind: record.kind,
+    prompt: record.prompt,
+    createdAt,
+    ...record.title === undefined ? {} : { title: record.title },
+    ...record.everySeconds === undefined ? {} : { everySeconds: record.everySeconds },
+    ...record.time === undefined ? {} : { time: record.time },
+    ...record.timeZone === undefined ? {} : { timeZone: record.timeZone },
+    ...record.weekdays === undefined ? {} : { weekdays: record.weekdays },
+    ...record.expression === undefined ? {} : { expression: record.expression },
+    ...record.scheduledAt === undefined ? {} : { scheduledAt: record.scheduledAt },
+    ...record.state === undefined ? {} : { state: record.state },
+    ...record.lastDelivery === undefined ? {} : { lastDelivery: record.lastDelivery },
+  })
   /**
    * Apply one `schedule/change` payload to a session's registry.
    *
@@ -1052,6 +1086,10 @@ export function installBridge(
    * the event handler so the log replay below applies exactly the same rules —
    * two implementations of "what is still scheduled" is how the two drift.
    *
+   * A historical event carries only the three legacy kinds and no title, so a
+   * task first seen this way is later enriched by {@link refreshScheduleRegistry}
+   * — the fields it cannot know are simply absent until then.
+   *
    * @param byId - the session's registry.
    * @param data - the event payload.
    */
@@ -1059,18 +1097,59 @@ export function installBridge(
     const id = data.schedule?.id ?? data.id
     if (id === undefined) return
     if (data.operation === 'create' && data.schedule !== undefined) {
+      const previous = byId.get(id)
       byId.set(id, {
         id,
         kind: data.schedule.kind,
         prompt: data.schedule.prompt,
+        createdAt: previous?.createdAt ?? Date.now(),
+        ...data.schedule.title === undefined ? {} : { title: data.schedule.title },
         ...data.schedule.everySeconds === undefined ? {} : { everySeconds: data.schedule.everySeconds },
-        createdAt: Date.now(),
       })
       return
     }
     if (data.operation === 'delete') byId.delete(id)
     // A one-shot reminder dispatched once is done.
     else if (data.operation === 'dispatch' && data.schedule?.kind === 'after') byId.delete(id)
+  }
+  /**
+   * Re-read one session's tasks from the host service, replacing the registry.
+   *
+   * `/schedules` answers "what is scheduled" and now also "when did it last
+   * run" and "let me change it", so a process-lifetime cache filled by events
+   * is not enough: a task created in another chat, or a delivery that just
+   * happened, exists only in the service. The service is authoritative — a
+   * record it no longer reports is gone, which is exactly right after a delete
+   * from another surface.
+   * @param sessionId - the session whose tasks to re-read.
+   */
+  const refreshScheduleRegistry = async (sessionId: string): Promise<void> => {
+    const store = ctx.get('schedule') as ScheduleStore | undefined
+    if (store?.list === undefined) return
+    const records = await store.list({ sessionId })
+    // `list` answers "what is still scheduled" and stops there — it carries no
+    // delivery receipt. "上次什么时候跑的" is the question the old panel could
+    // not answer at all, so it is worth one extra read per task; the page is
+    // capped at one record and a failure leaves the row without a receipt
+    // instead of without a task.
+    const enriched = await Promise.all(records.map(async record => {
+      if (record.lastDelivery !== undefined || store.history === undefined) return record
+      try {
+        const page = await store.history({ sessionId, id: record.id, limit: 1 })
+        const latest = page.records?.[0]
+        return latest === undefined ? record : { ...record, lastDelivery: latest }
+      } catch {
+        return record
+      }
+    }))
+    const previous = scheduleRegistry.get(sessionId)
+    const byId = new Map<string, ScheduleEntry>()
+    const now = Date.now()
+    for (const record of enriched) {
+      byId.set(record.id, entryFromRecord(record, previous?.get(record.id)?.createdAt ?? now))
+    }
+    if (byId.size === 0) scheduleRegistry.delete(sessionId)
+    else scheduleRegistry.set(sessionId, byId)
   }
   /**
    * Rebuild one session's schedule registry from its own log, once.
@@ -1097,20 +1176,13 @@ export function installBridge(
     const byId = scheduleRegistry.get(session.id) ?? new Map<string, ScheduleEntry>()
     // Authoritative first. `list` is the query the scheduler itself answers
     // with, so whatever it returns IS what will fire.
-    const store = ctx.get('schedule') as
-      | { list?: (query: { sessionId: string }) => Promise<readonly ScheduleRecordLike[]> }
-      | undefined
+    const store = ctx.get('schedule') as ScheduleStore | undefined
     if (store?.list !== undefined) {
       try {
         const records = await store.list({ sessionId: session.id })
+        const now = Date.now()
         for (const record of records) {
-          byId.set(record.id, {
-            id: record.id,
-            kind: record.kind,
-            prompt: record.prompt,
-            ...record.everySeconds === undefined ? {} : { everySeconds: record.everySeconds },
-            createdAt: Date.now(),
-          })
+          byId.set(record.id, entryFromRecord(record, byId.get(record.id)?.createdAt ?? now))
         }
         if (byId.size > 0) scheduleRegistry.set(session.id, byId)
         return
@@ -1125,6 +1197,82 @@ export function installBridge(
       applyScheduleChange(byId, event.data)
     }
     if (byId.size > 0) scheduleRegistry.set(session.id, byId)
+  }
+  /**
+   * Turn a non-mutating schedule result into a line the chat can act on.
+   *
+   * The host answers a refused mutation with a code rather than an exception:
+   * "already deleted", "someone else changed it first", "that binding cannot be
+   * edited". Passing the raw code through would be accurate and useless, so
+   * each one is said in the words that tell the reader what to do next.
+   */
+  function scheduleRefusal(result: { readonly code?: string; readonly message?: string }, verb: string): string {
+    switch (result.code) {
+      case 'schedule_not_found': return '任务已经不在了（可能刚被删除）'
+      case 'schedule_conflict': return '任务刚被改动过（可能刚好触发了一次投递），稍后再试一次'
+      case 'schedule_ended': return '任务已经结束，改不了；需要的话重新建一个'
+      case 'subagent_session': return '这个任务绑在子会话上，在这里改不了'
+      default: return result.message ?? `${verb}被拒绝（${result.code ?? '未知原因'}）`
+    }
+  }
+  /**
+   * What `/schedules` can DO, as opposed to what the registry remembers.
+   *
+   * Reads stay in the registry; every write and the delivery history come from
+   * the host service, which is the only thing that owns them. Each write
+   * refreshes the registry afterwards, so the reply the chat gets and the list
+   * it sees next agree.
+   *
+   * Failures come back as a line instead of a throw: a command always owes the
+   * chat an answer, and "the task is gone" is information, not a crash.
+   */
+  const scheduleControl: ScheduleControl = {
+    get store(): ScheduleStore | undefined {
+      return ctx.get('schedule') as ScheduleStore | undefined
+    },
+    refresh: refreshScheduleRegistry,
+    remove: async (sessionId, id) => {
+      const store = ctx.get('schedule') as ScheduleStore | undefined
+      if (store?.delete === undefined) return '本部署的定时服务没有提供删除接口'
+      try {
+        const result = await store.delete({ sessionId, id })
+        // A refusal resolves rather than throws: the task was already gone, or
+        // this session never owned it. Reporting success there would be a lie
+        // the reader only discovers when the task keeps firing.
+        if (result.deleted === false) return scheduleRefusal(result, '删除')
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+      await refreshScheduleRegistry(sessionId).catch(() => {})
+      return undefined
+    },
+    edit: async (sessionId, id, change) => {
+      const store = ctx.get('schedule') as ScheduleStore | undefined
+      if (store?.update === undefined || store.list === undefined) return '本部署的定时服务没有提供修改接口'
+      let expected: unknown
+      try {
+        const records = await store.list({ sessionId })
+        const found = records.find(record => record.id === id)
+        // The host compares the whole record before writing; a record read
+        // after someone else deleted it would only produce a conflict, so the
+        // clearer answer is that it is gone.
+        if (found === undefined) return '任务已经不在了（可能刚被删除）'
+        expected = found
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+      try {
+        // `change` (the timing selector) is deliberately absent: an edit from
+        // the chat rewrites the name or the instruction and keeps the rule, so
+        // a `run 1` a minute later still fires on the schedule the reader set.
+        const result = await store.update({ sessionId, id, expected, ...change })
+        if (result.updated !== true) return scheduleRefusal(result, '修改')
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+      await refreshScheduleRegistry(sessionId).catch(() => {})
+      return undefined
+    },
   }
   /**
    * Call ids whose declared files were already delivered, per session.
@@ -2609,6 +2757,7 @@ export function installBridge(
               sessionCwd: await chatCwd(msg.chatId),
               sessionCwdBound: (await chatBindings())[msg.chatId] !== undefined,
               sessionPreset: sessionPresets.get(sessionId),
+              schedule: scheduleControl,
             },
           )
         } catch (error) {
@@ -3495,20 +3644,52 @@ export function installBridge(
       }
     }
     if (isScheduleChangeEvent(event)) {
-      const line = scheduleLine({
-        operation: event.data.operation,
-        ...event.data.schedule === undefined ? {} : { kind: event.data.schedule.kind, prompt: event.data.schedule.prompt },
-      })
-      if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
       // Keep /schedules in step with the live stream. A session whose log was
       // already replayed (seedScheduleRegistry) starts from that state; one
       // that was not yet starts from what this event says, and the replay
       // later re-applies it — applyScheduleChange is idempotent by design.
       const sessionId = session.id
       const byId = scheduleRegistry.get(sessionId) ?? new Map<string, ScheduleEntry>()
+      // Resolve the task BEFORE applying the change: a delete event carries no
+      // record, so the name worth reporting is the one the registry still
+      // holds, and a dispatch has to be attributed to a task the registry may
+      // know better than the event does.
+      const id = event.data.schedule?.id ?? event.data.id
+      const known = id === undefined ? undefined : byId.get(id)
       applyScheduleChange(byId, event.data)
       if (byId.size === 0) scheduleRegistry.delete(sessionId)
       else scheduleRegistry.set(sessionId, byId)
+
+      const view = {
+        ...known === undefined ? {} : {
+          title: known.title,
+          time: known.time,
+          timeZone: known.timeZone,
+          weekdays: known.weekdays,
+          expression: known.expression,
+          scheduledAt: known.scheduledAt,
+        },
+        ...event.data.schedule === undefined ? {} : {
+          kind: event.data.schedule.kind,
+          prompt: event.data.schedule.prompt,
+          ...event.data.schedule.title === undefined ? {} : { title: event.data.schedule.title },
+          ...event.data.schedule.everySeconds === undefined ? {} : { everySeconds: event.data.schedule.everySeconds },
+        },
+        ...known === undefined || event.data.schedule?.kind !== undefined ? {} : { kind: known.kind },
+        ...known === undefined || event.data.schedule?.prompt !== undefined ? {} : { prompt: known.prompt },
+      }
+      if (event.data.operation === 'dispatch') {
+        // 定时器触发时必须先说一声：宿主把任务内容当普通用户消息塞进会话，
+        // 聊天里只看到一段没人署名的指令，读者分不清是人在派活还是定时器
+        // 在跑——每半小时一次的任务尤其像人在反复催。一行说明就够了，
+        // 任务自己的输出紧跟其后，卡片只会把它挤出屏幕。
+        if (config.notifyOnScheduleDispatch) {
+          void replay.send(binding.chatId, { markdown: scheduleDispatchLine(view) }).catch(reportSendFailure)
+        }
+      } else {
+        const line = scheduleLine({ operation: event.data.operation, ...view })
+        if (line !== undefined) void replay.send(binding.chatId, { markdown: line }).catch(reportSendFailure)
+      }
     }
     if (isWebSearchRequestEvent(event)) {
       const nowMs = Date.now()

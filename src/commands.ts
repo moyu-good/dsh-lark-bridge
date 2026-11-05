@@ -10,9 +10,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLlm, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry,
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLlm, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostUserMessage, HostWorkspaceRegistry, ScheduleEntry, ScheduleStore,
   HostTools,} from './host.ts'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { DEFAULT_LIMITS } from './config.ts'
 import type { BusyPolicy, Limits, ResolvedConfig } from './config.ts'
@@ -22,7 +22,8 @@ import { runBotCommand } from './sync/bot-command.ts'
 import { fetchDeepseekBalance, formatBalanceReply } from './balance.ts'
 import { USER_GUIDE } from './user-guide.ts'
 import { writeRestartRequest } from './restart-notice.ts'
-import { contextPressureLine } from './notices.ts'
+import { contextPressureLine, scheduleName, scheduleNextLabel, scheduleRuleLabel } from './notices.ts'
+import { shortStamp } from './clock.ts'
 import { readContextBreakdown } from './context-breakdown.ts'
 import { readToolCosts } from './tool-costs.ts'
 import { runThinkCommand } from './think.ts'
@@ -269,6 +270,41 @@ export interface CommandExtras {
   readonly sessionCwdBound?: boolean | undefined
   /** The this session's live preset choice, when one was made (`/session`). */
   readonly sessionPreset?: string | undefined
+  /** The host schedule service and the bridge's own write path to it (`/schedules`). */
+  readonly schedule?: ScheduleControl | undefined
+}
+
+/**
+ * What `/schedules` needs beyond the read-only registry.
+ *
+ * The registry the bridge keeps from `schedule/change` events answers "what is
+ * scheduled", never "when did it last run" or "change it" — those live in the
+ * host service, which the bridge reaches through this seam. Each member is
+ * async and reports a human failure line instead of throwing, so a command can
+ * always answer the chat with what happened.
+ */
+export interface ScheduleControl {
+  /** The host service itself, for reads the registry cannot answer (delivery history). */
+  readonly store?: ScheduleStore | undefined
+  /**
+   * Re-read one session's tasks from the host service.
+   *
+   * The registry is filled by events and backfilled once per process; a task
+   * created in another chat, or a delivery that moved `lastDelivery`, only
+   * shows up after a fresh read.
+   * @param sessionId - the session whose tasks to re-read.
+   */
+  refresh(sessionId: string): Promise<void>
+  /**
+   * Delete one task, which also removes its saved delivery records.
+   * @returns a human failure line, or undefined on success.
+   */
+  remove(sessionId: string, id: string): Promise<string | undefined>
+  /**
+   * Rename or re-prompt one task in place, keeping its id and history.
+   * @returns a human failure line, or undefined on success.
+   */
+  edit(sessionId: string, id: string, change: { readonly title?: string; readonly prompt?: string }): Promise<string | undefined>
 }
 
 /**
@@ -425,7 +461,7 @@ export async function runCommandLine(
     return runToolsCommand(trimmed, deniedTools, tools, toolScope)
   }
   if (name === SCHEDULES_COMMAND) {
-    return runSchedulesCommand(agent, schedules, config?.limits ?? DEFAULT_LIMITS)
+    return runSchedulesCommand(trimmed, agent, schedules, config?.limits ?? DEFAULT_LIMITS, extras?.schedule)
   }
   if (name === AUDIT_COMMAND) {
     return runAuditCommand(agent, audits)
@@ -811,7 +847,7 @@ function runAuditCommand(
     `· 模型重试：${stats.retries}`,
     `· 子代理：${stats.subagents}`,
     `· 工作流：${stats.workflows}`,
-    `· 定时提醒：${stats.schedules}`,
+    `· 定时任务：${stats.schedules}`,
   ]
   return { reply: `**操作审计**（自 ${since} 起）\n${rows.join('\n')}`, resolved: true }
 }
@@ -1198,25 +1234,349 @@ function runContextCommand(
   }
 }
 
-function runSchedulesCommand(
+/**
+ * `/schedules` subcommands and the words that reach them.
+ *
+ * Both languages are listed because the chat's reader writes whichever comes
+ * first — the command surface is Chinese-first, and an English speaker typing
+ * `run` must not be told the command does not exist. The value is the
+ * canonical name the switch below reads.
+ */
+const SCHEDULE_SUBCOMMANDS: Record<string, 'show' | 'run' | 'delete' | 'edit' | 'rename' | 'history' | 'help'> = {
+  show: 'show', info: 'show', detail: 'show', '详情': 'show',
+  run: 'run', now: 'run', '立即': 'run', '跑': 'run', trigger: 'run',
+  delete: 'delete', del: 'delete', rm: 'delete', '删除': 'delete',
+  edit: 'edit', prompt: 'edit', '改': 'edit', '改内容': 'edit',
+  rename: 'rename', title: 'rename', '改名': 'rename', '改名子': 'rename',
+  history: 'history', log: 'history', '历史': 'history', '记录': 'history',
+  help: 'help', '帮助': 'help', '?': 'help',
+}
+
+/** The usage block shown when a subcommand cannot be understood. */
+function scheduleUsage(): string {
+  return [
+    `**定时任务** · \`/${SCHEDULES_COMMAND}\` 的用法`,
+    '',
+    `· \`/${SCHEDULES_COMMAND}\` — 列出本会话的任务`,
+    `· \`/${SCHEDULES_COMMAND} 1\` — 看第 1 个任务的详情`,
+    `· \`/${SCHEDULES_COMMAND} run 1\` — 让第 1 个任务立刻跑一次`,
+    `· \`/${SCHEDULES_COMMAND} history 1\` — 看第 1 个任务最近的投递记录`,
+    `· \`/${SCHEDULES_COMMAND} edit 1 <新内容>\` — 改第 1 个任务的内容`,
+    `· \`/${SCHEDULES_COMMAND} rename 1 <新名字>\` — 改第 1 个任务的名字`,
+    `· \`/${SCHEDULES_COMMAND} delete 1\` — 删除第 1 个任务（连同历史记录）`,
+    '',
+    '序号也可以换成任务 id 的前几位。',
+  ].join('\n')
+}
+
+/**
+ * One line of a task's prompt, elided to the configured budget.
+ *
+ * The list is a menu, not the instructions: a 900-character prompt rendered in
+ * full turns three tasks into a wall the reader scrolls past, and the detail
+ * view exists precisely so the list does not have to carry it.
+ */
+function summarizePrompt(prompt: string, limit: number): string {
+  const flat = prompt.replace(/\s+/g, ' ').trim()
+  if (flat === '') return ''
+  return [...flat].length > limit ? `${[...flat].slice(0, limit).join('')}…` : flat
+}
+
+/**
+ * Resolve a list position (`1`) or an id prefix (`schedule-463b`) to one task.
+ * @param arg - what the reader typed.
+ * @param entries - the session's tasks, in listing order.
+ * @returns the task, or undefined when the argument names none of them.
+ */
+function resolveScheduleTarget(arg: string | undefined, entries: readonly ScheduleEntry[]): ScheduleEntry | undefined {
+  if (arg === undefined || arg === '') return undefined
+  if (/^\d+$/.test(arg)) {
+    const index = Number(arg)
+    return index >= 1 && index <= entries.length ? entries[index - 1] : undefined
+  }
+  return entries.find(entry => entry.id === arg)
+    ?? entries.find(entry => entry.id.startsWith(arg))
+}
+
+/**
+ * The message a manual trigger puts into the session.
+ *
+ * It has to be distinguishable from both a scheduled delivery and a human
+ * instruction: the model should know a person asked for it now, and the chat's
+ * own transcript should say so too. The prefix does that in one line, and the
+ * task's own prompt follows untouched so its wording keeps its effect.
+ */
+function manualScheduleMessage(entry: ScheduleEntry): HostUserMessage {
+  const name = scheduleName(entry)
+  const label = name === '' ? '定时任务' : `定时任务「${name}」`
+  const text = `[手动触发] ${label}——这是人在飞书里点了「立刻跑一次」，不是定时器触发。\n\n${entry.prompt}`
+  return Object.freeze({
+    id: randomUUID(),
+    role: 'user' as const,
+    content: Object.freeze([{ type: 'text' as const, text }]),
+    source: Object.freeze({ kind: 'user' as const }),
+  })
+}
+
+/**
+ * Render the task list.
+ *
+ * Each row answers the three questions the old panel could not: what is this
+ * called, when does it run next, and did it actually run last time. The rule
+ * is rendered as a phrase rather than the raw kind, because a daily task used
+ * to print as `周期(undefineds)` — the scheduler accepted a rule the bridge
+ * could not name.
+ */
+function renderScheduleList(entries: readonly ScheduleEntry[], limits: Limits): CommandOutcome {
+  if (entries.length === 0) {
+    return {
+      reply: '**定时任务**\n当前没有活跃的任务。让 agent 设一个（例如"每 30 分钟检查一次进度"）后再看。',
+      resolved: true,
+    }
+  }
+  const now = Date.now()
+  const blocks = entries.map((entry, index) => {
+    const rule = scheduleRuleLabel(entry)
+    const next = scheduleNextLabel(entry, now)
+    const delivered = entry.lastDelivery?.deliveredAt
+    const lastLabel = delivered === undefined ? '' : `上次 ${shortStamp(Date.parse(delivered), now)}`
+    const meta = [rule, next, lastLabel].filter(part => part !== '').join(' · ')
+    const summary = summarizePrompt(entry.prompt, limits.schedulePromptChars)
+    const head = `**${index + 1}.** ${scheduleName(entry) || '（无标题）'}`
+    return [head, meta === '' ? '' : `　${meta}`, summary === '' ? '' : `　${summary}`]
+      .filter(line => line !== '')
+      .join('\n')
+  })
+  return {
+    reply: `**定时任务**（${entries.length} 个活跃 · 本会话）\n\n${blocks.join('\n\n')}\n\n`
+      + `\`/${SCHEDULES_COMMAND} 1\` 详情 · \`run 1\` 立刻跑 · \`delete 1\` 删除`,
+    resolved: true,
+  }
+}
+
+/**
+ * Render one task in full: its rule, its next and last run, and its prompt.
+ *
+ * Delivery history is read here rather than in the list because it costs one
+ * service call per task; asking about one task is exactly when that call is
+ * worth making. A deployment without `history` still gets everything the
+ * registry knows.
+ */
+async function renderScheduleDetail(
+  entry: ScheduleEntry,
+  position: number,
+  agent: HostAgent,
+  control: ScheduleControl | undefined,
+  now: number,
+): Promise<CommandOutcome> {
+  const rows: string[] = []
+  const rule = scheduleRuleLabel(entry)
+  if (rule !== '') rows.push(`· 规则：${rule}`)
+  const next = scheduleNextLabel(entry, now)
+  if (next !== '') rows.push(`· ${next}`)
+  if (entry.timeZone !== undefined && entry.timeZone !== '') rows.push(`· 时区：${entry.timeZone}`)
+  if (entry.state !== undefined) rows.push(`· 状态：${entry.state === 'active' ? '活跃' : '已结束'}`)
+  const delivered = entry.lastDelivery?.deliveredAt
+  if (delivered !== undefined) rows.push(`· 上次投递：${shortStamp(Date.parse(delivered), now)}`)
+
+  const history = await readScheduleHistory(entry.id, agent, control)
+  if (history !== undefined && history.count > 0) {
+    const recent = history.recent
+      .map(record => shortStamp(record === undefined ? undefined : Date.parse(record), now))
+      .filter(stamp => stamp !== '')
+    // The page is bounded, so the count is "how many I could read", not a
+    // lifetime total — printing it as a total would quietly understate a task
+    // that has been firing for months.
+    if (recent.length > 0) rows.push(`· 最近投递：${recent.join('、')}${history.truncated ? ' 等' : ''}`)
+    if (history.earlier === true) rows.push('· 更早的记录已被清理')
+  }
+  rows.push(`· ID：\`${entry.id}\``)
+
+  return {
+    reply: [
+      `**定时任务 · ${scheduleName(entry) || '（无标题）'}**`,
+      rows.join('\n'),
+      '',
+      '**内容**',
+      entry.prompt,
+      '',
+      `\`/${SCHEDULES_COMMAND} run ${position}\` 立刻跑 · \`edit ${position} <新内容>\` 改 · \`delete ${position}\` 删除`,
+    ].join('\n'),
+    resolved: true,
+  }
+}
+
+/** What a delivery-history read produced, in the shape the detail view needs. */
+interface ScheduleHistorySummary {
+  readonly count: number
+  /** Whether more records remain beyond the page read. */
+  readonly truncated: boolean
+  /** Whether older records were pruned, so `count` is a lower bound. */
+  readonly earlier: boolean | undefined
+  /** Delivery instants, newest first. */
+  readonly recent: readonly (string | undefined)[]
+}
+
+/**
+ * Read one task's saved deliveries, tolerating a service that cannot answer.
+ *
+ * History is decoration on the detail view: a deployment whose service lacks
+ * `history`, or one that throws, must still show the rule and the prompt. That
+ * is why every failure path returns undefined instead of an error line.
+ */
+async function readScheduleHistory(
+  id: string,
+  agent: HostAgent,
+  control: ScheduleControl | undefined,
+): Promise<ScheduleHistorySummary | undefined> {
+  const store = control?.store
+  if (store?.history === undefined) return undefined
+  try {
+    const page = await store.history({ sessionId: agent.session.id, id, limit: 10 })
+    const records = page.records ?? []
+    return {
+      count: records.length,
+      truncated: page.nextBefore !== undefined,
+      earlier: page.earlierRecordsUnavailable,
+      recent: records.map(record => record.deliveredAt),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Handle `/schedules` and its subcommands.
+ *
+ * The list is what the registry knows; everything that reads or writes the
+ * host service goes through {@link ScheduleControl}, so a deployment without
+ * the schedule plugin still gets a readable list and a clear refusal on the
+ * actions it cannot serve.
+ * @param line - the complete command line.
+ * @param agent - the chat's agent, whose session owns the tasks.
+ * @param schedules - the bridge's live registry by session id.
+ * @param limits - elision budgets.
+ * @param control - the host service seam, when composed.
+ * @returns the reply for the chat.
+ */
+async function runSchedulesCommand(
+  line: string,
   agent: HostAgent,
   schedules: ReadonlyMap<string, ReadonlyMap<string, ScheduleEntry>> | undefined,
   limits: Limits = DEFAULT_LIMITS,
-): CommandOutcome {
-  const promptChars = limits.schedulePromptChars
+  control: ScheduleControl | undefined = undefined,
+): Promise<CommandOutcome> {
   if (schedules === undefined) {
-    return { reply: `⚠️ 本部署没有启用定时提醒，\`/${SCHEDULES_COMMAND}\` 不可用。`, resolved: false }
+    return { reply: `⚠️ 本部署没有启用定时任务，\`/${SCHEDULES_COMMAND}\` 不可用。`, resolved: false }
   }
-  const entries = schedules.get(agent.session.id)
-  if (entries === undefined || entries.size === 0) {
-    return { reply: '**定时提醒**\n当前没有活跃的提醒。让 agent 设一个（例如"10 分钟后提醒我"）后再看。', resolved: true }
+  const sessionId = agent.session.id
+  const rest = line.trim().slice(1 + SCHEDULES_COMMAND.length).trim()
+  const parts = rest.split(/\s+/).filter(part => part !== '')
+  const head = parts[0]
+  const sub = head === undefined ? undefined : SCHEDULE_SUBCOMMANDS[head.toLowerCase()] ?? SCHEDULE_SUBCOMMANDS[head]
+
+  // A read before every answer: the registry is fed by events, so another
+  // chat's edit or a delivery that just happened is only visible through the
+  // service. A failure here leaves the registry in place rather than an error.
+  if (control !== undefined) {
+    try {
+      await control.refresh(sessionId)
+    } catch {
+      // Fall through with whatever the registry holds.
+    }
   }
-  const rows = [...entries.values()].map(entry => {
-    const kind = entry.kind === 'after' ? '延时' : entry.kind === 'at' ? '定点' : `周期(${entry.everySeconds ?? '?'}s)`
-    const prompt = entry.prompt.length > promptChars ? `${entry.prompt.slice(0, limits.schedulePromptChars)}…` : entry.prompt
-    return `· [${kind}] ${prompt}`
-  })
-  return { reply: `**定时提醒**（${entries.size} 个活跃）\n${rows.join('\n')}`, resolved: true }
+  const entries = [...(schedules.get(sessionId)?.values() ?? [])]
+  const now = Date.now()
+
+  // No subcommand: a bare number selects a task for its detail, anything else
+  // that is not a known word is treated as an id prefix for the same view.
+  if (sub === undefined) {
+    if (head === undefined) return renderScheduleList(entries, limits)
+    const target = resolveScheduleTarget(head, entries)
+    if (target === undefined) {
+      const numbered = /^\d+$/.test(head) && entries.length > 0
+      return {
+        reply: numbered
+          ? `没有第 ${head} 个任务：本会话只有 ${entries.length} 个。发 \`/${SCHEDULES_COMMAND}\` 看列表。`
+          : scheduleUsage(),
+        resolved: true,
+      }
+    }
+    return renderScheduleDetail(target, entries.indexOf(target) + 1, agent, control, now)
+  }
+  if (sub === 'help') return { reply: scheduleUsage(), resolved: true }
+
+  const target = resolveScheduleTarget(parts[1], entries)
+  if (target === undefined) {
+    return {
+      reply: parts[1] === undefined
+        ? `要指定哪个任务：\`/${SCHEDULES_COMMAND} ${head} 1\`（序号或 id 前缀）。`
+        : `没找到任务「${parts[1]}」。发 \`/${SCHEDULES_COMMAND}\` 看列表。`,
+      resolved: true,
+    }
+  }
+  const name = scheduleName(target) || '（无标题）'
+
+  if (sub === 'show') return renderScheduleDetail(target, entries.indexOf(target) + 1, agent, control, now)
+
+  if (sub === 'history') {
+    const history = await readScheduleHistory(target.id, agent, control)
+    if (history === undefined) {
+      return { reply: '⚠️ 本部署的定时服务不提供投递记录（或读取失败）。详情里仍有上次投递时间。', resolved: false }
+    }
+    if (history.count === 0) {
+      return { reply: `**${name}**\n还没有投递记录：这个任务创建后一次都没触发过。`, resolved: true }
+    }
+    const rows = history.recent
+      .map(record => shortStamp(record === undefined ? undefined : Date.parse(record), now))
+      .filter(stamp => stamp !== '')
+    return {
+      reply: `**${name}** · 最近投递（${history.count}${history.truncated ? '+' : ''} 条）\n${rows.map(row => `· ${row}`).join('\n')}`
+        + (history.earlier === true ? '\n\n更早的记录已被宿主清理。' : ''),
+      resolved: true,
+    }
+  }
+
+  if (sub === 'run') {
+    agent.followup(manualScheduleMessage(target))
+    return {
+      reply: `▶️ 已让「${name}」立刻跑一次：内容作为一条用户消息排进本会话，定时器本身没变。`,
+      resolved: true,
+    }
+  }
+
+  if (control === undefined) {
+    return {
+      reply: `⚠️ 本部署没有暴露定时任务的写入接口，\`${sub}\` 不可用（只读列表仍可用）。`,
+      resolved: false,
+    }
+  }
+
+  if (sub === 'delete') {
+    const error = await control.remove(sessionId, target.id)
+    return error === undefined
+      ? { reply: `🗑 已删除「${name}」，它不会再触发，投递记录也一并删掉了。`, resolved: true }
+      : { reply: `⚠️ 删除失败：${error}`, resolved: false }
+  }
+
+  // `edit` and `rename` both carry their new text in the rest of the line.
+  const value = parts.slice(2).join(' ').trim()
+  if (value === '') {
+    return {
+      reply: `要给出新的${sub === 'rename' ? '名字' : '内容'}：\`/${SCHEDULES_COMMAND} ${sub} ${parts[1]} <文本>\`。`,
+      resolved: true,
+    }
+  }
+  const change = sub === 'rename' ? { title: value } : { prompt: value }
+  const error = await control.edit(sessionId, target.id, change)
+  return error === undefined
+    ? {
+        reply: sub === 'rename'
+          ? `✅ 已把任务改名为「${value}」。`
+          : `✅ 已更新「${name}」的内容，下一次触发就按新内容跑。`,
+        resolved: true,
+      }
+    : { reply: `⚠️ 修改失败：${error}`, resolved: false }
 }
 
 /**

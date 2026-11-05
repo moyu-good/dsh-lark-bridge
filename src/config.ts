@@ -278,6 +278,16 @@ export interface Config {
    */
   approvalReminderMs?: number
   /**
+   * Post one line when a scheduled task fires, naming the task and its rule.
+   *
+   * On (default) the chat can tell a timer apart from the person typing: the
+   * host delivers a reminder as an ordinary user-role message, so without this
+   * line a half-hourly check reads as the human repeatedly asking. Off is for
+   * a chat where the task's own output is already unmistakable and the extra
+   * line is noise.
+   */
+  notifyOnScheduleDispatch?: boolean
+  /**
    * Local file delivery policy. `send_file` with a filesystem path source
    * is default-deny at the transport: without `allowedFileDirs`, `@larksuite/channel`
    * rejects every local file (including generated HTML files) with
@@ -454,6 +464,8 @@ export interface ResolvedConfig {
   /** Control API port for dual-end sync (0 = ephemeral/disabled surface). */
   controlPort: number
   approvalReminderMs: number
+  /** Whether a scheduled task's firing is announced in the chat before it runs. */
+  notifyOnScheduleDispatch: boolean
   outbound: { allowedFileDirs?: string[] } | undefined
   tokenPressure: {
     enabled: boolean
@@ -501,6 +513,7 @@ export const Config: z<Config> = z.object({
   autoResumeGoals: z.boolean().default(false),
   restartCommand: z.string().default(''),
   approvalReminderMs: z.number().min(0).default(0),
+  notifyOnScheduleDispatch: z.boolean().default(true),
   controlPort: z.number().min(0).default(0),
   outbound: z.object({
     allowedFileDirs: z.array(String),
@@ -574,6 +587,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     autoResumeGoals: config.autoResumeGoals ?? false,
     restartCommand: config.restartCommand ?? '',
     approvalReminderMs: config.approvalReminderMs ?? 0,
+    notifyOnScheduleDispatch: config.notifyOnScheduleDispatch ?? true,
     outbound: config.outbound,
     tokenPressure: {
       enabled: config.tokenPressure?.enabled ?? true,

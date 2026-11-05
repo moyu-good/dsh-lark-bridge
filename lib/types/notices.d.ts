@@ -16,14 +16,100 @@ export interface SubagentNotice {
 }
 /** A subagent child opening line. */
 export declare function subagentLine(descriptor: SubagentNotice): string;
-/** The `schedule/change` payload fields this module renders. */
-export interface ScheduleNotice {
-    readonly operation: 'create' | 'delete' | 'dispatch';
-    readonly kind?: 'after' | 'at' | 'every';
+/**
+ * Every rule kind the host scheduler accepts.
+ *
+ * Duplicated as a string union rather than imported from `host.ts` so this
+ * module keeps its "no plugin dependencies" shape (it is the rendering layer
+ * for notices, and `host.ts` is the type layer for services). The three
+ * historical kinds are what `schedule/change` carries; the three wall-clock
+ * kinds exist only on a durable record.
+ */
+export type ScheduleRuleKind = 'after' | 'at' | 'every' | 'daily' | 'weekly' | 'cron';
+/** The schedule fields this module renders. */
+export interface ScheduleView {
+    readonly kind?: ScheduleRuleKind;
+    readonly title?: string;
     readonly prompt?: string;
+    readonly everySeconds?: number;
+    readonly time?: string;
+    readonly timeZone?: string;
+    readonly weekdays?: readonly number[];
+    readonly expression?: string;
+    /** The next target instant, ISO-8601. */
+    readonly scheduledAt?: string;
 }
-/** A schedule mutation line. `dispatch` stays silent — it fires on schedule and is noise. */
+/** The `schedule/change` payload fields this module renders. */
+export interface ScheduleNotice extends ScheduleView {
+    readonly operation: 'create' | 'delete' | 'dispatch';
+}
+/**
+ * Render one interval in the unit a person would say it in.
+ *
+ * Seconds are the scheduler's unit and nobody's reading unit: `每 1800 秒`
+ * makes the reader divide, and the answer — 30 minutes — is exactly what they
+ * wanted. The remainder is kept only when it is not zero, so a clean hour does
+ * not read as `1 小时 0 分钟`.
+ * @param seconds - the fixed interval.
+ * @returns the phrase, or '' when the interval is missing or unusable.
+ */
+export declare function intervalPhrase(seconds: number | undefined): string;
+/**
+ * Render the recurring rule of one task as a phrase: `每 30 分钟`, `每天
+ * 09:00`, `每周一、三 09:00`, `cron <表达式>`, `定点 11-06 09:00`.
+ *
+ * This is the answer to "when does this thing run", which the bridge used to
+ * answer with the raw kind and a `undefined` interval for anything newer than
+ * the three historical kinds. A wall-clock rule is shown in its own zone's
+ * wall time — that is what the reader scheduled — and the zone is appended
+ * only when it differs from this machine's, so the common case stays short.
+ * @param view - the record fields to describe.
+ * @returns the phrase, or '' when the record states no rule at all.
+ */
+export declare function scheduleRuleLabel(view: ScheduleView): string;
+/**
+ * The name to show for one task: its own title, else the prompt's first line.
+ *
+ * A title is required by the host's current `schedule_create`, so a task the
+ * model made has one. Records written before titles existed, and every
+ * historical `schedule/change` create, do not — and a list that shows nothing
+ * but a 120-character prompt excerpt is what made the old panel unreadable.
+ * @param view - the record.
+ * @param limit - code points kept from the prompt's first line.
+ * @returns the display name, or '' when the record is empty.
+ */
+export declare function scheduleName(view: ScheduleView, limit?: number): string;
+/**
+ * Render one task's next target: `下次 09:57（还有 27 分钟）`.
+ *
+ * An instant is what the record stores; "how long from now" is what a reader
+ * decides with. Both, in that order, because the absolute one is what they
+ * compare against a clock and the relative one is what tells them whether to
+ * wait.
+ * @param view - the record, carrying `scheduledAt` when the host reported it.
+ * @param now - the reference instant.
+ * @returns the phrase, or '' when there is no target.
+ */
+export declare function scheduleNextLabel(view: ScheduleView, now: number): string;
+/** A schedule mutation line. `dispatch` renders through {@link scheduleDispatchLine}. */
 export declare function scheduleLine(notice: ScheduleNotice): string | undefined;
+/**
+ * The line posted when a scheduled task actually fires.
+ *
+ * Delivery used to be silent: the host appends the prompt to the session as a
+ * user-role message, and the chat saw a block of instructions arrive from
+ * nobody. A reader could not tell "the agent decided to do this" from "a timer
+ * decided to do this", and the recurring tasks that fire every half hour read
+ * as the human repeatedly asking. One line names the task, its rule and its
+ * origin, which is the difference between a scheduled check and a stranger
+ * shouting into the conversation.
+ *
+ * It stays one line on purpose: the task's own output follows immediately, and
+ * a card here would push that output off the screen for no new information.
+ * @param view - the task that fired.
+ * @returns the line.
+ */
+export declare function scheduleDispatchLine(view: ScheduleView): string;
 /** A DeepSeek search firing line. */
 export declare function webSearchLine(): string;
 /** A live subagent settlement line (`subagent/end`). */

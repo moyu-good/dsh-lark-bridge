@@ -159,7 +159,7 @@ Daily ops: run `pnpm dlx @deepseek-ai/dsh web` again (subsequent runs hit the pn
 | ⏱️ **Time is visible, both ways** | Every tool call in the thinking process carries the clock time it started and every result over 1s carries its elapsed time; the closing line names the slowest step. The model is told each turn's current time and how long the chat had been quiet — so "继续" after eight hours and "继续" after three minutes are not the same instruction |
 | 📎 **File delivery** | Agent `send_file` delivers artifacts with caption (default-deny local dirs) |
 | 🔒 **Authorization narrowing** | `senderAllowlist` / `groupAllowlist` / `approvers` |
-| ⏰ **Scheduled reminders** | `/schedules` view (compose `@deepseek-ai/dsh-schedule` for the model-side tools) |
+| ⏰ **Scheduled task panel** | `/schedules` lists each task's rule, next run and last delivery; `/schedules 1` for detail, `run 1` to fire it now, `edit 1 <new prompt>`, `delete 1`. A firing task announces itself in one line instead of letting its prompt pass as the human's own message (compose `@deepseek-ai/dsh-schedule` for the model-side tools) |
 | ⚙️ **Background job notifications** | `run_in_background` jobs announce their terminal outcome |
 | 🧩 **Skill ecosystem surface** | `/skills` lists workspace skills, `/skills <name>` peeks at one |
 | 🤖 **Model switching** | `/model <provider>/<model>` through the host `saveSelection` seam (persistent) |
@@ -193,7 +193,7 @@ Type `/help` in the chat for the live list.
 | `/plugins` | List deployed plugins and status |
 | `/ws` | List registered workspaces |
 | `/jobs` | This chat's background jobs |
-| `/schedules` | This chat's scheduled reminders |
+| `/schedules` | This chat's scheduled tasks: rule, next run, last delivery — plus `1` (detail), `run`, `edit`, `rename`, `delete`, `history` |
 | `/context` | Context occupancy: chat / system prompt / tools, with per-tool detail |
 | `/audit` | Operation audit summary |
 | `/feedback` | Rate the last answer |
@@ -367,13 +367,13 @@ Repo map, the branch/MR flow and the version policy live in **[CONTRIBUTING.md](
 
 ```sh
 pnpm hygiene                    # repo hygiene (deployment terms stay local)
-pnpm test                       # 794 tests in 75 spec files
+pnpm test                       # 809 tests in 77 spec files
 pnpm contract-test              # 43 host-contract checks
 pnpm contract-drift             # drift check against upstream dsh master
 node scripts/check-readme-parity.mjs   # the two READMEs stay in step
 ```
 
-The suite lives in `tests/` — vitest suites (75), including harness-based fakes. Upgrading the harness: run `pnpm contract-drift` before and after — it fails when a host seam the bridge mirrors has moved.
+The suite lives in `tests/` — vitest suites (77), including harness-based fakes. Upgrading the harness: run `pnpm contract-drift` before and after — it fails when a host seam the bridge mirrors has moved.
 
 ## 🤝 Contributing
 

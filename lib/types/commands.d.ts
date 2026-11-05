@@ -9,7 +9,7 @@
  * @module dsh-lark-bridge/commands
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLlm, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry, HostTools } from './host.ts';
+import type { AuditStats, HostAgent, HostAgentPresets, HostCommands, HostDefaultModel, HostJobs, HostLlm, HostLoaderEntry, HostMessageFeedback, HostSessionPersistence, HostSessionQuery, HostSkills, HostTokenMeter, HostWorkspaceRegistry, ScheduleEntry, ScheduleStore, HostTools } from './host.ts';
 import type { ResolvedConfig } from './config.ts';
 import type { SyncCommandContext } from './sync/bot-command.ts';
 import type { EffortOverrides } from './think.ts';
@@ -181,6 +181,43 @@ export interface CommandExtras {
     readonly sessionCwdBound?: boolean | undefined;
     /** The this session's live preset choice, when one was made (`/session`). */
     readonly sessionPreset?: string | undefined;
+    /** The host schedule service and the bridge's own write path to it (`/schedules`). */
+    readonly schedule?: ScheduleControl | undefined;
+}
+/**
+ * What `/schedules` needs beyond the read-only registry.
+ *
+ * The registry the bridge keeps from `schedule/change` events answers "what is
+ * scheduled", never "when did it last run" or "change it" — those live in the
+ * host service, which the bridge reaches through this seam. Each member is
+ * async and reports a human failure line instead of throwing, so a command can
+ * always answer the chat with what happened.
+ */
+export interface ScheduleControl {
+    /** The host service itself, for reads the registry cannot answer (delivery history). */
+    readonly store?: ScheduleStore | undefined;
+    /**
+     * Re-read one session's tasks from the host service.
+     *
+     * The registry is filled by events and backfilled once per process; a task
+     * created in another chat, or a delivery that moved `lastDelivery`, only
+     * shows up after a fresh read.
+     * @param sessionId - the session whose tasks to re-read.
+     */
+    refresh(sessionId: string): Promise<void>;
+    /**
+     * Delete one task, which also removes its saved delivery records.
+     * @returns a human failure line, or undefined on success.
+     */
+    remove(sessionId: string, id: string): Promise<string | undefined>;
+    /**
+     * Rename or re-prompt one task in place, keeping its id and history.
+     * @returns a human failure line, or undefined on success.
+     */
+    edit(sessionId: string, id: string, change: {
+        readonly title?: string;
+        readonly prompt?: string;
+    }): Promise<string | undefined>;
 }
 /**
  * Render the help listing for one agent's available commands.

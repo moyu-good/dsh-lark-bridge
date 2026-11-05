@@ -247,7 +247,7 @@ describe('dsh-lark-bridge', () => {
     await new Promise((r) => setTimeout(r, 300))
     expect(harness.fake.sent.slice(sentBeforeDescriptor).some(m => 'card' in m.input)).toBe(false)
     emit('schedule/change', { version: 1, operation: 'create', schedule: { id: 's1', kind: 'every', prompt: '每日简报' } })
-    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('周期任务'))).toBe(true) })
+    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('已创建定时任务'))).toBe(true) })
     emit('web/deepseek-search-llm-request', {})
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('搜索网络'))).toBe(true) })
     emit('llm/retry', { retryId: 'r1', turn: 1, step: 1, provider: 'p', retry: 1, maxRetries: 3 })

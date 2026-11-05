@@ -409,7 +409,7 @@ describe('/schedules command', () => {
       new AbortController().signal,
     )
     expect(outcome.resolved).toBe(false)
-    expect(outcome.reply).toContain('定时提醒')
+    expect(outcome.reply).toContain('定时任务')
   })
 })
 

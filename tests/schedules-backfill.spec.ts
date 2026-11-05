@@ -26,7 +26,7 @@ describe('/schedules 从会话日志回填', () => {
     await vi.waitFor(() => {
       const text = harness.fake.sent
         .map(entry => String((entry.input as { markdown?: string }).markdown ?? ''))
-        .find(body => body.includes('定时提醒'))
+        .find(body => body.includes('定时任务'))
       if (text === undefined) throw new Error('no /schedules reply yet')
       found = text
     }, { timeout: 10_000, interval: 50 })
@@ -60,7 +60,7 @@ describe('/schedules 从会话日志回填', () => {
 
     const reply = await command(harness, '/schedules')
     expect(reply).not.toContain('这条已经删了')
-    expect(reply).toContain('没有活跃的提醒')
+    expect(reply).toContain('没有活跃的任务')
     await harness.dispose()
   })
 })

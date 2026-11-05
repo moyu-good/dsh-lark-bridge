@@ -8,6 +8,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The schedule panel is a control surface, not a one-line echo.** `/schedules`
+  used to print `· [周期(1800s)] <前 120 字 prompt>` and nothing else: a task
+  scheduled `daily` rendered as `周期(undefineds)` because the bridge knew only
+  the three historical kinds, the host's own `title` / `scheduledAt` /
+  `lastDelivery` were dropped on the floor, and there was no way to change or
+  remove a task from the chat. The panel now lists each task by name with its
+  rule as a phrase (`每 30 分钟`, `每天 09:00`, `每周一、三 09:00`, `cron …`),
+  its next target with a relative "还有 27 分钟", and its last delivery;
+  `/schedules 1` shows the full prompt and saved delivery history, `run 1`
+  queues it into the session immediately, `edit 1 <text>` / `rename 1 <name>`
+  rewrite it in place through the host's compare-and-set `update`, and
+  `delete 1` removes it with its records. A deployment without the schedule
+  service keeps the read-only list and says which action is unavailable.
+- **A firing task says who is speaking.** The host delivers a reminder as an
+  ordinary user-role message, so the chat saw a block of instructions arrive
+  from nobody — a half-hourly check read as the human repeatedly asking. One
+  line now precedes it (`⏰ 定时任务「补漏四段进度」· 每 30 分钟`), naming the
+  task and its rule. `notifyOnScheduleDispatch` (default on) turns it off for
+  a chat where the task's own output is already unmistakable.
 - **`busyPolicy` chooses how a message arriving mid-turn is delivered.** The
   bridge only ever called `followup`, so an instruction sent while a turn was
   running ("stop, don't touch that file") sat in the inbox until the turn
