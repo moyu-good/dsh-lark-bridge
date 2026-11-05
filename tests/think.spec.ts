@@ -200,10 +200,34 @@ describe('EffortOverrides', () => {
 
     it('keeps the rest of the envelope (maxTokens and the route)', async () => {
       const overrides = new EffortOverrides(fakeCtx())
-      overrides.set(fakeSession(), { provider: 'p', model: 'm', reasoningEffort: 'off' })
+      overrides.set(fakeSession(), { provider: 'p', model: 'm', reasoningEffort: 'max' })
       const run = hook(overrides, 'ses_1')
       const result = await run({ provider: 'p', model: 'm', maxTokens: 4096 } as unknown as { provider: string; model: string })
-      expect(result).toMatchObject({ provider: 'p', model: 'm', maxTokens: 4096, reasoningEffort: 'off' })
+      expect(result).toMatchObject({ provider: 'p', model: 'm', maxTokens: 4096, reasoningEffort: 'max' })
+    })
+
+    // `off` 不是普通的档位名：它要求「请求里没有 reasoning 字段」。
+    // 把 off 原样交给宿主等于让宿主去查 `reasoningEfforts.off` 的 wire 值，
+    // 而 magpie 会把它写成 "none"——上游不认，照样思考。见 think.ts 的注释。
+    it('drops the effort key entirely for off, rather than forwarding the name', async () => {
+      const overrides = new EffortOverrides(fakeCtx())
+      overrides.set(fakeSession(), { provider: 'p', model: 'm', reasoningEffort: 'off' })
+      const run = hook(overrides, 'ses_1')
+      const result = (await run({ provider: 'p', model: 'm', reasoningEffort: 'high' })) as Record<string, unknown>
+      expect(Object.hasOwn(result, 'reasoningEffort')).toBe(false)
+      expect(result).toMatchObject({ provider: 'p', model: 'm' })
+    })
+
+    it('drops the effort key for off even when the route never offered it', async () => {
+      // 路由没声明 off 也照删：accepts() 的作用是挡掉「这条路没有这一档」，
+      // 而「不发这个字段」对任何路由都成立，没有可被拒绝的前提。
+      const overrides = new EffortOverrides(fakeCtx({
+        llm: { resolveModelInfo: async () => ({ reasoning: { efforts: [{ id: 'low' }, { id: 'max' }] } }) },
+      }))
+      overrides.set(fakeSession(), { provider: 'p', model: 'm', reasoningEffort: 'off' })
+      const run = hook(overrides, 'ses_1')
+      const result = (await run({ provider: 'p', model: 'm', reasoningEffort: 'low' })) as Record<string, unknown>
+      expect(Object.hasOwn(result, 'reasoningEffort')).toBe(false)
     })
 
     it('leaves the request alone when the route does not offer the level', async () => {

@@ -52,6 +52,16 @@ export type ThinkIntent = {
 } | {
     readonly kind: 'reset';
 };
+/**
+ * `/think off` 的档位名。
+ *
+ * 这一档和其他档不同：它要求的是「请求里不要有 reasoning 字段」，而不是
+ * 「把 off 这个名字查成某个 wire 值发出去」。宿主的查表结果取决于配置里
+ * `reasoningEfforts.off` 写成 null 还是字符串，而 magpie 会把它写成
+ * `"off": none`；`"none"` 不是任何厂商认的关闭值，上游只会当成没听懂。
+ * 所以在 `agent/request` 上直接把它换成「字段缺席」，见 `install()`。
+ */
+export declare const EFFORT_OFF = "off";
 /** A recorded model selection, as the session log stores it. */
 export interface ModelSelection {
     readonly provider?: string;
