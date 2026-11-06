@@ -47,7 +47,9 @@ describe('thinking process (CoT)', () => {
       expect(events(harness).filter((e) => e.type === 'REASONING_MESSAGE_CONTENT')).toHaveLength(2)
     })
     expect(events(harness).map((e) => e.type)).toContain('REASONING_MESSAGE_START')
-    expect(contentOf(harness, 'REASONING_MESSAGE_CONTENT')).toMatchObject({ delta: '先看目录' })
+    // The first delta carries the block's clock time, because a reasoning
+    // message has no title to put it in.
+    expect(contentOf(harness, 'REASONING_MESSAGE_CONTENT')).toMatchObject({ delta: expect.stringMatching(/^〔\d{2}:\d{2}:\d{2}〕 先看目录$/) })
     // Reasoning never becomes a chat message.
     expect(harness.fake.sent).toHaveLength(0)
     await harness.dispose()
@@ -111,9 +113,53 @@ describe('thinking process (CoT)', () => {
     // The full block lands as one content event (the API's per-event bound
     // applies, but a 637-char reasoning block is far under it).
     expect(contents).toHaveLength(1)
-    expect(contents[0]!.content).toMatchObject({ delta: thinking })
+    const delta = (contents[0]!.content as { delta: string }).delta
+    expect(delta).toMatch(/^〔\d{2}:\d{2}:\d{2}〕 /)
+    expect(delta.endsWith(thinking)).toBe(true)
     // The block is closed so the client stops showing "still thinking".
     expect(events(harness).map((e) => e.type)).toContain('REASONING_MESSAGE_END')
+    await harness.dispose()
+  })
+
+  it('shows a thought once when the host delivers both its deltas and its closing block', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+    // The host publishes one attempt twice: token deltas as they arrive, then a
+    // block-end carrying the whole paragraph. Rendering both is what put every
+    // thought in the chat twice — the reader saw each paragraph repeated.
+    const thinking = '先看日志，再决定。'
+    emit('assistant/chunk', { turn: 1, chunk: { type: 'block-start', blockType: 'reasoning' } })
+    emit('assistant/chunk', { turn: 1, chunk: { type: 'reasoning-delta', text: '先看日志' } })
+    emit('assistant/chunk', { turn: 1, chunk: { type: 'reasoning-delta', text: '，再决定。' } })
+    emit('assistant/chunk', { turn: 1, chunk: { type: 'block-end', block: { type: 'reasoning', text: thinking } } })
+
+    await vi.waitFor(() => {
+      expect(events(harness).map((e) => e.type)).toContain('REASONING_MESSAGE_END')
+    })
+    const written = events(harness)
+      .filter((e) => e.type === 'REASONING_MESSAGE_CONTENT')
+      .map((e) => e.content.delta as string)
+      .join('')
+    expect(written.match(/先看日志/g) ?? []).toHaveLength(1)
+    expect(written).toContain(thinking)
+    await harness.dispose()
+  })
+
+  it('stamps a thought with the clock time it started', async () => {
+    const harness = await mountChannel()
+    const emit = await chat(harness)
+    // A reasoning message carries no title, so the time has to ride at the head
+    // of its text — the only place a reader is guaranteed to see it.
+    emit('assistant/chunk', {
+      turn: 1,
+      chunk: { type: 'block-end', block: { type: 'reasoning', text: '想一下。' } },
+    })
+
+    await vi.waitFor(() => {
+      expect(events(harness).map((e) => e.type)).toContain('REASONING_MESSAGE_END')
+    })
+    const first = events(harness).find((e) => e.type === 'REASONING_MESSAGE_CONTENT')!
+    expect(first.content.delta).toMatch(/^〔\d{2}:\d{2}:\d{2}〕 想一下。$/)
     await harness.dispose()
   })
 
@@ -144,12 +190,13 @@ describe('thinking process (CoT)', () => {
     // With no presenter composed the label is the bare name and the icon the
     // default. The title also carries the clock time: the AG-UI timestamp is
     // an ordering key the client never renders, so "when did this happen" has
-    // to ride on the one string the reader actually sees.
+    // to ride on the one string the reader actually sees — at its FRONT,
+    // because a long path at the tail gets truncated away by the client.
     expect(contentOf(harness, 'TOOL_CALL_START')).toMatchObject({
       toolCallId: 'c1', toolCallName: 'bash', icon: 'default',
     })
     expect((contentOf(harness, 'TOOL_CALL_START') as { title: string }).title)
-      .toMatch(/^bash · \d{2}:\d{2}:\d{2}$/)
+      .toMatch(/^\d{2}:\d{2}:\d{2} · bash$/)
     const written = events(harness).map((e) => e.type)
     expect(written).toContain('TOOL_CALL_ARGS')
     expect(written).toContain('TOOL_CALL_END')
@@ -189,7 +236,7 @@ describe('thinking process (CoT)', () => {
       .map((e) => e.content.title as string)
     // Two calls in the same run may share a second — but each carries a time,
     // which is the thing a reader needs to line a step up against their message.
-    for (const title of titles) expect(title).toMatch(/ · \d{2}:\d{2}:\d{2}$/)
+    for (const title of titles) expect(title).toMatch(/^\d{2}:\d{2}:\d{2} · /)
     await harness.dispose()
   })
 

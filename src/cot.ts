@@ -260,6 +260,20 @@ interface LiveRun {
   reasoningId: string
   /** How many reasoning blocks this turn has opened; the id's counter. */
   reasoningBlocks: number
+  /**
+   * The text already shown for the open reasoning block.
+   *
+   * The host publishes one attempt twice: token deltas as they arrive AND a
+   * `block-end` carrying the whole block once it closes. Rendering both put
+   * the same thought in the chat twice — the reader saw every paragraph
+   * repeated. What was already streamed is remembered here so the closing
+   * block only contributes the part that never arrived as deltas.
+   */
+  reasoningText: string
+  /** Whether the open block already carried its timestamp prefix. */
+  reasoningStamped: boolean
+  /** The clock time to stamp on the block when its first text lands. */
+  reasoningPrefix: string
   /** Whether the run was already closed by a terminal event. */
   finished: boolean
   /** When the turn opened, so the closing line can say how long it took. */
@@ -386,11 +400,25 @@ export function createCotRenderer(
     run.reasoningBlocks += 1
     run.reasoningId = `reasoning-${run.turn}-${run.reasoningBlocks}`
     run.reasoningOpen = true
+    run.reasoningText = ''
+    run.reasoningStamped = false
+    // A thought's own clock time has nowhere to go in the protocol: a
+    // reasoning message carries no title, only text. So the time rides at the
+    // head of the block's first line — the one position the reader cannot
+    // miss, unlike a tool title's tail, which the client truncates away.
+    const at = clockTime(Date.now())
+    run.reasoningPrefix = at === undefined ? '' : `〔${at}〕 `
     enqueue(run, cotEvent('REASONING_MESSAGE_START', { messageId: run.reasoningId, role: 'reasoning' }))
     return run.reasoningId
   }
 
-  /** Close the open reasoning block, if any; a no-op otherwise. */
+  /**
+   * Close the open reasoning block, if any; a no-op otherwise.
+   *
+   * What was shown is NOT cleared here: the closing `block-end` may arrive
+   * after a tool call already closed the block, and it still has to know that
+   * its text was delivered as deltas. The next block resets the record.
+   */
   const closeReasoning = (run: LiveRun): void => {
     if (!run.reasoningOpen) return
     run.reasoningOpen = false
@@ -421,6 +449,9 @@ export function createCotRenderer(
       reasoningOpen: false,
       reasoningId: '',
       reasoningBlocks: 0,
+      reasoningText: '',
+      reasoningStamped: false,
+      reasoningPrefix: '',
       finished: false,
       startedAt: Date.now(),
       toolCalls: 0,
@@ -546,18 +577,33 @@ export function createCotRenderer(
           if (chunk.text === undefined || chunk.text === '') return
           const run = ensure(event.data.turn)
           const messageId = run.reasoningOpen ? run.reasoningId : openReasoning(run)
-          enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId, delta: chunk.text }))
+          const text = run.reasoningStamped ? chunk.text : `${run.reasoningPrefix}${chunk.text}`
+          run.reasoningStamped = true
+          run.reasoningText += chunk.text
+          enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId, delta: text }))
           return
         }
         if (chunk.type === 'block-end' && chunk.block?.type === 'reasoning') {
           const text = chunk.block.text ?? ''
           if (text === '') return
           const run = ensure(event.data.turn)
+          // The block closes with the whole paragraph, but the deltas that
+          // built it were already shown. Sending it again is what made every
+          // thought appear twice; only the tail the reader never saw is new.
+          const shown = run.reasoningText
+          if (shown !== '' && (text === shown || text.startsWith(shown) || text.trim() === shown.trim())) {
+            const rest = text.trim() === shown.trim() ? '' : text.slice(shown.length)
+            if (rest !== '') enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId: run.reasoningId, delta: rest }))
+            closeReasoning(run)
+            run.reasoningText = ''
+            return
+          }
           // A whole block in one event: close whatever was open, then open a
           // block of its own so it lands at this point in the process.
           closeReasoning(run)
           const messageId = openReasoning(run)
-          enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId, delta: text }))
+          enqueue(run, cotEvent('REASONING_MESSAGE_CONTENT', { messageId, delta: `${run.reasoningPrefix}${text}` }))
+          run.reasoningStamped = true
           closeReasoning(run)
           return
         }
@@ -576,14 +622,17 @@ export function createCotRenderer(
         run.lastToolTitle = title
         // The AG-UI event carries a timestamp, but only as an ordering key the
         // client never shows. A reader who wants to line a step up against the
-        // message that asked for it has to read it off the title.
+        // message that asked for it has to read it off the title — and it has
+        // to be at the FRONT: a call's title often ends in a long path, and the
+        // client truncates the tail with an ellipsis, which ate the time when
+        // it trailed the label.
         const shownAt = clockTime(startedAt)
         enqueue(
           run,
           cotEvent('TOOL_CALL_START', {
             toolCallId,
             icon: TOOL_ICONS[shown.kind ?? ''] ?? 'default',
-            title: shownAt === undefined ? title : `${title} · ${shownAt}`,
+            title: shownAt === undefined ? title : `${shownAt} · ${title}`,
             toolCallName: event.data.name,
           }),
           // The summary, not the arguments: a file write's arguments are
