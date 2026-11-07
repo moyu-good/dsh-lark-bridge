@@ -16,7 +16,9 @@ import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
+import type { SendInput } from '@larksuite/channel'
 import type { OutboundPort } from './outbound.ts'
+import { isUndeliveredId } from './replay.ts'
 
 /** The `send_file` tool the bridge registers on chat agents. */
 export const SEND_FILE_TOOL_NAME = 'send_file'
@@ -320,8 +322,11 @@ function claimedMediaKind(fileName: string): 'audio' | 'video' | undefined {
  */
 export function sendFailureNotice(fileName: string, detail: string): string {
   // The most common refusal on a fresh deployment, and the one whose fix is not
-  // obvious from the raw message: point at the setting by name.
-  const hint = detail.includes('allowedFileDirs')
+  // obvious from the raw message: point at the setting by name. The transport
+  // words it two ways depending on where it gives up — the missing-setting form
+  // and the per-path form ("file path is outside allowed directories") — and
+  // only the first one names the setting, so both have to match.
+  const hint = detail.includes('allowedFileDirs') || detail.includes('outside allowed directories')
     ? '\n\n本地文件要发出去，得让部署配置里的 `outbound.allowedFileDirs` 包含它所在的目录。'
     : ''
   return `⚠️ 没有发出去：\`${fileName}\`\n\n${detail}${hint}`
@@ -359,26 +364,32 @@ export async function deliverFile(
   const caption = args.caption
   const delivery = await planDelivery(fileName, args.kind, absolute, measure)
   const duration = delivery.duration
+  // One input object rather than four sends: the reply carries a message id
+  // that says whether the file actually went out, and that check has to run on
+  // every shape the same way.
+  const input: SendInput = delivery.kind === 'image'
+    ? { image: { source: absolute } }
+    : delivery.kind === 'audio'
+      ? { audio: duration === undefined ? { source: absolute } : { source: absolute, duration } }
+      : delivery.kind === 'video'
+        ? { video: duration === undefined ? { source: absolute } : { source: absolute, duration } }
+        : { file: { source: absolute, fileName } }
+  let deliveredId: string | undefined
   try {
-    if (delivery.kind === 'image') {
-      await port.send(chatId, { image: { source: absolute } })
-    } else if (delivery.kind === 'audio') {
-      await port.send(chatId, duration === undefined
-        ? { audio: { source: absolute } }
-        : { audio: { source: absolute, duration } })
-    } else if (delivery.kind === 'video') {
-      await port.send(chatId, duration === undefined
-        ? { video: { source: absolute } }
-        : { video: { source: absolute, duration } })
-    } else {
-      await port.send(chatId, { file: { source: absolute, fileName } })
-    }
+    deliveredId = (await port.send(chatId, input)).messageId
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     // The notice is the chat's only evidence; the throw is the tool's. Both, or
     // the person sees a turn that claims to have sent nothing at all.
     await port.send(chatId, { markdown: sendFailureNotice(fileName, detail) }).catch(() => undefined)
     throw new Error(`发送失败：${fileName}（${detail}）`)
+  }
+  // A queued send comes back with a placeholder id, not a message id: the
+  // transport is holding the file until the connection returns. Calling that
+  // "delivered" is how a chat ends up with a model insisting on a file nobody
+  // can see, so the caller is told which of the two happened.
+  if (isUndeliveredId(deliveredId)) {
+    return { fileName, note: '\n\n连接中断，文件已排队，恢复连接后补发。' }
   }
   if (caption !== undefined && caption !== '') {
     // The media is already in the chat, so a caption the transport refuses must

@@ -79,6 +79,56 @@ export interface ReplayPort extends OutboundPort {
   updateCard(messageId: string, card: object): Promise<void>
 }
 
+/**
+ * The HTTP status the transport attached to a rejection, when it attached one.
+ * @param error - whatever the transport threw.
+ * @returns the status, or undefined for a refusal raised before any request.
+ */
+function httpStatusOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const status = (error as { response?: { status?: unknown } }).response?.status
+  return typeof status === 'number' ? status : undefined
+}
+
+/**
+ * Message fragments that name a cause no retry can change.
+ *
+ * These are refusals the transport raises locally, before any request leaves
+ * the machine, so the answer is the same however often it is asked. A file
+ * path outside `outbound.allowedFileDirs` is the one that bit us: it was
+ * queued as if the connection had dropped, and `send_file` reported a delivery
+ * that never happened.
+ */
+const PERMANENT_FAILURE_HINTS = [
+  'allowedFileDirs',
+  'outside allowed directories',
+] as const
+
+/**
+ * Whether a send failed for a reason that repeating it cannot fix.
+ *
+ * The replay wrapper exists to turn a connection gap into a delay. A permanent
+ * refusal is not a gap: queueing it only hides the failure behind a placeholder
+ * id until the caller has already told the human the opposite.
+ *
+ * The split follows the transport's own vocabulary. A 4xx is the platform
+ * judging the request — the same request gets the same verdict — except 429,
+ * which is the platform asking for a pause rather than rejecting the payload.
+ * 5xx, timeouts, and anything with no status at all are the failures a retry
+ * was built for.
+ * @param error - what `send`/`stream` threw.
+ * @returns true when the caller must hear about it now.
+ */
+export function isPermanentSendFailure(error: unknown): boolean {
+  const status = httpStatusOf(error)
+  if (status !== undefined) {
+    if (status === 429) return false
+    return status >= 400 && status < 500
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return PERMANENT_FAILURE_HINTS.some(hint => message.includes(hint))
+}
+
 /** A replay-enabled transport: the wrapped port plus the connection-state hook. */
 export interface ReplayAwarePort extends ReplayPort {
   /** Tell the wrapper the connection state changed. `true` = live, `false` = down. */
@@ -194,6 +244,15 @@ export function createReplayPort(
               break
           }
         } catch (error) {
+          // A permanent refusal re-queued would sit at the head of the queue
+          // and fail again on every reconnect, blocking the messages behind it
+          // while its own caller was told minutes ago that it went out. Drop it
+          // and say so: the console line is the only trace left.
+          if (call.kind !== 'updateCard' && isPermanentSendFailure(error)) {
+            const detail = error instanceof Error ? error.message : String(error)
+            notify(`dsh-lark-bridge: dropping undeliverable queued ${call.kind}: ${detail}`)
+            continue
+          }
           // A call that still fails stays queued for the next live window;
           // the caller sees nothing (fire-and-forget), so only the console does.
           onFlushFailure(error)
@@ -232,6 +291,11 @@ export function createReplayPort(
       try {
         return await port.send(to, input, opts)
       } catch (error) {
+        // A refusal the transport would repeat verbatim has to reach the
+        // caller. Queueing it hands back a placeholder id, and a caller that
+        // reads that as delivery — `send_file` does — tells the human a file
+        // arrived that never left the machine.
+        if (isPermanentSendFailure(error)) throw error
         onFlushFailure(error)
         return enqueueDelivery('send', to, input, opts)
       }
@@ -241,6 +305,7 @@ export function createReplayPort(
       try {
         return await port.stream(to, input, opts)
       } catch (error) {
+        if (isPermanentSendFailure(error)) throw error
         onFlushFailure(error)
         return enqueueDelivery('stream', to, input, opts)
       }
@@ -259,6 +324,9 @@ export function createReplayPort(
       try {
         await port.updateCard(messageId, card)
       } catch (error) {
+        // Deliberately unlike `send`: a card edit is a decoration on a message
+        // that already arrived, so a queued retry costs nothing and no caller
+        // reads it as delivery. Queueing every failure is the safer default.
         onFlushFailure(error)
         enqueueUpdate(messageId, card)
       }

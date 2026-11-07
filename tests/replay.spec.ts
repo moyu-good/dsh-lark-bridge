@@ -8,23 +8,26 @@ function fakePort() {
   const sent: { to: string; input: { markdown?: string }; opts?: object }[] = []
   const updated: { messageId: string; card: object }[] = []
   let fail = false
+  let failure: Error = new Error('connection down')
   const port = {
     sent,
     updated,
     failSends() { fail = true },
-    restoreSends() { fail = false },
+    /** Fail with one specific error, so the retryable/permanent split is testable. */
+    failWith(error: Error) { fail = true; failure = error },
+    restoreSends() { fail = false; failure = new Error('connection down') },
     async send(to: string, input: { markdown?: string }, opts?: object): Promise<SendResult> {
-      if (fail) throw new Error('connection down')
+      if (fail) throw failure
       sent.push({ to, input, opts })
       return { messageId: `om_${sent.length}` }
     },
     async stream(to: string, input: { markdown: () => Promise<void> }) {
-      if (fail) throw new Error('connection down')
+      if (fail) throw failure
       sent.push({ to, input })
       return { messageId: `om_${sent.length}` }
     },
     async updateCard(messageId: string, card: object) {
-      if (fail) throw new Error('connection down')
+      if (fail) throw failure
       updated.push({ messageId, card })
     },
     async connect() {},
@@ -192,5 +195,70 @@ describe('undelivered placeholders', () => {
     port.setConnected(true)
     await vi.waitFor(() => { expect(port.pending()).toBe(0) })
     expect(called).toBe(false)
+  })
+})
+
+// The wrapper's job is to turn a connection gap into a delay. A refusal the
+// transport would repeat verbatim is not a gap: queueing it returned a
+// placeholder id, `send_file` read that as delivery, and the chat was told a
+// file had arrived that never left the machine. The console line was the only
+// trace, which is exactly what nobody reads.
+describe('a refusal no retry can fix reaches the caller', () => {
+  it('throws instead of queueing a path outside allowedFileDirs', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void; sent: unknown[] }
+    const port = createReplayPort(inner, () => {}, () => {})
+    raw.failWith(new Error(
+      'file path is outside allowed directories: D:\\repo\\shot.png',
+    ))
+    await expect(port.send('oc_1', { markdown: 'x' })).rejects.toThrow(/outside allowed directories/)
+    // Not queued: a retry would fail identically and block the queue behind it.
+    expect(port.pending()).toBe(0)
+  })
+
+  it('throws on a 4xx, which is the platform judging the request', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void }
+    const port = createReplayPort(inner, () => {}, () => {})
+    raw.failWith(Object.assign(new Error('Request failed with status code 400'), { response: { status: 400 } }))
+    await expect(port.stream('oc_1', { markdown: async () => {} })).rejects.toThrow(/400/)
+    expect(port.pending()).toBe(0)
+  })
+
+  it('still queues a 429: the platform asking for a pause, not a verdict', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void; restoreSends(): void; sent: unknown[] }
+    const port = createReplayPort(inner, () => {}, () => {})
+    raw.failWith(Object.assign(new Error('rate limited'), { response: { status: 429 } }))
+    const queued = await port.send('oc_1', { markdown: 'later' })
+    expect(isUndeliveredId(queued.messageId)).toBe(true)
+    expect(port.pending()).toBe(1)
+    raw.restoreSends()
+    port.setConnected(false)
+    port.setConnected(true)
+    await vi.waitFor(() => { expect(raw.sent).toHaveLength(1) })
+  })
+
+  it('still queues a 5xx, which is what a retry was built for', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void }
+    const port = createReplayPort(inner, () => {}, () => {})
+    raw.failWith(Object.assign(new Error('Request failed with status code 502'), { response: { status: 502 } }))
+    await port.send('oc_1', { markdown: 'x' })
+    expect(port.pending()).toBe(1)
+  })
+
+  it('drops a queued call that fails permanently instead of retrying forever', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void }
+    const lines: string[] = []
+    const port = createReplayPort(inner, () => {}, (line) => { lines.push(line) })
+    port.setConnected(false)
+    await port.send('oc_1', { markdown: 'doomed' })
+    raw.failWith(new Error('local file source requires `outbound.allowedFileDirs` to be configured'))
+    port.setConnected(true)
+    await vi.waitFor(() => { expect(lines.some(line => line.includes('dropping undeliverable'))).toBe(true) })
+    // Gone, not stuck at the head of the queue for every future reconnect.
+    expect(port.pending()).toBe(0)
   })
 })

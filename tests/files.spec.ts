@@ -166,6 +166,29 @@ describe('deliverFile', () => {
     expect('markdown' in sent[0]!.input).toBe(false)
     expect((sent[0]!.input as { file: { fileName: string } }).file.fileName).toBe('r.csv')
   })
+
+  // A connection gap makes the transport queue the file and hand back a
+  // placeholder id. Reporting that as a plain success is how a chat ends up
+  // told about a file it cannot see yet, so the result has to say which of the
+  // two happened.
+  it('says the file is queued when the send only got a placeholder id', async () => {
+    const file = tempFile('shot.png', 'binary')
+    const sent: { to: string; input: object }[] = []
+    const port = {
+      async send(to: string, input: object) {
+        sent.push({ to, input })
+        return { messageId: 'queued:7' }
+      },
+      async stream() { return { messageId: 'om_s' } },
+    } as never
+
+    const result = await deliverFile(port, 'oc_1', '/workspace', { path: file, caption: '看这张图' })
+
+    expect(result.note).toContain('已排队')
+    // The caption must not reach a chat that has no file to caption.
+    expect(sent).toHaveLength(1)
+    expect('markdown' in sent[0]!.input).toBe(false)
+  })
 })
 
 describe('saveInboundFiles', () => {

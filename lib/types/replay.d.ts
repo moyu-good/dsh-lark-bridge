@@ -53,6 +53,22 @@ export declare function isUndeliveredId(messageId: string | undefined): boolean;
 export interface ReplayPort extends OutboundPort {
     updateCard(messageId: string, card: object): Promise<void>;
 }
+/**
+ * Whether a send failed for a reason that repeating it cannot fix.
+ *
+ * The replay wrapper exists to turn a connection gap into a delay. A permanent
+ * refusal is not a gap: queueing it only hides the failure behind a placeholder
+ * id until the caller has already told the human the opposite.
+ *
+ * The split follows the transport's own vocabulary. A 4xx is the platform
+ * judging the request — the same request gets the same verdict — except 429,
+ * which is the platform asking for a pause rather than rejecting the payload.
+ * 5xx, timeouts, and anything with no status at all are the failures a retry
+ * was built for.
+ * @param error - what `send`/`stream` threw.
+ * @returns true when the caller must hear about it now.
+ */
+export declare function isPermanentSendFailure(error: unknown): boolean;
 /** A replay-enabled transport: the wrapped port plus the connection-state hook. */
 export interface ReplayAwarePort extends ReplayPort {
     /** Tell the wrapper the connection state changed. `true` = live, `false` = down. */
