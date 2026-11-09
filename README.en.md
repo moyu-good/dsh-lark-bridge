@@ -88,6 +88,18 @@ Reasoning renders as Feishu's own *thinking* message. Tool calls arrive with the
 
 Send a message while a turn is running and it follows `busyPolicy`: `queue` waits its turn, `steer` takes over at the next step boundary **without discarding work already done**, `inject` adds context without waking the driver. Risky operations become approval cards. Turn on `autoResumeGoals` and a goal picks itself back up after a restart.
 
+## 🗂 When it asks you
+
+When the model needs a decision, `ask_user_question` becomes a Feishu card instead of a question buried in prose that you then wait on.
+
+- **Single choice**: the options are buttons — one click answers, no second confirm.
+- **Multiple choice**: the options fold into a dropdown; tick as many as you want, then hit **Confirm**.
+- **Always room for words**: both forms carry a text field, so you can answer in text only or pick and then add a note.
+- **"Skip" is not "Cancel"**: skipping means "use your judgement"; cancelling means "drop it".
+- When answered, the card turns into a one-line receipt (what was chosen, when), and the answer travels back to the agent verbatim.
+
+The card is CardKit 2.0, so it needs client 7.20 or newer.
+
 ## 🚀 Quick Start
 
 **Prerequisites:** Node 22.19+ or 24+, [pnpm](https://pnpm.io/installation), a DeepSeek API key, Feishu on your phone.
