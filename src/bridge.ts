@@ -154,14 +154,8 @@ interface StreamChunkLike {
 }
 import { createGoalRenderer } from './goal.ts'
 import { goalActionValue, type GoalActionValue } from './goal.ts'
-import {
-  agentEndLine,
-  agentStartLine,
-  phaseLine,
-  runEndLine,
-  runStartLine,
-  workflowLogLine,
-} from './workflow.ts'
+import { phaseLine, workflowLogLine } from './workflow.ts'
+import { createWorkflowNarrator } from './workflow-narrator.ts'
 import type { CompactionUsage, ShadowedBreakdown } from './notices.ts'
 import {
   compactionPruneLine,
@@ -951,6 +945,18 @@ export function installBridge(
     const detail = error instanceof Error ? error.message : String(error)
     notify(`dsh-lark-bridge: replay flush failed: ${detail}`)
   }, notify)
+  // Workflow fan-out arrives as one session event per member. Sending one chat
+  // line each turned a 68-member scan into 136 messages, which is both
+  // unreadable and enough to trip Feishu's per-chat rate limit — the limit
+  // whose rejections then sat in the replay queue for most of a night. The
+  // narrator folds a window of member events into one counted line and closes
+  // the run with one summary.
+  const workflows = createWorkflowNarrator(replay, {
+    onFailure: (error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error)
+      notify(`dsh-lark-bridge: workflow notice failed: ${detail}`)
+    },
+  })
   // File delivery: `send_file` is the one channel-owned tool, registered per
   // agent below. The session→chat mapping is the bridge's own registry, and
   // the send rides the replay-wrapped transport so a connection gap queues
@@ -3551,14 +3557,14 @@ export function installBridge(
     // subagent fan-out instead of a silent gap. Best-effort, like todo/goal.
     if (isWorkflowRunStartEvent(event)) {
       workflowChats.set(event.data.runId, binding.chatId)
-      void replay.send(binding.chatId, { markdown: runStartLine(event.data) }).catch(reportSendFailure)
+      workflows.runStart(event.data, binding.chatId)
     } else if (isWorkflowAgentStartEvent(event)) {
-      void replay.send(binding.chatId, { markdown: agentStartLine(event.data) }).catch(reportSendFailure)
+      workflows.agentStart(event.data, binding.chatId)
     } else if (isWorkflowAgentEndEvent(event)) {
-      void replay.send(binding.chatId, { markdown: agentEndLine(event.data) }).catch(reportSendFailure)
+      workflows.agentEnd(event.data, binding.chatId)
     } else if (isWorkflowRunEndEvent(event)) {
       workflowChats.delete(event.data.runId)
-      void replay.send(binding.chatId, { markdown: runEndLine(event.data) }).catch(reportSendFailure)
+      workflows.runEnd(event.data, binding.chatId)
     }
     // Context compaction: tell the chat when history is being summarized, so
     // a later "it forgot" is understood rather than mysterious. The summary
@@ -3784,6 +3790,7 @@ export function installBridge(
     lastAssistantIds.clear()
     goals.dispose()
     todos.dispose()
+    workflows.dispose()
     for (const binding of bindings) {
       if (binding.currentMessageId !== undefined) reactions?.forget(binding.currentMessageId)
     }
@@ -3799,6 +3806,6 @@ export function installBridge(
       notify(`dsh-lark-bridge: connect failed: ${error instanceof Error ? error.message : String(error)}`)
       ctx.logger.error('dsh-lark-bridge channel connect failed: %s', error)
     })
-    return () => replay.disconnect().catch(reportSendFailure)
+    return () => replay.disconnect().catch(reportSendFailure).then(() => { replay.dispose() })
   }, 'dsh-lark-bridge:connect')
 }

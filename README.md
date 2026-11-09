@@ -366,13 +366,13 @@ pnpm 10 默认拦截依赖的构建脚本，未放行时以非零退出码失败
 
 ```sh
 pnpm hygiene                    # 仓库卫生（部署专有词只留在本机）
-pnpm test                       # 831 条测试 / 77 个 spec 文件
+pnpm test                       # 841 条测试 / 78 个 spec 文件
 pnpm contract-test              # 43 条宿主契约检查
 pnpm contract-drift             # 对上游 dsh master 的漂移检查
 node scripts/check-readme-parity.mjs   # 两份 README 保持同构
 ```
 
-测试在 `tests/` —— vitest 套件（77 个），含 harness 注入式假件。升级引擎前后各跑一次 `pnpm contract-drift`——桥所镜像的宿主接缝一旦挪位，它会红。
+测试在 `tests/` —— vitest 套件（78 个），含 harness 注入式假件。升级引擎前后各跑一次 `pnpm contract-drift`——桥所镜像的宿主接缝一旦挪位，它会红。
 
 ## 🤝 参与
 

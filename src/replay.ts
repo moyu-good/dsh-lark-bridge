@@ -129,6 +129,62 @@ export function isPermanentSendFailure(error: unknown): boolean {
   return PERMANENT_FAILURE_HINTS.some(hint => message.includes(hint))
 }
 
+/**
+ * Message fragments that name the platform's own pacing limit rather than a
+ * broken transport.
+ *
+ * Feishu's chat rate limit arrives as an ordinary send rejection whose text
+ * says `This operation triggers the frequency limit, ext=chat rate limit` — no
+ * HTTP status, so the retryable/permanent split alone cannot tell it apart
+ * from a dropped connection. Getting this wrong is what made a burst of
+ * workflow progress land hours late: every rejected line was re-queued at the
+ * head of the queue, and the next flush resent the whole burst back-to-back
+ * into the same limit.
+ */
+const RATE_LIMIT_HINTS = [
+  'frequency limit',
+  'rate limit',
+  'too many requests',
+] as const
+
+/**
+ * Whether a send was refused because the chat is being written to too fast.
+ *
+ * A rate limit is not a lost message and not a permanent refusal: the same
+ * call succeeds after a pause. The caller must slow down, not give up and not
+ * treat the queue as a connection outage.
+ * @param error - what `send`/`stream` threw.
+ * @returns true when the platform asked for a pause.
+ */
+export function isRateLimitFailure(error: unknown): boolean {
+  if (httpStatusOf(error) === 429) return true
+  const message = error instanceof Error ? error.message : String(error)
+  return RATE_LIMIT_HINTS.some(hint => message.toLowerCase().includes(hint))
+}
+
+/**
+ * Tuning for the replay queue.
+ *
+ * The transport has no send throttle of its own, so a flush that fires every
+ * queued call back-to-back walks straight into Feishu's per-chat rate limit —
+ * and, worse, a queue that only drains on reconnect leaves everything behind
+ * that limit parked until the socket drops again.
+ */
+export interface ReplayOptions {
+  /**
+   * Minimum spacing between two sends inside one flush.
+   *
+   * Defaults to 250 ms, i.e. four messages per second: under Feishu's ~5 QPS
+   * per-chat ceiling with headroom for the traffic the rest of the session
+   * generates at the same time.
+   */
+  readonly minGapMs?: number
+  /** First delay before retrying a queue that a rate limit left behind. */
+  readonly retryBaseMs?: number
+  /** Cap for the exponential retry delay. */
+  readonly retryMaxMs?: number
+}
+
 /** A replay-enabled transport: the wrapped port plus the connection-state hook. */
 export interface ReplayAwarePort extends ReplayPort {
   /** Tell the wrapper the connection state changed. `true` = live, `false` = down. */
@@ -146,6 +202,12 @@ export interface ReplayAwarePort extends ReplayPort {
    * @param callback - receives the real id after successful delivery.
    */
   whenDelivered(messageId: string, callback: (realId: string) => void): void
+  /**
+   * Release the retry timer and drop the queue. Call on disposal: the timer is
+   * unref'd so it cannot hold the process open, but it would still fire once
+   * against a bridge that is already being torn down.
+   */
+  dispose(): void
 }
 
 /**
@@ -159,11 +221,19 @@ export function createReplayPort(
   port: ReplayPort,
   onFlushFailure: (error: unknown) => void,
   notify: (line: string) => void,
+  options: ReplayOptions = {},
 ): ReplayAwarePort {
+  const minGapMs = options.minGapMs ?? 250
+  const retryBaseMs = options.retryBaseMs ?? 2_000
+  const retryMaxMs = options.retryMaxMs ?? 60_000
   let live = true
   let queue: QueuedCall[] = []
   let flushing: Promise<void> | undefined
   let queueSeq = 0
+  /** Pending live-state retry, so a rate-limited queue drains without waiting for a reconnect. */
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
+  /** Current backoff before the next retry; grows on every rate-limited flush. */
+  let retryDelayMs = retryBaseMs
 
   /**
    * Placeholder id → callback that receives the real message id once the
@@ -210,13 +280,54 @@ export function createReplayPort(
     queue.push({ kind: 'updateCard', messageId, card })
   }
 
+  /** Resolve after `ms`; a no-op for a non-positive gap. */
+  const sleep = (ms: number): Promise<void> =>
+    ms <= 0 ? Promise.resolve() : new Promise((resolve) => { setTimeout(resolve, ms) })
+
+  const clearRetry = (): void => {
+    if (retryTimer === undefined) return
+    clearTimeout(retryTimer)
+    retryTimer = undefined
+  }
+
+  /**
+   * Arm the timer that drains a queue a rate limit left behind.
+   *
+   * Flushing only on reconnect is what parked a burst of workflow progress for
+   * most of a night: the socket never dropped, so nothing ever asked the queue
+   * to drain. A live queue now retries on a backoff of its own.
+   * @returns the delay armed, or 0 when a retry was already pending.
+   */
+  const scheduleRetry = (): number => {
+    if (!live || retryTimer !== undefined || queue.length === 0) return 0
+    const delay = retryDelayMs
+    retryDelayMs = Math.min(retryDelayMs * 2, retryMaxMs)
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined
+      void flush().catch(onFlushFailure)
+    }, delay)
+    // A pending retry must never hold the process open.
+    ;(retryTimer as unknown as { unref?: () => void }).unref?.()
+    return delay
+  }
+
   const flush = async (): Promise<void> => {
     if (!live || flushing !== undefined || queue.length === 0) return
     flushing = (async () => {
       const batch = queue
       queue = []
-      notify(`dsh-lark-bridge: replaying ${batch.length} queued message(s) after reconnect`)
-      for (const call of batch) {
+      notify(`dsh-lark-bridge: replaying ${batch.length} queued message(s)`)
+      for (let index = 0; index < batch.length; index += 1) {
+        const call = batch[index]!
+        // The socket can drop mid-flush; whatever is left keeps its order for
+        // the next live window instead of draining into a dead transport.
+        if (!live) {
+          queue = batch.slice(index).concat(queue)
+          return
+        }
+        // Space the calls out: the transport has no throttle of its own, so a
+        // tight loop is exactly what trips the platform's per-chat limit.
+        if (index > 0) await sleep(minGapMs)
         try {
           switch (call.kind) {
             case 'send':
@@ -253,12 +364,28 @@ export function createReplayPort(
             notify(`dsh-lark-bridge: dropping undeliverable queued ${call.kind}: ${detail}`)
             continue
           }
+          // A rate limit is the platform pacing us, not a lost connection:
+          // stop at the first one and let the retry timer drain the rest with
+          // spacing. Re-sending the remainder back-to-back into the same limit
+          // is how 96 lines were rejected and the queue ended up parked.
+          if (isRateLimitFailure(error)) {
+            queue = batch.slice(index).concat(queue)
+            const delay = scheduleRetry()
+            notify(delay > 0
+              ? `dsh-lark-bridge: paced ${queue.length} queued message(s); next retry in ${delay}ms`
+              : `dsh-lark-bridge: paced ${queue.length} queued message(s); retry already pending`)
+            return
+          }
           // A call that still fails stays queued for the next live window;
           // the caller sees nothing (fire-and-forget), so only the console does.
           onFlushFailure(error)
           queue.push(call)
         }
       }
+      // Everything drained: forget the backoff so the next burst starts fresh.
+      retryDelayMs = retryBaseMs
+      clearRetry()
+      if (queue.length > 0) scheduleRetry()
     })().finally(() => { flushing = undefined })
     await flushing
   }
@@ -297,7 +424,11 @@ export function createReplayPort(
         // arrived that never left the machine.
         if (isPermanentSendFailure(error)) throw error
         onFlushFailure(error)
-        return enqueueDelivery('send', to, input, opts)
+        const queued = enqueueDelivery('send', to, input, opts)
+        // Queued while the socket is up: a reconnect may never come, so the
+        // queue has to be able to drain on its own.
+        scheduleRetry()
+        return queued
       }
     },
     async stream(to, input, opts) {
@@ -307,7 +438,9 @@ export function createReplayPort(
       } catch (error) {
         if (isPermanentSendFailure(error)) throw error
         onFlushFailure(error)
-        return enqueueDelivery('stream', to, input, opts)
+        const queued = enqueueDelivery('stream', to, input, opts)
+        scheduleRetry()
+        return queued
       }
     },
     async updateCard(messageId, card) {
@@ -329,12 +462,22 @@ export function createReplayPort(
         // reads it as delivery. Queueing every failure is the safer default.
         onFlushFailure(error)
         enqueueUpdate(messageId, card)
+        scheduleRetry()
       }
     },
     whenDelivered,
     setConnected(next: boolean) {
       live = next
       if (next) void flush().catch(onFlushFailure)
+      // A dropped socket owns the queue's fate already; a pending retry would
+      // only race the reconnect that is about to replace it.
+      else clearRetry()
+    },
+    dispose() {
+      live = false
+      clearRetry()
+      queue = []
+      pendingDeliveries.clear()
     },
     pending: () => queue.length,
   }

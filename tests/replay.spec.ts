@@ -262,3 +262,84 @@ describe('a refusal no retry can fix reaches the caller', () => {
     expect(port.pending()).toBe(0)
   })
 })
+
+// A reconnect-only queue is how a burst of workflow progress ended up parked
+// for most of a night: the socket stayed up, so nothing ever asked the queue to
+// drain. And a flush with no spacing walked straight back into the per-chat
+// rate limit that put the messages there in the first place.
+describe('paced replay', () => {
+  it('spaces queued sends instead of firing them back-to-back', async () => {
+    const inner = fakePort()
+    const port = createReplayPort(inner, () => {}, () => {}, { minGapMs: 40 })
+    port.setConnected(false)
+    await port.send('oc_1', { markdown: 'a' })
+    await port.send('oc_1', { markdown: 'b' })
+    await port.send('oc_1', { markdown: 'c' })
+    const started = Date.now()
+    port.setConnected(true)
+    await vi.waitFor(() => { expect(inner.sent).toHaveLength(3) })
+    // Two gaps of 40 ms, not a tight loop.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(80)
+    port.dispose()
+  })
+
+  it('drains a rate-limited queue on its own, without a reconnect', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void; restoreSends(): void; sent: unknown[] }
+    const port = createReplayPort(inner, () => {}, () => {}, {
+      minGapMs: 0,
+      retryBaseMs: 20,
+      retryMaxMs: 40,
+    })
+    raw.failWith(new Error('This operation triggers the frequency limit, ext=chat rate limit'))
+    const queued = await port.send('oc_1', { markdown: 'later' })
+    expect(isUndeliveredId(queued.messageId)).toBe(true)
+    expect(port.pending()).toBe(1)
+    raw.restoreSends()
+    // Deliberately no setConnected: a live queue must retry by itself.
+    await vi.waitFor(() => { expect(raw.sent).toHaveLength(1) }, { timeout: 2_000 })
+    expect(port.pending()).toBe(0)
+    port.dispose()
+  })
+
+  it('stops a flush at the first rate limit and keeps the rest in order', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void; restoreSends(): void; sent: { input: { markdown?: string } }[] }
+    const port = createReplayPort(inner, () => {}, () => {}, {
+      minGapMs: 0,
+      retryBaseMs: 20,
+      retryMaxMs: 40,
+    })
+    port.setConnected(false)
+    await port.send('oc_1', { markdown: 'a' })
+    await port.send('oc_1', { markdown: 'b' })
+    await port.send('oc_1', { markdown: 'c' })
+    raw.failWith(new Error('This operation triggers the frequency limit, ext=chat rate limit'))
+    port.setConnected(true)
+    // The first rejection stops the flush; nothing is dropped.
+    await vi.waitFor(() => { expect(port.pending()).toBe(3) })
+    raw.restoreSends()
+    await vi.waitFor(() => { expect(raw.sent).toHaveLength(3) }, { timeout: 3_000 })
+    expect(raw.sent.map(send => send.input.markdown)).toEqual(['a', 'b', 'c'])
+    port.dispose()
+  })
+
+  it('releases its retry timer on dispose', async () => {
+    const inner = fakePort()
+    const raw = inner as unknown as { failWith(error: Error): void; restoreSends(): void; sent: unknown[] }
+    const port = createReplayPort(inner, () => {}, () => {}, {
+      minGapMs: 0,
+      retryBaseMs: 10,
+      retryMaxMs: 10,
+    })
+    raw.failWith(new Error('connection down'))
+    await port.send('oc_1', { markdown: 'x' })
+    expect(port.pending()).toBe(1)
+    port.dispose()
+    raw.restoreSends()
+    await new Promise((resolve) => { setTimeout(resolve, 40) })
+    // Disposed means dropped, not retried later.
+    expect(raw.sent).toHaveLength(0)
+    expect(port.pending()).toBe(0)
+  })
+})

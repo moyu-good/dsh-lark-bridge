@@ -204,13 +204,22 @@ describe('dsh-lark-bridge', () => {
     emit('tool-workflow/run-start', { runId: 'run-1', name: '调研' })
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('工作流「调研」'))).toBe(true) })
     emit('tool-workflow/agent-start', { runId: 'run-1', seq: 1, label: '爬虫', childId: 'child-1' })
-    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('爬虫 启动'))).toBe(true) })
+    // Member events are coalesced: the label arrives inside one counted line a
+    // window later, not as one message per member.
+    await vi.waitFor(
+      () => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('爬虫'))).toBe(true) },
+      { timeout: 5_000 },
+    )
     harness.ctx.emit('workflow/phase', { id: 'run-1', meta: {} }, '爬取数据')
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('阶段：爬取数据'))).toBe(true) })
     harness.ctx.emit('workflow/log', { id: 'run-1', meta: {} }, '正在抓取 100 页')
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('正在抓取 100 页'))).toBe(true) })
     emit('tool-workflow/agent-end', { runId: 'run-1', seq: 1, outcome: 'completed' })
-    await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('✅'))).toBe(true) })
+    // The settlement lands in the coalesced window too, so allow it to open.
+    await vi.waitFor(
+      () => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('✅'))).toBe(true) },
+      { timeout: 5_000 },
+    )
     emit('tool-workflow/run-end', { runId: 'run-1', stopReason: 'completed' })
     await vi.waitFor(() => { expect(harness.fake.sent.some(m => 'markdown' in m.input && m.input.markdown.includes('全部完成'))).toBe(true) })
     await harness.dispose()

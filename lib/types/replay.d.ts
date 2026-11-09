@@ -69,6 +69,38 @@ export interface ReplayPort extends OutboundPort {
  * @returns true when the caller must hear about it now.
  */
 export declare function isPermanentSendFailure(error: unknown): boolean;
+/**
+ * Whether a send was refused because the chat is being written to too fast.
+ *
+ * A rate limit is not a lost message and not a permanent refusal: the same
+ * call succeeds after a pause. The caller must slow down, not give up and not
+ * treat the queue as a connection outage.
+ * @param error - what `send`/`stream` threw.
+ * @returns true when the platform asked for a pause.
+ */
+export declare function isRateLimitFailure(error: unknown): boolean;
+/**
+ * Tuning for the replay queue.
+ *
+ * The transport has no send throttle of its own, so a flush that fires every
+ * queued call back-to-back walks straight into Feishu's per-chat rate limit —
+ * and, worse, a queue that only drains on reconnect leaves everything behind
+ * that limit parked until the socket drops again.
+ */
+export interface ReplayOptions {
+    /**
+     * Minimum spacing between two sends inside one flush.
+     *
+     * Defaults to 250 ms, i.e. four messages per second: under Feishu's ~5 QPS
+     * per-chat ceiling with headroom for the traffic the rest of the session
+     * generates at the same time.
+     */
+    readonly minGapMs?: number;
+    /** First delay before retrying a queue that a rate limit left behind. */
+    readonly retryBaseMs?: number;
+    /** Cap for the exponential retry delay. */
+    readonly retryMaxMs?: number;
+}
 /** A replay-enabled transport: the wrapped port plus the connection-state hook. */
 export interface ReplayAwarePort extends ReplayPort {
     /** Tell the wrapper the connection state changed. `true` = live, `false` = down. */
@@ -86,6 +118,12 @@ export interface ReplayAwarePort extends ReplayPort {
      * @param callback - receives the real id after successful delivery.
      */
     whenDelivered(messageId: string, callback: (realId: string) => void): void;
+    /**
+     * Release the retry timer and drop the queue. Call on disposal: the timer is
+     * unref'd so it cannot hold the process open, but it would still fire once
+     * against a bridge that is already being torn down.
+     */
+    dispose(): void;
 }
 /**
  * Wrap a transport so outbound calls survive a connection gap.
@@ -94,5 +132,5 @@ export interface ReplayAwarePort extends ReplayPort {
  * @param notify - operator console line for queue lifecycle.
  * @returns the replay-aware port.
  */
-export declare function createReplayPort(port: ReplayPort, onFlushFailure: (error: unknown) => void, notify: (line: string) => void): ReplayAwarePort;
+export declare function createReplayPort(port: ReplayPort, onFlushFailure: (error: unknown) => void, notify: (line: string) => void, options?: ReplayOptions): ReplayAwarePort;
 //# sourceMappingURL=replay.d.ts.map
