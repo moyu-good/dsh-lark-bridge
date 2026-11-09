@@ -36,6 +36,7 @@ export interface HostQuestion {
   readonly detail?: string
   readonly header?: string
   readonly options?: readonly { readonly label: string; readonly description?: string }[]
+  /** Whether more than one option may be chosen; the answer then carries several. */
   readonly multiSelect?: boolean
 }
 
@@ -77,8 +78,8 @@ export interface QuestionPort extends OutboundPort {
 }
 
 /**
- * Every answerable control on a question card is a form-submit button, so a
- * click is the whole interaction and the typed text rides along with it.
+ * Every control on a question card submits its form, so a single press is the
+ * whole interaction and whatever was typed rides along with it.
  *
  * Its identity travels in the element `name`, which CardKit requires to be
  * card-globally unique and always echoes back as `action.name` — unlike
@@ -88,16 +89,18 @@ export interface QuestionPort extends OutboundPort {
  *
  * - `q<token>f<i>` — the question's form container
  * - `q<token>a<i>` — its free-text input
- * - `q<token>o<i>_<j>` — option `j` of question `i`
+ * - `q<token>o<i>_<j>` — option `j` of a single-select question
+ * - `q<token>m<i>` — the multi-select dropdown of a multi-select question
+ * - `q<token>c<i>` — submit a multi-select question's checked options
  * - `q<token>t<i>` — submit the typed text alone
  * - `q<token>s<i>` — skip the question
  */
-const CONTROL = /^q([0-9a-f]{8})([faots])(\d+)(?:_(\d+))?$/
+const CONTROL = /^q([0-9a-f]{8})([faomcts])(\d+)(?:_(\d+))?$/
 
 /** The control a card-action name identifies. */
 interface ControlRef {
   readonly token: string
-  /** `f` form, `a` input, `o` option, `t` text-only submit, `s` skip. */
+  /** `f` form, `a` input, `o` option, `m` multi-select, `c` confirm, `t` text, `s` skip. */
   readonly kind: string
   /** Question index within the request. */
   readonly index: number
@@ -173,12 +176,28 @@ function clockNow(): string {
 }
 
 /**
- * Render the consequence notes that sit above a question's buttons.
+ * The value token a multi-select option reports back.
  *
- * CardKit buttons carry a single plain-text line, so an option's `description`
- * cannot ride its button; it is listed here instead, one row per described
- * option, in the same order as the buttons below. Options without a
- * description contribute nothing — an empty row would only cost height.
+ * The submission carries option VALUES, not labels, so the value has to lead
+ * back to the label the host answer needs — the option index does that without
+ * betting on labels being unique or value-safe.
+ * @param index - the option's position in the question.
+ * @returns the value the dropdown reports for that option.
+ */
+function optionValue(index: number): string {
+  return `o${index}`
+}
+
+/**
+ * Render the consequence notes that sit above a question's choices.
+ *
+ * CardKit buttons and dropdown entries carry a single plain-text line, so an
+ * option's `description` cannot ride the control; it is listed here instead,
+ * one row per described option, in the same order as the controls below.
+ * Options without a description contribute nothing — an empty row would only
+ * cost height. A multi-select question keeps the same rows: a dropdown hides
+ * the labels too, and those notes are then the only place the consequences are
+ * readable at all.
  * @param question - the question being rendered.
  * @returns one row per described option.
  */
@@ -194,7 +213,7 @@ function optionNotes(question: HostQuestion): object[] {
   return rows
 }
 
-/** One row of option-submit buttons. */
+/** One row of option-submit buttons, for a single-select question. */
 function optionRow(question: HostQuestion, token: string, index: number, from: number): object {
   const options = question.options ?? []
   const buttons = options.slice(from, from + OPTIONS_PER_ROW).map((option, offset) => ({
@@ -216,13 +235,46 @@ function optionRow(question: HostQuestion, token: string, index: number, from: n
 }
 
 /**
+ * The multi-select question's choice control.
+ *
+ * A button cannot express "tick several, then confirm" — one press submits —
+ * so the options move into CardKit's `multi_select_static` dropdown, which
+ * holds the ticks until the form's confirm button submits them. The labels
+ * live inside the collapsed dropdown, which is why {@link optionNotes} above it
+ * stops being optional once a question goes multi-select.
+ * @param question - the question whose options become the dropdown entries.
+ * @param token - the request token every element name starts with.
+ * @param index - the question's position in the request.
+ * @returns the dropdown element.
+ */
+function optionDropdown(question: HostQuestion, token: string, index: number): object {
+  return {
+    tag: 'multi_select_static',
+    name: `q${token}m${index}`,
+    type: 'default',
+    width: 'fill',
+    // Optional like the text field: 「跳过」 must stay one press away, and a
+    // required control makes the front end swallow the submission instead.
+    required: false,
+    placeholder: plainText('点这里勾选，可以多选'),
+    options: (question.options ?? []).map((option, position) => ({
+      text: plainText(bound(option.label, OPTION_LABEL_MAX_CHARS)),
+      value: optionValue(position),
+    })),
+  }
+}
+
+/**
  * Render one question as a self-contained form.
  *
- * The typed answer is the escape hatch beside the options, never a competing
- * mode: submitting an option carries whatever text was typed along with it,
- * and 「提交文字」 exists only for the case where no option fits. 「跳过」 is a
+ * The typed answer is the escape hatch beside the choices, never a competing
+ * mode: submitting a choice carries whatever text was typed along with it,
+ * and 「提交文字」 exists only for the case where no choice fits. 「跳过」 is a
  * real skip — an empty `selected` and no `custom` — which the host reads as
  * "proceed on your judgement", not as a cancellation.
+ *
+ * A multi-select question swaps its option buttons for a dropdown plus a
+ * 「确认选择」 button; everything else about the form is identical.
  * @param question - the question to render.
  * @param token - the request token every element name starts with.
  * @param index - the question's position in the request.
@@ -240,10 +292,31 @@ function questionForm(question: HostQuestion, token: string, index: number): obj
   elements.push(...optionNotes(question))
 
   const options = question.options ?? []
-  const rows: object[] = []
-  for (let from = 0; from < options.length; from += OPTIONS_PER_ROW) {
-    rows.push(optionRow(question, token, index, from))
+  const multi = question.multiSelect === true && options.length > 0
+  const choice: object[] = []
+  if (multi) {
+    choice.push(optionDropdown(question, token, index))
+  } else {
+    for (let from = 0; from < options.length; from += OPTIONS_PER_ROW) {
+      choice.push(optionRow(question, token, index, from))
+    }
   }
+
+  const submit = multi
+    ? [{
+      tag: 'button',
+      name: `q${token}c${index}`,
+      form_action_type: 'submit',
+      type: 'primary',
+      text: plainText('确认选择'),
+    }]
+    : [{
+      tag: 'button',
+      name: `q${token}t${index}`,
+      form_action_type: 'submit',
+      type: 'default',
+      text: plainText('提交文字'),
+    }]
 
   const form: object[] = [
     {
@@ -259,7 +332,7 @@ function questionForm(question: HostQuestion, token: string, index: number): obj
       required: false,
       placeholder: plainText(options.length === 0 ? '请输入你的回答' : '或者直接告诉我（可留空）'),
     },
-    ...rows,
+    ...choice,
     {
       tag: 'column_set',
       horizontal_align: 'right',
@@ -268,13 +341,7 @@ function questionForm(question: HostQuestion, token: string, index: number): obj
         {
           tag: 'column',
           width: 'auto',
-          elements: [{
-            tag: 'button',
-            name: `q${token}t${index}`,
-            form_action_type: 'submit',
-            type: 'default',
-            text: plainText('提交文字'),
-          }],
+          elements: submit,
         },
         {
           tag: 'column',
@@ -362,8 +429,10 @@ interface PendingQuestion {
 /**
  * Read the typed answer out of a form submission.
  *
- * A question form holds exactly one input, so the sole submitted value is the
- * answer text whatever the input's name turned out to be.
+ * A question form holds exactly one text input, so the sole STRING value is
+ * the answer text whatever the input's name turned out to be. A multi-select
+ * dropdown reports its values as an array, which is a choice and not typed
+ * text — skipping non-strings is what keeps the two apart.
  * @param formValue - `action.formValue` as the channel SDK hands it over.
  * @returns the trimmed text, or '' when nothing was typed.
  */
@@ -373,6 +442,33 @@ function typedAnswer(formValue: Record<string, unknown> | undefined): string {
     if (typeof value === 'string') return value.trim()
   }
   return ''
+}
+
+/**
+ * Read the checked options out of a multi-select submission.
+ *
+ * Values arrive as `o<index>` tokens (see {@link optionValue}); a token that
+ * names no option of the question — a card built by an older bridge, a stale
+ * click — is dropped rather than guessed at.
+ * @param question - the question the submission answers.
+ * @param formValue - `action.formValue` as the channel SDK hands it over.
+ * @returns the checked option labels, in the order the options are declared.
+ */
+function checkedLabels(question: HostQuestion, formValue: Record<string, unknown> | undefined): string[] {
+  if (formValue === undefined) return []
+  const options = question.options ?? []
+  const picked = new Set<number>()
+  for (const value of Object.values(formValue)) {
+    if (!Array.isArray(value)) continue
+    for (const item of value) {
+      if (typeof item !== 'string') continue
+      const index = /^o(\d+)$/.exec(item)?.[1]
+      if (index === undefined) continue
+      const position = Number(index)
+      if (options[position] !== undefined) picked.add(position)
+    }
+  }
+  return [...picked].sort((a, b) => a - b).map(position => options[position]!.label)
 }
 
 /**
@@ -486,7 +582,9 @@ export function createQuestionProvider(
     item: PendingQuestion,
   ): QuestionToastResponse => {
     const question = item.questions[ref.index]
-    if (question === undefined || ref.kind === 'f' || ref.kind === 'a') {
+    // `f`, `a` and `m` are containers and fields: a form submits through its
+    // button, and a bare field or dropdown carries no decision of its own.
+    if (question === undefined || ref.kind === 'f' || ref.kind === 'a' || ref.kind === 'm') {
       return { toast: { type: 'info', content: '该问题已失效' } }
     }
     const text = typedAnswer(evt.action.formValue)
@@ -496,6 +594,18 @@ export function createQuestionProvider(
       if (option === undefined) return { toast: { type: 'info', content: '该选项已失效' } }
       item.settled.set(question.id, {
         selected: [option.label],
+        ...text === '' ? {} : { custom: text },
+        at,
+      })
+    } else if (ref.kind === 'c') {
+      // The dropdown's values are the choice; the typed text may ride along
+      // the same way it does when a single option button is pressed.
+      const picked = checkedLabels(question, evt.action.formValue)
+      if (picked.length === 0 && text === '') {
+        return { toast: { type: 'warning', content: '还没有勾选，可以多选' } }
+      }
+      item.settled.set(question.id, {
+        selected: picked,
         ...text === '' ? {} : { custom: text },
         at,
       })

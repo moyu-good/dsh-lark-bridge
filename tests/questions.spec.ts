@@ -302,6 +302,124 @@ describe('user-questions provider', () => {
     await promise
   })
 
+  it('renders a multi-select question as a dropdown plus one confirm button', async () => {
+    const port = fakePort()
+    const { provider } = createQuestionProvider(port, () => ({ chatId: 'oc_chat_1' }))
+    const controller = new AbortController()
+    const promise = provider.ask({
+      questions: [{
+        id: 'q1',
+        question: '要装哪几个？',
+        multiSelect: true,
+        options: [
+          { label: 'eslint', description: '静态检查' },
+          { label: 'prettier', description: '格式化' },
+          { label: 'vitest', description: '测试' },
+        ],
+      }],
+      agent: { session: { id: 'ses_1' } },
+      signal: controller.signal,
+    })
+    const card = cardOf(port)
+    const token = tokenOf(card)
+
+    // Options move into a dropdown; buttons can only ever submit once.
+    const nodes = walk(card)
+    const dropdown = nodes.find(node => node.tag === 'multi_select_static') as CardNode & {
+      options?: { text?: { content?: string }; value?: string }[]
+      required?: boolean
+    }
+    expect(dropdown).toBeDefined()
+    expect(dropdown.name).toBe(`q${token}m0`)
+    expect(dropdown.options?.map(o => o.value)).toEqual(['o0', 'o1', 'o2'])
+    expect(dropdown.options?.map(o => o.text?.content)).toEqual(['eslint', 'prettier', 'vitest'])
+    // Optional, so 「跳过」 is not shadowed by a required-field refusal.
+    expect(dropdown.required).toBe(false)
+
+    const names = buttons(card).map(button => button.name)
+    expect(names).toContain(`q${token}c0`)
+    expect(names).toContain(`q${token}s0`)
+    // No per-option submit button survives on a multi-select question.
+    expect(names.some(name => name?.startsWith(`q${token}o0_`))).toBe(false)
+
+    await tick()
+    controller.abort()
+    await promise
+  })
+
+  it('answers every checked option of a multi-select question', async () => {
+    const port = fakePort()
+    const { provider, handleCardAction } = createQuestionProvider(port, () => ({ chatId: 'oc_chat_1' }))
+    const promise = provider.ask({
+      questions: [{
+        id: 'q1',
+        question: '要装哪几个？',
+        multiSelect: true,
+        options: [{ label: 'eslint' }, { label: 'prettier' }, { label: 'vitest' }],
+      }],
+      agent: { session: { id: 'ses_1' } },
+    })
+    const token = tokenOf(cardOf(port))
+    await tick()
+
+    // Declared order wins even when the submission lists them another way.
+    handleCardAction(submit(`q${token}c0`, { [`q${token}a0`]: '', [`q${token}m0`]: ['o2', 'o0'] }))
+
+    await expect(promise).resolves.toEqual({
+      answers: [{ id: 'q1', selected: ['eslint', 'vitest'] }],
+    })
+  })
+
+  it('lets typed text ride along a multi-select submission', async () => {
+    const port = fakePort()
+    const { provider, handleCardAction } = createQuestionProvider(port, () => ({ chatId: 'oc_chat_1' }))
+    const promise = provider.ask({
+      questions: [{
+        id: 'q1',
+        question: '要装哪几个？',
+        multiSelect: true,
+        options: [{ label: 'eslint' }, { label: 'prettier' }],
+      }],
+      agent: { session: { id: 'ses_1' } },
+    })
+    const token = tokenOf(cardOf(port))
+    await tick()
+
+    handleCardAction(submit(`q${token}c0`, {
+      [`q${token}a0`]: '顺便加上 husky',
+      [`q${token}m0`]: ['o1'],
+    }))
+
+    await expect(promise).resolves.toEqual({
+      answers: [{ id: 'q1', selected: ['prettier'], custom: '顺便加上 husky' }],
+    })
+  })
+
+  it('refuses a multi-select submission that checked nothing', async () => {
+    const port = fakePort()
+    const { provider, handleCardAction } = createQuestionProvider(port, () => ({ chatId: 'oc_chat_1' }))
+    const promise = provider.ask({
+      questions: [{
+        id: 'q1',
+        question: '要装哪几个？',
+        multiSelect: true,
+        options: [{ label: 'eslint' }, { label: 'prettier' }],
+      }],
+      agent: { session: { id: 'ses_1' } },
+    })
+    const token = tokenOf(cardOf(port))
+    await tick()
+
+    expect(handleCardAction(submit(`q${token}c0`, { [`q${token}m0`]: [] })))
+      .toEqual({ toast: { type: 'warning', content: '还没有勾选，可以多选' } })
+    // Values the question does not have are ignored, not guessed at.
+    expect(handleCardAction(submit(`q${token}c0`, { [`q${token}m0`]: ['o9'] })))
+      .toEqual({ toast: { type: 'warning', content: '还没有勾选，可以多选' } })
+
+    handleCardAction(submit(`q${token}s0`))
+    await expect(promise).resolves.toEqual({ answers: [{ id: 'q1', selected: [] }] })
+  })
+
   it('ignores control names this plugin did not write', async () => {
     const port = fakePort()
     const { provider, handleCardAction } = createQuestionProvider(port, () => ({ chatId: 'oc_chat_1' }))

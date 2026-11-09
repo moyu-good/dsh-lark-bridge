@@ -32,6 +32,7 @@ export interface HostQuestion {
         readonly label: string;
         readonly description?: string;
     }[];
+    /** Whether more than one option may be chosen; the answer then carries several. */
     readonly multiSelect?: boolean;
 }
 /** The answer shape the host seam expects back. */
